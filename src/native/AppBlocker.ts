@@ -56,7 +56,7 @@ class AppBlockerBridge {
     }
 
     const subscription = this.eventEmitter.addListener(
-      'StayTBlockedAttempt',
+      'onBlockedAttempt',
       callback
     );
 

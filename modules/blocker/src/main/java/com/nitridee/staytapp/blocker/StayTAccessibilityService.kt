@@ -2,7 +2,6 @@ package com.nitridee.staytapp.blocker
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 
@@ -52,12 +51,8 @@ class StayTAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Blocked app: $packageName")
         performGlobalAction(GLOBAL_ACTION_HOME)
 
-        // Broadcast to React Native
-        val intent = Intent("com.nitridee.staytapp.BLOCKED_ATTEMPT").apply {
-            putExtra("packageName", packageName)
-            putExtra("timestamp", System.currentTimeMillis())
-        }
-        sendBroadcast(intent)
+        // Emit event to React Native
+        AppBlockerModule.emitBlockedAttempt(packageName, System.currentTimeMillis())
     }
 
     override fun onInterrupt() {
