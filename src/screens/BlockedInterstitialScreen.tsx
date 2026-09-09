@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
@@ -24,7 +24,11 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   };
 
   const handleOverride = () => {
-    navigation.goBack();
+    Alert.alert(
+      'Override Not Available',
+      'Pause-blocking override will be available in a future update.',
+      [{ text: 'OK', onPress: () => navigation.goBack() }]
+    );
   };
 
   const handleSwitchTask = () => {

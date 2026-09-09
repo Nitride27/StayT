@@ -85,7 +85,13 @@ export default function HistoryScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: colors.paper }]}>
       <View style={[styles.header, { paddingTop: layout.headerPaddingTop, paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.headerPaddingBottom }]}>
-        <Text style={[typography.h1, { color: colors.ink }]}>History</Text>
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
+            <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={[typography.h1, { color: colors.ink }]}>History</Text>
+          <View style={{ width: 50 }} />
+        </View>
       </View>
 
       {/* Stats Row */}

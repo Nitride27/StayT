@@ -28,7 +28,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const prefs = await store.getPreferences();
-        setModeState(prefs.darkMode ? 'dark' : 'light');
+        setModeState(prefs.themeMode);
       } catch {
         setModeState('system');
       }
@@ -44,7 +44,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const prefs = await store.getPreferences();
       await store.savePreferences({
         ...prefs,
-        darkMode: newMode === 'dark',
+        themeMode: newMode,
       });
     } catch {}
   };

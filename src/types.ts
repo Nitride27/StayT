@@ -25,7 +25,7 @@ export interface BlockedAttempt {
 }
 
 export interface UserPreferences {
-  darkMode: boolean;
+  themeMode: 'light' | 'dark' | 'system';
   notificationsEnabled: boolean;
   hapticFeedback: boolean;
   freeTaskLimit: number;

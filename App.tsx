@@ -24,7 +24,7 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function AppNavigator() {
-  const { isDark, colors } = useTheme();
+  const { isDark } = useTheme();
 
   return (
     <>

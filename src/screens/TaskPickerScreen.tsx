@@ -6,7 +6,7 @@ import { store } from '../storage/store';
 import { Task } from '../types';
 import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
-import { colors, typography, spacing, radius, buttons, gamification, shadows, layout } from '../theme/tokens';
+import { typography, spacing, radius, buttons, gamification, shadows, layout } from '../theme/tokens';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TaskPicker'>;
@@ -51,7 +51,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
     }
 
     const session = {
-      id: Date.now().toString(),
+      id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       taskId: task.id,
       startedAt: Date.now(),
       endedAt: null,
@@ -77,7 +77,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
           {streak > 0 && (
             <View style={[styles.streakBadge, { backgroundColor: themeColors.paperCard, borderColor: themeColors.paperBorder }]}>
               <Text style={styles.streakFire}>{gamification.streak.fireSize > 0 ? '🔥' : ''}</Text>
-              <Text style={[styles.streakNumber, { color: colors.ectoGreen }]}>{streak}</Text>
+              <Text style={[styles.streakNumber, { color: themeColors.ectoGreen }]}>{streak}</Text>
             </View>
           )}
         </View>
@@ -111,7 +111,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
                 {task.streak > 0 && (
                   <View style={styles.streakRow}>
                     <Text style={styles.streakEmoji}>🔥</Text>
-                    <Text style={[styles.streakValue, { color: colors.ectoGreen }]}>{task.streak}</Text>
+                    <Text style={[styles.streakValue, { color: themeColors.ectoGreen }]}>{task.streak}</Text>
                   </View>
                 )}
                 <Text style={[styles.useCount, { color: themeColors.inkFaint }]}>×{task.useCount}</Text>
@@ -131,7 +131,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
         onPressOut={() => setPressedButton(null)}
         activeOpacity={0.9}
       >
-        <Text style={[styles.addButtonText, { color: colors.eelDarkBlue }]}>+ New Task</Text>
+        <Text style={[styles.addButtonText, { color: themeColors.eelDarkBlue }]}>+ New Task</Text>
       </TouchableOpacity>
 
       {!accessibilityEnabled && (
