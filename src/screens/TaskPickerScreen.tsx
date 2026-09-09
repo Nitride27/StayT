@@ -37,7 +37,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
     navigation.navigate('TaskSetup');
   };
 
-  const handleTaskPress = (task: Task) => {
+  const handleTaskPress = async (task: Task) => {
     if (!accessibilityEnabled) {
       Alert.alert(
         'Permission Required',
@@ -49,7 +49,19 @@ export default function TaskPickerScreen({ navigation }: Props) {
       );
       return;
     }
-    // Start session logic will go here
+
+    const session = {
+      id: Date.now().toString(),
+      taskId: task.id,
+      startedAt: Date.now(),
+      endedAt: null,
+      duration: null,
+      status: 'active' as const,
+    };
+
+    await store.saveSession(session);
+    await AppBlocker.startBlocking([task.packageName]);
+    navigation.navigate('ActiveSession', { task, session });
   };
 
   return (

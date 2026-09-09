@@ -12,12 +12,12 @@ class StayTAccessibilityService : AccessibilityService() {
             private set
 
         private var isBlocking = false
-        private var allowedPackages = mutableSetOf<String>()
+        private var blockedPackages = mutableSetOf<String>()
 
-        fun setBlocking(blocking: Boolean, allowed: List<String> = emptyList()) {
+        fun setBlocking(blocking: Boolean, blocked: List<String> = emptyList()) {
             isBlocking = blocking
-            allowedPackages.clear()
-            allowedPackages.addAll(allowed)
+            blockedPackages.clear()
+            blockedPackages.addAll(blocked)
         }
     }
 
@@ -44,8 +44,8 @@ class StayTAccessibilityService : AccessibilityService() {
         // Allow our own package
         if (packageName == "com.nitridee.staytapp") return
 
-        // Check if package is allowed
-        if (allowedPackages.isNotEmpty() && allowedPackages.contains(packageName)) return
+        // Check if package is in the blocked set
+        if (blockedPackages.isEmpty() || !blockedPackages.contains(packageName)) return
 
         // Package is blocked - perform global action to go HOME
         Log.d(TAG, "Blocked app: $packageName")

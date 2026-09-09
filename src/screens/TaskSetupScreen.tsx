@@ -26,7 +26,7 @@ export default function TaskSetupScreen({ navigation }: Props) {
     const filteredApps = apps.filter(app => 
       !app.packageName.startsWith('com.android') &&
       !app.packageName.startsWith('com.google.android') &&
-      app.packageName !== 'com.stayt.blocker'
+      app.packageName !== 'com.nitridee.staytapp'
     );
     setInstalledApps(filteredApps);
   };

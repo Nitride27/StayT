@@ -29,11 +29,11 @@ class AppBlockerBridge {
     }
   }
 
-  async startBlocking(allowedPackages: string[]): Promise<boolean> {
+  async startBlocking(blockedPackages: string[]): Promise<boolean> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
     }
-    return AppBlocker.startBlocking(allowedPackages);
+    return AppBlocker.startBlocking(blockedPackages);
   }
 
   async stopBlocking(): Promise<boolean> {

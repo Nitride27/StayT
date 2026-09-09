@@ -26,7 +26,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         instance = this
     }
 
-    override fun getName(): String = "AppBlockerModule"
+    override fun getName(): String = "AppBlocker"
 
     @ReactMethod
     fun isAccessibilityServiceEnabled(promise: Promise) {
@@ -50,12 +50,28 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun startBlocking(blockedPackages: List<String>) {
-        StayTAccessibilityService.setBlocking(blocking = true, allowed = blockedPackages)
+        StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages)
     }
 
     @ReactMethod
     fun stopBlocking() {
         StayTAccessibilityService.setBlocking(blocking = false)
+    }
+
+    @ReactMethod
+    fun getInstalledApps(promise: Promise) {
+        val pm = reactApplicationContext.packageManager
+        val apps = pm.getInstalledApplications(0)
+            .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+            .map { appInfo ->
+                val map = Arguments.createMap()
+                map.putString("packageName", appInfo.packageName)
+                map.putString("appName", pm.getApplicationLabel(appInfo).toString())
+                map
+            }
+        val result = Arguments.createArray()
+        apps.forEach { result.pushMap(it) }
+        promise.resolve(result)
     }
 
     @ReactMethod
