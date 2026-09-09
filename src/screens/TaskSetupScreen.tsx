@@ -20,10 +20,23 @@ export default function TaskSetupScreen({ navigation }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [pressedButton, setPressedButton] = useState<string | null>(null);
+  const [paywallBlocked, setPaywallBlocked] = useState(false);
 
   useEffect(() => {
+    checkPaywall();
     loadInstalledApps();
   }, []);
+
+  const checkPaywall = async () => {
+    const prefs = await store.getPreferences();
+    if (!prefs.isSubscribed) {
+      const tasks = await store.getTasks();
+      if (tasks.length >= prefs.freeTaskLimit) {
+        setPaywallBlocked(true);
+        navigation.navigate('Paywall');
+      }
+    }
+  };
 
   const loadInstalledApps = async () => {
     const apps = await AppBlocker.getInstalledApps();

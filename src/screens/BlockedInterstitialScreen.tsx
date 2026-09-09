@@ -4,6 +4,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, gamification, layout } from '../theme/tokens';
+import AppBlocker from '../native/AppBlocker';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BlockedInterstitial'>;
@@ -23,12 +24,13 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     navigation.goBack();
   };
 
-  const handleOverride = () => {
-    Alert.alert(
-      'Override Not Available',
-      'Pause-blocking override will be available in a future update.',
-      [{ text: 'OK', onPress: () => navigation.goBack() }]
-    );
+  const handleOverride = async () => {
+    const success = await AppBlocker.pauseBlocking(300);
+    if (success) {
+      navigation.goBack();
+    } else {
+      Alert.alert('Error', 'Could not pause blocking. Try again.');
+    }
   };
 
   const handleSwitchTask = () => {

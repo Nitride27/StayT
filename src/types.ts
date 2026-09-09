@@ -30,4 +30,5 @@ export interface UserPreferences {
   hapticFeedback: boolean;
   freeTaskLimit: number;
   hasOnboarded: boolean;
+  isSubscribed: boolean;
 }

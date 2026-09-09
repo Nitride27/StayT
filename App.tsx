@@ -10,6 +10,7 @@ import ActiveSessionScreen from './src/screens/ActiveSessionScreen';
 import BlockedInterstitialScreen from './src/screens/BlockedInterstitialScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import PermissionSetupScreen from './src/screens/PermissionSetupScreen';
+import PaywallScreen from './src/screens/PaywallScreen';
 import { store } from './src/storage/store';
 import { Task, Session } from './src/types';
 import AppBlocker from './src/native/AppBlocker';
@@ -18,6 +19,7 @@ import { colors } from './src/theme/tokens';
 export type RootStackParamList = {
   Welcome: undefined;
   PermissionSetup: undefined;
+  Paywall: undefined;
   TaskPicker: undefined;
   TaskSetup: { task?: Task };
   ActiveSession: { task: Task; session: Session };
@@ -81,6 +83,11 @@ function AppNavigator() {
             name="PermissionSetup"
             component={PermissionSetupScreen}
             options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Paywall"
+            component={PaywallScreen}
+            options={{ headerShown: false, presentation: 'modal' }}
           />
           <Stack.Screen
             name="TaskPicker"

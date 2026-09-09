@@ -61,6 +61,7 @@ export const store = {
       hapticFeedback: true,
       freeTaskLimit: 1,
       hasOnboarded: false,
+      isSubscribed: false,
     };
   },
 

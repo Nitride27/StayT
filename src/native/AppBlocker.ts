@@ -43,6 +43,13 @@ class AppBlockerBridge {
     return AppBlocker.stopBlocking();
   }
 
+  async pauseBlocking(seconds: number): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker) {
+      return false;
+    }
+    return AppBlocker.pauseBlocking(seconds);
+  }
+
   async getInstalledApps(): Promise<{ packageName: string; appName: string }[]> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return [];

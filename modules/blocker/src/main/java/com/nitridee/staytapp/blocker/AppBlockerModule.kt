@@ -75,6 +75,11 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun pauseBlocking(seconds: Double) {
+        StayTAccessibilityService.pauseBlocking(seconds.toLong())
+    }
+
+    @ReactMethod
     fun addListener(eventName: String) {
         // Required for NativeEventEmitter
     }

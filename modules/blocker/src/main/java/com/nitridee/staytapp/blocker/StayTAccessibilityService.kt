@@ -2,6 +2,8 @@ package com.nitridee.staytapp.blocker
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 
@@ -13,11 +15,28 @@ class StayTAccessibilityService : AccessibilityService() {
 
         private var isBlocking = false
         private var blockedPackages = mutableSetOf<String>()
+        private val handler = Handler(Looper.getMainLooper())
+        private var pauseRunnable: Runnable? = null
 
         fun setBlocking(blocking: Boolean, blocked: List<String> = emptyList()) {
             isBlocking = blocking
             blockedPackages.clear()
             blockedPackages.addAll(blocked)
+        }
+
+        fun pauseBlocking(seconds: Long) {
+            Log.d(TAG, "Pausing blocking for $seconds seconds")
+            isBlocking = false
+
+            // Cancel any existing pause
+            pauseRunnable?.let { handler.removeCallbacks(it) }
+
+            // Resume after delay
+            pauseRunnable = Runnable {
+                isBlocking = true
+                Log.d(TAG, "Blocking resumed after pause")
+            }
+            handler.postDelayed(pauseRunnable!!, seconds * 1000)
         }
     }
 
