@@ -1,20 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task } from '../types';
 import AppBlocker from '../native/AppBlocker';
+import { useTheme } from '../theme/ThemeContext';
+import { colors, typography, spacing, radius, buttons, shadows, layout } from '../theme/tokens';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TaskSetup'>;
 };
 
 export default function TaskSetupScreen({ navigation }: Props) {
+  const { colors: themeColors } = useTheme();
   const [taskName, setTaskName] = useState('');
   const [selectedApp, setSelectedApp] = useState<{ packageName: string; appName: string } | null>(null);
   const [installedApps, setInstalledApps] = useState<{ packageName: string; appName: string }[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [pressedButton, setPressedButton] = useState<string | null>(null);
 
   useEffect(() => {
     loadInstalledApps();
@@ -22,13 +27,13 @@ export default function TaskSetupScreen({ navigation }: Props) {
 
   const loadInstalledApps = async () => {
     const apps = await AppBlocker.getInstalledApps();
-    // Filter out system apps and StayT itself
-    const filteredApps = apps.filter(app => 
+    const filteredApps = apps.filter(app =>
       !app.packageName.startsWith('com.android') &&
       !app.packageName.startsWith('com.google.android') &&
       app.packageName !== 'com.nitridee.staytapp'
     );
     setInstalledApps(filteredApps);
+    setLoading(false);
   };
 
   const filteredApps = installedApps.filter(app =>
@@ -63,51 +68,85 @@ export default function TaskSetupScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.paper }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Back</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <Text style={[styles.backButton, { color: colors.ectoGreen }]}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>New Task</Text>
+        <Text style={[styles.title, { color: themeColors.ink }]}>New Task</Text>
       </View>
 
       <View style={styles.form}>
-        <Text style={styles.label}>Task Name</Text>
+        <Text style={[styles.label, { color: themeColors.inkSecondary }]}>Task Name</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: themeColors.paperCard, borderColor: themeColors.paperBorder, color: themeColors.ink }]}
           value={taskName}
           onChangeText={setTaskName}
           placeholder="e.g., Focus Work"
-          placeholderTextColor="#999"
+          placeholderTextColor={themeColors.inkFaint}
         />
 
-        <Text style={styles.label}>App to Block</Text>
+        <Text style={[styles.label, { color: themeColors.inkSecondary }]}>App to Block</Text>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { backgroundColor: themeColors.paperCard, borderColor: themeColors.paperBorder, color: themeColors.ink }]}
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search apps..."
-          placeholderTextColor="#999"
+          placeholderTextColor={themeColors.inkFaint}
         />
 
-        <ScrollView style={styles.appList}>
-          {filteredApps.map((app) => (
-            <TouchableOpacity
-              key={app.packageName}
-              style={[
-                styles.appItem,
-                selectedApp?.packageName === app.packageName && styles.appItemSelected
-              ]}
-              onPress={() => setSelectedApp(app)}
-            >
-              <Text style={styles.appName}>{app.appName}</Text>
-              <Text style={styles.packageName}>{app.packageName}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {loading ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" color={colors.ectoGreen} />
+            <Text style={[styles.loadingText, { color: themeColors.inkMuted }]}>Loading apps...</Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.appList} contentContainerStyle={styles.appListContent}>
+            {filteredApps.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={[styles.emptyText, { color: themeColors.inkMuted }]}>
+                  {searchQuery ? 'No apps match your search' : 'No apps found'}
+                </Text>
+              </View>
+            ) : (
+              filteredApps.map((app) => {
+                const isSelected = selectedApp?.packageName === app.packageName;
+                return (
+                  <TouchableOpacity
+                    key={app.packageName}
+                    style={[
+                      styles.appItem,
+                      {
+                        backgroundColor: isSelected ? colors.ectoGreenLight : themeColors.paperCard,
+                        borderColor: isSelected ? colors.ectoGreen : themeColors.paperBorder,
+                      },
+                    ]}
+                    onPress={() => setSelectedApp(app)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.appInfo}>
+                      <Text style={[styles.appName, { color: isSelected ? colors.eelDarkBlue : themeColors.ink }]}>{app.appName}</Text>
+                      <Text style={[styles.packageName, { color: themeColors.inkMuted }]}>{app.packageName}</Text>
+                    </View>
+                    {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Task</Text>
+        <TouchableOpacity
+          style={[
+            styles.saveButton,
+            pressedButton === 'save' ? buttons.primaryPressed : buttons.primary,
+          ]}
+          onPress={handleSave}
+          onPressIn={() => setPressedButton('save')}
+          onPressOut={() => setPressedButton(null)}
+          activeOpacity={0.9}
+        >
+          <Text style={[styles.saveButtonText, { color: colors.eelDarkBlue }]}>Save Task</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -117,90 +156,94 @@ export default function TaskSetupScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   header: {
-    paddingTop: 60,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingTop: layout.headerPaddingTop,
+    paddingHorizontal: layout.screenPaddingH,
+    paddingBottom: layout.headerPaddingBottom,
   },
   backButton: {
-    fontSize: 16,
-    color: '#58cc02',
-    fontWeight: '600',
-    marginBottom: 16,
+    ...typography.bodyBold,
+    marginBottom: spacing.lg,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#000437',
+    ...typography.h1,
   },
   form: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-    marginTop: 16,
+    ...typography.bodyMedium,
+    marginBottom: spacing.sm,
+    marginTop: spacing.lg,
   },
   input: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    ...typography.body,
     borderWidth: 2,
-    borderColor: '#e0e0e0',
   },
   searchInput: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 14,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...typography.body,
     borderWidth: 2,
-    borderColor: '#e0e0e0',
+  },
+  loadingState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xxxl,
+  },
+  loadingText: {
+    ...typography.body,
+    marginTop: spacing.lg,
   },
   appList: {
     flex: 1,
-    marginTop: 12,
+    marginTop: spacing.md,
+  },
+  appListContent: {
+    paddingBottom: spacing.xl,
+  },
+  emptyState: {
+    paddingVertical: spacing.xxxl,
+    alignItems: 'center',
+  },
+  emptyText: {
+    ...typography.body,
   },
   appItem: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
     borderWidth: 2,
-    borderColor: '#e0e0e0',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  appItemSelected: {
-    borderColor: '#58cc02',
-    backgroundColor: '#f0fff0',
+  appInfo: {
+    flex: 1,
   },
   appName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000437',
+    ...typography.bodyBold,
   },
   packageName: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
+    ...typography.caption,
+    marginTop: spacing.xs,
+  },
+  checkmark: {
+    fontSize: 20,
+    color: colors.ectoGreen,
+    fontWeight: '700',
   },
   saveButton: {
-    backgroundColor: '#58cc02',
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderBottomWidth: 4,
-    borderBottomColor: '#042c60',
-    marginBottom: 24,
+    paddingVertical: spacing.lg,
+    marginBottom: spacing.xl,
+    borderRadius: radius.md,
   },
   saveButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000437',
+    ...typography.label,
     textAlign: 'center',
   },
 });

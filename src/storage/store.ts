@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Task, Session, UserPreferences } from '../types';
+import { Task, Session, BlockedAttempt, UserPreferences } from '../types';
 
 const TASKS_KEY = '@stayt_tasks';
 const SESSIONS_KEY = '@stayt_sessions';
 const PREFERENCES_KEY = '@stayt_preferences';
+const BLOCKED_ATTEMPTS_KEY = '@stayt_blocked_attempts';
 
 export const store = {
   // Tasks
@@ -99,6 +100,49 @@ export const store = {
       }
     }
 
+    return streak;
+  },
+
+  // Blocked Attempts
+  async getBlockedAttempts(): Promise<BlockedAttempt[]> {
+    const data = await AsyncStorage.getItem(BLOCKED_ATTEMPTS_KEY);
+    return data ? JSON.parse(data) : [];
+  },
+
+  async saveBlockedAttempt(attempt: BlockedAttempt): Promise<void> {
+    const attempts = await this.getBlockedAttempts();
+    attempts.push(attempt);
+    await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify(attempts));
+  },
+
+  async getBlockedAttemptsToday(): Promise<BlockedAttempt[]> {
+    const attempts = await this.getBlockedAttempts();
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return attempts.filter(a => a.timestamp >= todayStart);
+  },
+
+  async getStreak(): Promise<number> {
+    const todayAttempts = await this.getBlockedAttemptsToday();
+    if (todayAttempts.length === 0) return 0;
+    
+    let streak = 0;
+    let currentDate = new Date();
+    const allAttempts = await this.getBlockedAttempts();
+    
+    while (true) {
+      const dayStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime();
+      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+      const hasBlockedAttempt = allAttempts.some(a => a.timestamp >= dayStart && a.timestamp < dayEnd);
+      
+      if (hasBlockedAttempt) {
+        streak++;
+        currentDate.setDate(currentDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    
     return streak;
   },
 };

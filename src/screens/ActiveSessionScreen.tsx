@@ -5,6 +5,8 @@ import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task, Session } from '../types';
 import AppBlocker from '../native/AppBlocker';
+import { useTheme } from '../theme/ThemeContext';
+import { typography, spacing, radius, buttons, gamification, layout } from '../theme/tokens';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveSession'>;
@@ -18,7 +20,9 @@ type Props = {
 
 export default function ActiveSessionScreen({ navigation, route }: Props) {
   const { task, session } = route.params;
+  const { colors } = useTheme();
   const [elapsed, setElapsed] = useState(0);
+  const [streak, setStreak] = useState(task.streak);
 
   useEffect(() => {
     const startTime = session.startedAt;
@@ -49,7 +53,6 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     };
     await store.saveSession(updatedSession);
 
-    // Update task stats
     const updatedTask: Task = {
       ...task,
       lastUsed: Date.now(),
@@ -74,28 +77,50 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.taskName}>{task.name}</Text>
-        <Text style={styles.appName}>Blocking: {task.appName}</Text>
+    <View style={[styles.container, { backgroundColor: colors.paper }]}>
+      <View style={[styles.header, { paddingTop: layout.headerPaddingTop, paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.headerPaddingBottom }]}>
+        <Text style={[typography.h1, { color: colors.ink }]}>{task.name}</Text>
+        <Text style={[typography.body, { color: colors.inkMuted, marginTop: spacing.xs }]}>Blocking: {task.appName}</Text>
       </View>
 
       <View style={styles.timerContainer}>
-        <Text style={styles.timer}>{formatTime(elapsed)}</Text>
-        <Text style={styles.timerLabel}>Time focused</Text>
+        <Text style={[typography.timer, { color: colors.ectoGreen }]}>{formatTime(elapsed)}</Text>
+        <Text style={[typography.body, { color: colors.inkMuted, marginTop: spacing.sm }]}>Time focused</Text>
       </View>
 
-      <View style={styles.streakContainer}>
-        <Text style={styles.streak}>🔥 {task.streak} day streak</Text>
-      </View>
+      {streak > 0 && (
+        <View style={styles.streakContainer}>
+          <View style={[styles.streakBadge, { backgroundColor: colors.paperCard }]}>
+            <Text style={{ fontSize: gamification.streak.fireSize }}>🔥</Text>
+            <Text style={[gamification.streak.numberFont, { color: colors.fire }]}>{streak}</Text>
+            <Text style={[typography.caption, { color: colors.inkMuted }]}>
+              {streak === 1 ? 'day' : 'days'} streak
+            </Text>
+          </View>
+        </View>
+      )}
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.endButton} onPress={handleEndTask}>
-          <Text style={styles.endButtonText}>End Task</Text>
+      <View style={[styles.buttonArea, { paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.safeAreaBottom }]}>
+        <TouchableOpacity
+          style={[
+            styles.endButton,
+            { backgroundColor: colors.ectoGreen, borderBottomWidth: 3, borderBottomColor: colors.eelDarkBlue, borderRadius: radius.md },
+          ]}
+          activeOpacity={0.8}
+          onPress={handleEndTask}
+        >
+          <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>End Task</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.switchButton} onPress={handleSwitchTask}>
-          <Text style={styles.switchButtonText}>Switch Task</Text>
+        <TouchableOpacity
+          style={[
+            styles.switchButton,
+            { backgroundColor: colors.paperCard, borderRadius: radius.md, borderWidth: 2, borderColor: colors.paperBorder },
+          ]}
+          activeOpacity={0.8}
+          onPress={handleSwitchTask}
+        >
+          <Text style={[typography.label, { color: colors.inkSecondary, textAlign: 'center' }]}>Switch Task</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -105,77 +130,32 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
-  header: {
-    paddingTop: 60,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-  },
-  taskName: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#000437',
-  },
-  appName: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 4,
-  },
+  header: {},
   timerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  timer: {
-    fontSize: 64,
-    fontWeight: '700',
-    color: '#58cc02',
-  },
-  timerLabel: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 8,
-  },
   streakContainer: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: spacing.xxxl,
   },
-  streak: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000437',
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.full,
   },
-  buttonContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
+  buttonArea: {
+    gap: spacing.md,
   },
   endButton: {
-    backgroundColor: '#58cc02',
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderBottomWidth: 4,
-    borderBottomColor: '#042c60',
-    marginBottom: 12,
-  },
-  endButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000437',
-    textAlign: 'center',
+    paddingVertical: spacing.lg,
   },
   switchButton: {
-    backgroundColor: 'white',
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-  },
-  switchButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000437',
-    textAlign: 'center',
+    paddingVertical: spacing.lg,
   },
 });
