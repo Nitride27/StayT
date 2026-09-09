@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
@@ -23,6 +23,8 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const [elapsed, setElapsed] = useState(0);
   const [streak, setStreak] = useState(task.streak);
+  const [serviceAlive, setServiceAlive] = useState(true);
+  const checkRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const startTime = session.startedAt;
@@ -32,6 +34,14 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 
     return () => clearInterval(timer);
   }, [session.startedAt]);
+
+  useEffect(() => {
+    checkRef.current = setInterval(async () => {
+      const enabled = await AppBlocker.isAccessibilityServiceEnabled();
+      setServiceAlive(enabled);
+    }, 5000);
+    return () => { if (checkRef.current) clearInterval(checkRef.current); };
+  }, []);
 
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -100,6 +110,22 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {!serviceAlive && (
+        <View style={[styles.warningBanner, { backgroundColor: colors.fireDark || colors.paperCard, marginHorizontal: layout.screenPaddingH }]}>
+          <Text style={[typography.bodyMedium, { color: colors.midnight || colors.ink, textAlign: 'center', fontWeight: '600' }]}>⚠️ Blocking paused</Text>
+          <Text style={[typography.caption, { color: colors.midnight || colors.ink, textAlign: 'center', marginTop: spacing.xs }]}>
+            Accessibility service was disabled. Apps are no longer blocked.
+          </Text>
+          <TouchableOpacity
+            style={[styles.warningButton, { backgroundColor: colors.ectoGreen, borderRadius: radius.md }]}
+            activeOpacity={0.8}
+            onPress={() => AppBlocker.openAccessibilitySettings()}
+          >
+            <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>Re-enable Service</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={[styles.buttonArea, { paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.safeAreaBottom }]}>
         <TouchableOpacity
           style={[
@@ -148,6 +174,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderRadius: radius.full,
+  },
+  warningBanner: {
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    marginBottom: spacing.xl,
+  },
+  warningButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
   },
   buttonArea: {
     gap: spacing.md,

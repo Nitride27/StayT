@@ -32,13 +32,10 @@ export default function TaskPickerScreen({ navigation }: Props) {
     setStreak(currentStreak);
   };
 
-  const handleNewTask = () => {
-    if (tasks.length >= 1) {
-      Alert.alert(
-        'Free Version',
-        'Upgrade to Pro to create unlimited tasks',
-        [{ text: 'OK' }]
-      );
+  const handleNewTask = async () => {
+    const prefs = await store.getPreferences();
+    if (!prefs.isSubscribed && tasks.length >= prefs.freeTaskLimit) {
+      navigation.navigate('Paywall');
       return;
     }
     navigation.navigate('TaskSetup', {});
