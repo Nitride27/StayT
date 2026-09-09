@@ -50,25 +50,27 @@ export const darkColors = {
   permissionBannerText: '#ffc107',
 } as const;
 
+export type Colors = typeof colors;
+
 export const typography = {
   // Display — streak numbers, big counters
   display: {
     fontSize: 40,
     fontWeight: '900' as const,
-    letterSpacing: '-0.02em',
+    letterSpacing: -0.8,
     lineHeight: 48,
   },
   // Heading — screen titles
   h1: {
     fontSize: 28,
     fontWeight: '700' as const,
-    letterSpacing: '-0.01em',
+    letterSpacing: -0.28,
     lineHeight: 34,
   },
   h2: {
     fontSize: 22,
     fontWeight: '700' as const,
-    letterSpacing: '-0.01em',
+    letterSpacing: -0.22,
     lineHeight: 28,
   },
   // Body
@@ -108,7 +110,7 @@ export const typography = {
   timer: {
     fontSize: 64,
     fontWeight: '700' as const,
-    letterSpacing: '-0.03em',
+    letterSpacing: -1.92,
     lineHeight: 72,
   },
 } as const;
@@ -175,7 +177,7 @@ export const gamification = {
     numberFont: {
       fontSize: 48,
       fontWeight: '900' as const,
-      letterSpacing: '-0.02em',
+      letterSpacing: -0.96,
     },
     fireSize: 32,
   },

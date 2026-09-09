@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Linking, Platform } from 'react-native';
+import * as Device from 'expo-device';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout } from '../theme/tokens';
+import { store } from '../storage/store';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PermissionSetup'>;
@@ -46,6 +48,19 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   };
 
   const allGranted = permissions.accessibility;
+
+  const isOemDevice = Platform.OS === 'android' && 
+    ['xiaomi', 'samsung', 'oppo', 'realme', 'vivo', 'oneplus'].includes(
+      (Device.manufacturer || '').toLowerCase()
+    );
+
+  const handleContinue = async () => {
+    const prefs = await store.getPreferences();
+    if (!prefs.hasOnboarded) {
+      await store.savePreferences({ ...prefs, hasOnboarded: true });
+    }
+    navigation.navigate('TaskPicker');
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.paper }]}>
@@ -100,14 +115,38 @@ export default function PermissionSetupScreen({ navigation }: Props) {
           )}
         </View>
 
-        {/* HyperOS Note */}
+        {/* HyperOS/MIUI Note */}
         {Platform.OS === 'android' && (
           <View style={[styles.noteCard, { backgroundColor: colors.permissionBanner, borderRadius: radius.md }]}>
-            <Text style={[typography.body, { color: colors.permissionBannerText }]}>
-              HyperOS/MIUI: Go to Additional settings → Accessibility → Downloaded apps → StayT → Enable
+            <Text style={[typography.bodyMedium, { color: colors.permissionBannerText }]}>
+              HyperOS/MIUI Note
+            </Text>
+            <Text style={[typography.body, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
+              Go to Additional settings → Accessibility → Downloaded apps → StayT → Enable
+            </Text>
+            <Text style={[typography.caption, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
+              If blocked: long-press StayT app icon → App info → ⋮ → Allow restricted settings
             </Text>
           </View>
         )}
+
+        {/* OEM Battery Warning */}
+        <View style={[styles.noteCard, { backgroundColor: colors.permissionBanner, borderRadius: radius.md }]}>
+          <Text style={[typography.bodyMedium, { color: colors.permissionBannerText }]}>
+            Battery Optimization
+          </Text>
+          <Text style={[typography.body, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
+            To keep StayT running in the background, disable battery optimization:
+          </Text>
+          <Text style={[typography.caption, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
+            Settings → Apps → StayT → Battery → Unrestricted
+          </Text>
+          {isOemDevice && (
+            <Text style={[typography.caption, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
+              Also check: Settings → Battery → Background restrictions → Ensure StayT is not restricted
+            </Text>
+          )}
+        </View>
 
         {/* Info */}
         <View style={[styles.infoCard, { backgroundColor: colors.paperCard, borderRadius: radius.md }]}>
@@ -131,7 +170,7 @@ export default function PermissionSetupScreen({ navigation }: Props) {
             }
           ]}
           activeOpacity={0.8}
-          onPress={() => navigation.navigate('TaskPicker')}
+          onPress={handleContinue}
           disabled={!allGranted && !checking}
         >
           <Text style={[

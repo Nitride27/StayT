@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import TaskPickerScreen from './src/screens/TaskPickerScreen';
 import TaskSetupScreen from './src/screens/TaskSetupScreen';
 import ActiveSessionScreen from './src/screens/ActiveSessionScreen';
@@ -11,26 +12,76 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import PermissionSetupScreen from './src/screens/PermissionSetupScreen';
 import { store } from './src/storage/store';
 import { Task, Session } from './src/types';
+import AppBlocker from './src/native/AppBlocker';
+import { colors } from './src/theme/tokens';
 
 export type RootStackParamList = {
+  Welcome: undefined;
+  PermissionSetup: undefined;
   TaskPicker: undefined;
   TaskSetup: { task?: Task };
   ActiveSession: { task: Task; session: Session };
   BlockedInterstitial: { packageName: string; taskId: string };
   History: undefined;
-  PermissionSetup: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function AppNavigator() {
   const { isDark } = useTheme();
+  const [loading, setLoading] = useState(true);
+  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Welcome');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const prefs = await store.getPreferences();
+
+        if (!prefs.hasOnboarded) {
+          setInitialRoute('Welcome');
+        } else {
+          const accessGranted = await AppBlocker.isAccessibilityServiceEnabled();
+          if (!accessGranted) {
+            setInitialRoute('PermissionSetup');
+          } else {
+            setInitialRoute('TaskPicker');
+          }
+        }
+
+        if (!prefs.hasOnboarded) {
+          await store.seedPresetTasks();
+        }
+      } catch {
+        setInitialRoute('Welcome');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? colors.midnight : colors.paper }}>
+        <ActivityIndicator size="large" color={colors.ectoGreen} />
+      </View>
+    );
+  }
 
   return (
     <>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <NavigationContainer>
-        <Stack.Navigator initialRouteName="TaskPicker">
+        <Stack.Navigator initialRouteName={initialRoute}>
+          <Stack.Screen
+            name="Welcome"
+            component={WelcomeScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="PermissionSetup"
+            component={PermissionSetupScreen}
+            options={{ headerShown: false }}
+          />
           <Stack.Screen
             name="TaskPicker"
             component={TaskPickerScreen}
@@ -54,11 +105,6 @@ function AppNavigator() {
           <Stack.Screen
             name="History"
             component={HistoryScreen}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="PermissionSetup"
-            component={PermissionSetupScreen}
             options={{ headerShown: false }}
           />
         </Stack.Navigator>

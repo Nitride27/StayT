@@ -29,4 +29,5 @@ export interface UserPreferences {
   notificationsEnabled: boolean;
   hapticFeedback: boolean;
   freeTaskLimit: number;
+  hasOnboarded: boolean;
 }

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
-import { colors, darkColors } from './tokens';
+import { colors, darkColors, Colors } from './tokens';
 import { store } from '../storage/store';
 
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -8,7 +8,7 @@ type ThemeMode = 'light' | 'dark' | 'system';
 interface ThemeContextValue {
   mode: ThemeMode;
   isDark: boolean;
-  colors: typeof colors;
+  colors: Colors;
   setMode: (mode: ThemeMode) => void;
 }
 
@@ -56,7 +56,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       value={{
         mode,
         isDark,
-        colors: isDark ? { ...colors, ...darkColors } : colors,
+        colors: isDark ? ({ ...colors, ...darkColors } as unknown as Colors) : colors,
         setMode,
       }}
     >

@@ -41,7 +41,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
       );
       return;
     }
-    navigation.navigate('TaskSetup');
+    navigation.navigate('TaskSetup', {});
   };
 
   const handleTaskPress = async (task: Task) => {

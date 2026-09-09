@@ -174,6 +174,11 @@ const styles = StyleSheet.create({
   sessionRight: {
     marginLeft: spacing.md,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',

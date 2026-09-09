@@ -60,11 +60,56 @@ export const store = {
       notificationsEnabled: true,
       hapticFeedback: true,
       freeTaskLimit: 1,
+      hasOnboarded: false,
     };
   },
 
   async savePreferences(prefs: UserPreferences): Promise<void> {
     await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
+  },
+
+  // Preset tasks for first launch
+  async seedPresetTasks(): Promise<void> {
+    const tasks = await this.getTasks();
+    if (tasks.length > 0) return;
+
+    const presets: Task[] = [
+      {
+        id: 'preset-deep-work',
+        name: 'Deep Work',
+        packageName: 'com.instagram.android',
+        appName: 'Instagram',
+        createdAt: Date.now(),
+        lastUsed: 0,
+        useCount: 0,
+        isActive: true,
+        streak: 0,
+      },
+      {
+        id: 'preset-writing',
+        name: 'Writing',
+        packageName: 'com.twitter.android',
+        appName: 'X (Twitter)',
+        createdAt: Date.now(),
+        lastUsed: 0,
+        useCount: 0,
+        isActive: true,
+        streak: 0,
+      },
+      {
+        id: 'preset-studying',
+        name: 'Studying',
+        packageName: 'com.google.android.youtube',
+        appName: 'YouTube',
+        createdAt: Date.now(),
+        lastUsed: 0,
+        useCount: 0,
+        isActive: true,
+        streak: 0,
+      },
+    ];
+
+    await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(presets));
   },
 
   // Blocked Attempts
