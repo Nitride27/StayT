@@ -1,0 +1,4 @@
+<resources>
+  <string name="app_name">stayt-app</string>
+  <string name="accessibility_service_description">StayT uses this service to detect when you open a blocked app and redirect you back to your task. No data is collected or transmitted.</string>
+</resources>
