@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Platform } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, TextInput, Platform } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -14,6 +14,7 @@ import { store } from '../storage/store';
 import { Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 
 type InstalledApp = { packageName: string; appName: string };
@@ -167,9 +168,12 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               />
               <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
                 {filteredApps.length === 0 ? (
-                  <Text style={[typography.caption, { color: colors.inkMuted, paddingVertical: spacing.md, textAlign: 'center' }]}>
-                    No apps found
-                  </Text>
+                  <View style={styles.noAppsFound}>
+                    <Image source={mascotSource('thinking', isDark)} style={styles.noAppsImage} resizeMode="contain" />
+                    <Text style={[typography.caption, { color: colors.inkMuted, paddingVertical: spacing.md, textAlign: 'center' }]}>
+                      No apps found
+                    </Text>
+                  </View>
                 ) : (
                   filteredApps.map((app) => (
                     <TouchableOpacity
@@ -266,6 +270,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  noAppsFound: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  noAppsImage: {
+    width: 64,
+    height: 64,
   },
   bottomSection: {
     paddingTop: spacing.lg,

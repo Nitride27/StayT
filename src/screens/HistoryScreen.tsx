@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -13,6 +13,7 @@ import { store } from '../storage/store';
 import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { mascotSource } from '../theme/mascot';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'History'>;
@@ -159,6 +160,7 @@ export default function HistoryScreen({ navigation }: Props) {
       <Animated.View style={[styles.listSection, listAnimStyle]}>
         {sessions.length === 0 ? (
           <View style={styles.emptyState}>
+            <Image source={mascotSource('peeking', isDark)} style={styles.emptyImage} resizeMode="contain" />
             <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center' }]}>
               No sessions yet. Start your first focus session!
             </Text>
@@ -235,5 +237,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: spacing.xxxl,
+  },
+  emptyImage: {
+    width: 96,
+    height: 96,
+    marginBottom: spacing.lg,
   },
 });
