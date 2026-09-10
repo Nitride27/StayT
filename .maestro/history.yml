@@ -1,0 +1,9 @@
+appId: com.nitridee.staytapp
+---
+# Precondition: at least one session exists (see session.yml).
+- launchApp:
+    clearState: false
+- assertVisible: "Tasks"
+- tapOn: "History"
+- assertVisible: "History"
+- assertVisible: "Focus Time"

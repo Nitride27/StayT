@@ -1,0 +1,16 @@
+appId: com.nitridee.staytapp
+---
+# Precondition: permissions granted once manually (see onboarding.yml).
+# Uses the manual package-name override so no system app list is needed.
+- launchApp:
+    clearState: false
+- assertVisible: "Tasks"
+- tapOn: "Add New Task"
+- assertVisible: "New Task"
+- tapOn: "e.g., Morning Focus"
+- inputText: "Maestro Test"
+- tapOn: "e.g., com.instagram.android"
+- inputText: "com.spotify.music"
+- tapOn: "Create Task"
+- assertVisible: "Tasks"
+- assertVisible: "Maestro Test"

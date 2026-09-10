@@ -1,0 +1,12 @@
+appId: com.nitridee.staytapp
+---
+# Precondition: "Maestro Test" task exists (see task-create.yml).
+# The live timer text changes every second, so assert stable elements only.
+- launchApp:
+    clearState: false
+- assertVisible: "Tasks"
+- tapOn: "Maestro Test"
+- assertVisible: "Focusing on"
+- assertVisible: "End Session"
+- tapOn: "End Session"
+- assertVisible: "Tasks"

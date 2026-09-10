@@ -1,0 +1,10 @@
+appId: com.nitridee.staytapp
+---
+# Fresh-install onboarding: Welcome -> PermissionSetup.
+# System permission grants (accessibility toggle, notification dialog)
+# are manual and intentionally out of scope for automation.
+- launchApp:
+    clearState: true
+- assertVisible: "Stay focused."
+- tapOn: "Get Started"
+- assertVisible: "Grant Permissions"

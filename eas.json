@@ -10,6 +10,12 @@
     "preview": {
       "distribution": "internal"
     },
+    "e2e-test": {
+      "withoutCredentials": true,
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {}
   }
 }
