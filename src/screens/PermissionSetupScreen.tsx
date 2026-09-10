@@ -1,194 +1,191 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Platform } from 'react-native';
-import * as Device from 'expo-device';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+  Easing,
+} from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, layout } from '../theme/tokens';
-import { store } from '../storage/store';
+import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import AppBlocker from '../native/AppBlocker';
+import { Platform } from 'react-native';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PermissionSetup'>;
 };
 
-type PermissionStatus = {
-  accessibility: boolean;
-};
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+function getOEMWarning(): string | null {
+  if (Platform.OS !== 'android') return null;
+  const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
+  const manufacturer = (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
+  if (manufacturer.includes('xiaomi') || model.includes('xiaomi')) return 'Xiaomi: Settings > Apps > Manage apps > StayT > Autostart';
+  if (manufacturer.includes('samsung') || model.includes('samsung')) return 'Samsung: Settings > Battery > StayT > Allow background activity';
+  if (manufacturer.includes('huawei') || model.includes('huawei')) return 'Huawei: Settings > Battery > App launch > StayT > Manage manually';
+  return null;
+}
 
 export default function PermissionSetupScreen({ navigation }: Props) {
-  const { colors } = useTheme();
-  const [permissions, setPermissions] = useState<PermissionStatus>({
-    accessibility: false,
-  });
-  const [checking, setChecking] = useState(true);
+  const { isDark } = useTheme();
+  const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
+  const oemWarning = getOEMWarning();
+
+  // Entry animations
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(20);
+  const card1Opacity = useSharedValue(0);
+  const card1TranslateY = useSharedValue(20);
+  const card2Opacity = useSharedValue(0);
+  const card2TranslateY = useSharedValue(20);
+  const oemOpacity = useSharedValue(0);
+  const oemTranslateY = useSharedValue(20);
+  const buttonOpacity = useSharedValue(0);
+  const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    checkPermissions();
-    const interval = setInterval(checkPermissions, 1500);
-    return () => clearInterval(interval);
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    card1Opacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    card1TranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    card2Opacity.value = withDelay(350, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    card2TranslateY.value = withDelay(350, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    oemOpacity.value = withDelay(450, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    oemTranslateY.value = withDelay(450, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    buttonOpacity.value = withDelay(550, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
   }, []);
 
-  const checkPermissions = async () => {
+  // Re-check when screen is focused
+  useEffect(() => {
+    const check = async () => {
+      const enabled = await AppBlocker.isAccessibilityServiceEnabled();
+      setAccessibilityEnabled(enabled);
+    };
+    check();
+  }, []);
+
+  const headerAnimStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const card1AnimStyle = useAnimatedStyle(() => ({
+    opacity: card1Opacity.value,
+    transform: [{ translateY: card1TranslateY.value }],
+  }));
+
+  const card2AnimStyle = useAnimatedStyle(() => ({
+    opacity: card2Opacity.value,
+    transform: [{ translateY: card2TranslateY.value }],
+  }));
+
+  const oemAnimStyle = useAnimatedStyle(() => ({
+    opacity: oemOpacity.value,
+    transform: [{ translateY: oemTranslateY.value }],
+  }));
+
+  const buttonAnimStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const handleGrantAccessibility = async () => {
     try {
-      const accessGranted = await AppBlocker.isAccessibilityServiceEnabled();
-      setPermissions({ accessibility: accessGranted });
-    } catch {}
-    setChecking(false);
-  };
-
-  const openAccessibilitySettings = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        await Linking.openSettings();
-      } catch {
-        await Linking.openURL('package:com.nitridee.staytapp');
-      }
+      await AppBlocker.openAccessibilitySettings();
+    } catch {
+      Alert.alert('Error', 'Could not open accessibility settings.');
     }
   };
 
-  const allGranted = permissions.accessibility;
+  const handlePressIn = () => {
+    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+  };
 
-  const manufacturer = (Device.manufacturer || '').toLowerCase();
-  const isXiaomi = Platform.OS === 'android' && ['xiaomi', 'poco', 'redmi'].includes(manufacturer);
-  const isSamsung = Platform.OS === 'android' && manufacturer === 'samsung';
-  const isOemDevice = isXiaomi || isSamsung || 
-    ['oppo', 'realme', 'vivo', 'oneplus'].includes(manufacturer);
-
-  const handleContinue = async () => {
-    const prefs = await store.getPreferences();
-    if (!prefs.hasOnboarded) {
-      await store.savePreferences({ ...prefs, hasOnboarded: true });
-    }
-    navigation.navigate('TaskPicker');
+  const handlePressOut = () => {
+    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.paper }]}>
-      <View style={[styles.header, { paddingTop: layout.headerPaddingTop, paddingHorizontal: layout.screenPaddingH, paddingBottom: spacing.xl }]}>
-        <Text style={[typography.h1, { color: colors.ink }]}>Permissions</Text>
-        <Text style={[typography.body, { color: colors.inkMuted, marginTop: spacing.sm }]}>
-          StayT needs these permissions to block distracting apps
-        </Text>
-      </View>
+    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+      <View style={styles.topSection}>
+        <Animated.View style={[styles.header, headerAnimStyle]}>
+          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
+            Grant Permissions
+          </Text>
+          <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.md }]}>
+            StayT needs a few permissions to work properly
+          </Text>
+        </Animated.View>
 
-      <View style={[styles.content, { paddingHorizontal: layout.screenPaddingH }]}>
-        {/* Accessibility Service */}
-        <View style={[styles.permissionCard, { backgroundColor: colors.paperCard, borderRadius: radius.md }]}>
-          <View style={styles.permissionRow}>
-            <View style={styles.permissionLeft}>
-              <Text style={[typography.bodyMedium, { color: colors.ink }]}>Accessibility Service</Text>
-              <Text style={[typography.caption, { color: colors.inkMuted, marginTop: spacing.xs }]}>
-                Detects when blocked apps are opened
+        <View style={styles.cards}>
+          <Animated.View style={[styles.permissionCard, card1AnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.statusDot, accessibilityEnabled && styles.statusDotActive]} />
+              <Text style={[typography.bodyBold, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
+                Accessibility Service
               </Text>
             </View>
-            <View style={[
-              styles.statusBadge,
-              {
-                backgroundColor: permissions.accessibility ? colors.ectoGreen : colors.paperBorder,
-                borderRadius: radius.full,
-              }
-            ]}>
-              <Text style={[typography.caption, { color: permissions.accessibility ? colors.midnight : colors.inkMuted }]}>
-                {permissions.accessibility ? 'Active' : 'Needed'}
-              </Text>
-            </View>
-          </View>
-
-          {!permissions.accessibility && (
+            <Text style={[typography.body, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: spacing.xs }]}>
+              Allows StayT to detect and block distracting apps
+            </Text>
             <TouchableOpacity
-              style={[
-                styles.actionButton,
-                {
-                  backgroundColor: colors.ectoGreen,
-                  borderBottomWidth: 3,
-                  borderBottomColor: colors.eelDarkBlue,
-                  borderRadius: radius.md,
-                }
-              ]}
+              style={[styles.grantButton, accessibilityEnabled && styles.grantButtonDone]}
               activeOpacity={0.8}
-              onPress={openAccessibilitySettings}
+              onPress={handleGrantAccessibility}
+              disabled={accessibilityEnabled}
             >
-              <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
-                Enable Accessibility
+              <Text style={[typography.label, { color: accessibilityEnabled ? colors.ectoGreen : colors.midnight, textAlign: 'center' }]}>
+                {accessibilityEnabled ? 'Enabled' : 'Grant Access'}
               </Text>
             </TouchableOpacity>
-          )}
+          </Animated.View>
+
+          <Animated.View style={[styles.permissionCard, card2AnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+            <View style={styles.cardHeader}>
+              <View style={styles.statusDot} />
+              <Text style={[typography.bodyBold, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
+                Overlay Permission
+              </Text>
+            </View>
+            <Text style={[typography.body, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: spacing.xs }]}>
+              Required for the blocked app screen overlay
+            </Text>
+          </Animated.View>
         </View>
 
-        {/* OEM-specific accessibility note */}
-        {isOemDevice && (
-          <View style={[styles.noteCard, { backgroundColor: colors.permissionBanner, borderRadius: radius.md }]}>
-            <Text style={[typography.bodyMedium, { color: colors.permissionBannerText }]}>
-              {isSamsung ? 'Samsung Note' : 'HyperOS/MIUI Note'}
+        {oemWarning && (
+          <Animated.View style={[styles.oemWarning, oemAnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+            <Text style={[typography.caption, { color: colors.fire, marginBottom: spacing.xs, fontWeight: '600' }]}>
+              Device-specific setting
             </Text>
-            <Text style={[typography.body, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
-              {isSamsung
-                ? 'Go to Settings → Accessibility → Installed apps → StayT → Enable'
-                : 'Go to Additional settings → Accessibility → Downloaded apps → StayT → Enable'}
+            <Text style={[typography.body, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>
+              {oemWarning}
             </Text>
-            <Text style={[typography.caption, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
-              {isSamsung
-                ? 'If not listed: Settings → Apps → StayT → Permissions → Allow all permissions'
-                : 'If blocked: long-press StayT app icon → App info → ⋮ → Allow restricted settings'}
-            </Text>
-          </View>
+          </Animated.View>
         )}
-
-        {/* OEM Battery Warning */}
-        <View style={[styles.noteCard, { backgroundColor: colors.permissionBanner, borderRadius: radius.md }]}>
-          <Text style={[typography.bodyMedium, { color: colors.permissionBannerText }]}>
-            Battery Optimization
-          </Text>
-          <Text style={[typography.body, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
-            To keep StayT running in the background, disable battery optimization:
-          </Text>
-          <Text style={[typography.caption, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
-            Settings → Apps → StayT → Battery → Unrestricted
-          </Text>
-          {isOemDevice && (
-            <Text style={[typography.caption, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
-              Also check: Settings → Battery → Background restrictions → Ensure StayT is not restricted
-            </Text>
-          )}
-        </View>
-
-        {/* Info */}
-        <View style={[styles.infoCard, { backgroundColor: colors.paperCard, borderRadius: radius.md }]}>
-          <Text style={[typography.bodyMedium, { color: colors.ink }]}>How it works</Text>
-          <Text style={[typography.body, { color: colors.inkSecondary, marginTop: spacing.sm }]}>
-            StayT uses the accessibility service to detect when you try to open a blocked app. It then shows a quick redirect screen to help you stay focused. No data is collected or transmitted.
-          </Text>
-        </View>
       </View>
 
-      {/* Continue Button */}
-      <View style={[styles.footer, { paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.safeAreaBottom }]}>
-        <TouchableOpacity
-          style={[
-            styles.continueButton,
-            {
-              backgroundColor: allGranted ? colors.ectoGreen : colors.paperBorder,
-              borderBottomWidth: allGranted ? 3 : 0,
-              borderBottomColor: allGranted ? colors.eelDarkBlue : 'transparent',
-              borderRadius: radius.md,
-            }
-          ]}
-          activeOpacity={0.8}
-          onPress={handleContinue}
-          disabled={!allGranted && !checking}
+      <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+        <AnimatedTouchable
+          style={[styles.primaryButton, { opacity: accessibilityEnabled ? 1 : 0.5 }]}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('TaskPicker')}
+          disabled={!accessibilityEnabled}
+          onPressIn={accessibilityEnabled ? handlePressIn : undefined}
+          onPressOut={accessibilityEnabled ? handlePressOut : undefined}
         >
-          <Text style={[
-            typography.label,
-            {
-              color: allGranted ? colors.midnight : colors.inkMuted,
-              textAlign: 'center',
-            }
-          ]}>
-            {checking ? 'Checking...' : allGranted ? 'Continue' : 'Enable to continue'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={styles.primaryButtonText}>Continue</Text>
+        </AnimatedTouchable>
+      </Animated.View>
     </View>
   );
 }
@@ -196,40 +193,73 @@ export default function PermissionSetupScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: layout.screenPaddingH,
+    paddingTop: layout.headerPaddingTop,
+    paddingBottom: layout.safeAreaBottom,
   },
-  header: {},
-  content: {
+  topSection: {
     flex: 1,
+    justifyContent: 'center',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: spacing.xxxl,
+  },
+  cards: {
     gap: spacing.lg,
   },
   permissionCard: {
     padding: spacing.lg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
   },
-  permissionRow: {
+  cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.inkMuted,
+  },
+  statusDotActive: {
+    backgroundColor: colors.ectoGreen,
+  },
+  grantButton: {
+    marginTop: spacing.md,
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.eelDarkBlue,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.md,
     alignItems: 'center',
   },
-  permissionLeft: {
-    flex: 1,
+  grantButtonDone: {
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
   },
-  statusBadge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginLeft: spacing.md,
-  },
-  actionButton: {
+  oemWarning: {
     marginTop: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  noteCard: {
     padding: spacing.lg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
   },
-  infoCard: {
-    padding: spacing.lg,
+  bottomSection: {
+    paddingBottom: spacing.xl,
   },
-  footer: {},
-  continueButton: {
+  primaryButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.eelDarkBlue,
+    borderRadius: radius.md,
     paddingVertical: spacing.lg,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    ...typography.label,
+    color: colors.midnight,
+    textAlign: 'center',
   },
 });

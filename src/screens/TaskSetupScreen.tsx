@@ -1,167 +1,152 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+  Easing,
+} from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task } from '../types';
-import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
-import { colors, typography, spacing, radius, buttons, shadows, layout } from '../theme/tokens';
+import { typography, spacing, radius, layout, colors } from '../theme/tokens';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TaskSetup'>;
+  route: { params: { task?: Task } };
 };
 
-export default function TaskSetupScreen({ navigation }: Props) {
-  const { colors: themeColors } = useTheme();
-  const [taskName, setTaskName] = useState('');
-  const [selectedApp, setSelectedApp] = useState<{ packageName: string; appName: string } | null>(null);
-  const [installedApps, setInstalledApps] = useState<{ packageName: string; appName: string }[]>([]);
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+export default function TaskSetupScreen({ navigation, route }: Props) {
+  const { isDark } = useTheme();
+  const existingTask = route.params?.task;
+  const [taskName, setTaskName] = useState(existingTask?.name || '');
+  const [packageName, setPackageName] = useState(existingTask?.packageName || '');
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [pressedButton, setPressedButton] = useState<string | null>(null);
-  const [paywallBlocked, setPaywallBlocked] = useState(false);
+
+  // Entry animations
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(20);
+  const formOpacity = useSharedValue(0);
+  const formTranslateY = useSharedValue(20);
+  const buttonOpacity = useSharedValue(0);
+  const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    checkPaywall();
-    loadInstalledApps();
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    formOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    formTranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    buttonOpacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
   }, []);
 
-  const checkPaywall = async () => {
-    const prefs = await store.getPreferences();
-    if (!prefs.isSubscribed) {
-      const tasks = await store.getTasks();
-      if (tasks.length >= prefs.freeTaskLimit) {
-        setPaywallBlocked(true);
-        navigation.navigate('Paywall');
-      }
-    }
-  };
-
-  const loadInstalledApps = async () => {
-    const apps = await AppBlocker.getInstalledApps();
-    const filteredApps = apps.filter(app =>
-      !app.packageName.startsWith('com.android') &&
-      !app.packageName.startsWith('com.google.android') &&
-      app.packageName !== 'com.nitridee.staytapp'
-    );
-    setInstalledApps(filteredApps);
-    setLoading(false);
-  };
-
-  const filteredApps = installedApps.filter(app =>
-    app.appName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.packageName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const handleSave = async () => {
-    if (!taskName.trim()) {
-      Alert.alert('Error', 'Please enter a task name');
-      return;
-    }
-    if (!selectedApp) {
-      Alert.alert('Error', 'Please select an app to block');
-      return;
-    }
+    if (!taskName.trim() || !packageName.trim()) return;
 
-    const newTask: Task = {
-      id: Date.now().toString(),
-      name: taskName.trim(),
-      packageName: selectedApp.packageName,
-      appName: selectedApp.appName,
-      createdAt: Date.now(),
-      lastUsed: 0,
-      useCount: 0,
-      isActive: false,
-      streak: 0,
-    };
-
-    await store.saveTask(newTask);
+    if (existingTask) {
+      await store.saveTask({ ...existingTask, name: taskName.trim(), packageName: packageName.trim() });
+    } else {
+      await store.saveTask({
+        id: `task-${Date.now()}`,
+        name: taskName.trim(),
+        packageName: packageName.trim(),
+        appName: packageName.trim(),
+        createdAt: Date.now(),
+        lastUsed: 0,
+        useCount: 0,
+        isActive: true,
+        streak: 0,
+      });
+    }
     navigation.goBack();
   };
 
+  const headerAnimStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const formAnimStyle = useAnimatedStyle(() => ({
+    opacity: formOpacity.value,
+    transform: [{ translateY: formTranslateY.value }],
+  }));
+
+  const buttonAnimStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const handlePressIn = () => {
+    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePressOut = () => {
+    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.paper }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
-          <Text style={[styles.backButton, { color: colors.ectoGreen }]}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: themeColors.ink }]}>New Task</Text>
-      </View>
+    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+      <Animated.View style={[styles.header, headerAnimStyle]}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
+            <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
+            {existingTask ? 'Edit Task' : 'New Task'}
+          </Text>
+          <View style={{ width: 50 }} />
+        </View>
+      </Animated.View>
 
-      <View style={styles.form}>
-        <Text style={[styles.label, { color: themeColors.inkSecondary }]}>Task Name</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: themeColors.paperCard, borderColor: themeColors.paperBorder, color: themeColors.ink }]}
-          value={taskName}
-          onChangeText={setTaskName}
-          placeholder="e.g., Focus Work"
-          placeholderTextColor={themeColors.inkFaint}
-        />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <Animated.View style={[styles.form, formAnimStyle]}>
+          <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, marginBottom: spacing.md }]}>
+            Task Name
+          </Text>
+          <TextInput
+            style={[styles.input, { color: isDark ? '#f5f5f5' : colors.midnight, backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}
+            placeholder="e.g., Morning Focus"
+            placeholderTextColor={colors.inkMuted}
+            value={taskName}
+            onChangeText={setTaskName}
+          />
 
-        <Text style={[styles.label, { color: themeColors.inkSecondary }]}>App to Block</Text>
-        <TextInput
-          style={[styles.searchInput, { backgroundColor: themeColors.paperCard, borderColor: themeColors.paperBorder, color: themeColors.ink }]}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search apps..."
-          placeholderTextColor={themeColors.inkFaint}
-        />
+          <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, marginTop: spacing.xl, marginBottom: spacing.md }]}>
+            App Package Name
+          </Text>
+          <TextInput
+            style={[styles.input, { color: isDark ? '#f5f5f5' : colors.midnight, backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}
+            placeholder="e.g., com.instagram.android"
+            placeholderTextColor={colors.inkMuted}
+            value={packageName}
+            onChangeText={setPackageName}
+          />
 
-        {loading ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={colors.ectoGreen} />
-            <Text style={[styles.loadingText, { color: themeColors.inkMuted }]}>Loading apps...</Text>
-          </View>
-        ) : (
-          <ScrollView style={styles.appList} contentContainerStyle={styles.appListContent}>
-            {filteredApps.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: themeColors.inkMuted }]}>
-                  {searchQuery ? 'No apps match your search' : 'No apps found'}
-                </Text>
-              </View>
-            ) : (
-              filteredApps.map((app) => {
-                const isSelected = selectedApp?.packageName === app.packageName;
-                return (
-                  <TouchableOpacity
-                    key={app.packageName}
-                    style={[
-                      styles.appItem,
-                      {
-                        backgroundColor: isSelected ? colors.ectoGreenLight : themeColors.paperCard,
-                        borderColor: isSelected ? colors.ectoGreen : themeColors.paperBorder,
-                      },
-                    ]}
-                    onPress={() => setSelectedApp(app)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.appInfo}>
-                      <Text style={[styles.appName, { color: isSelected ? colors.eelDarkBlue : themeColors.ink }]}>{app.appName}</Text>
-                      <Text style={[styles.packageName, { color: themeColors.inkMuted }]}>{app.packageName}</Text>
-                    </View>
-                    {isSelected && <Text style={styles.checkmark}>✓</Text>}
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </ScrollView>
-        )}
+          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: spacing.sm }]}>
+            Enter the exact package name of the app you want to block
+          </Text>
+        </Animated.View>
+      </ScrollView>
 
-        <TouchableOpacity
-          style={[
-            styles.saveButton,
-            pressedButton === 'save' ? buttons.primaryPressed : buttons.primary,
-          ]}
+      <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+        <AnimatedTouchable
+          style={[styles.primaryButton, { opacity: taskName.trim() && packageName.trim() ? 1 : 0.5 }]}
+          activeOpacity={0.85}
           onPress={handleSave}
-          onPressIn={() => setPressedButton('save')}
-          onPressOut={() => setPressedButton(null)}
-          activeOpacity={0.9}
+          disabled={!taskName.trim() || !packageName.trim()}
+          onPressIn={taskName.trim() && packageName.trim() ? handlePressIn : undefined}
+          onPressOut={taskName.trim() && packageName.trim() ? handlePressOut : undefined}
         >
-          <Text style={[styles.saveButtonText, { color: colors.eelDarkBlue }]}>Save Task</Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={styles.primaryButtonText}>{existingTask ? 'Save Changes' : 'Create Task'}</Text>
+        </AnimatedTouchable>
+      </Animated.View>
     </View>
   );
 }
@@ -169,94 +154,46 @@ export default function TaskSetupScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: layout.screenPaddingH,
+    paddingTop: layout.headerPaddingTop,
+    paddingBottom: layout.safeAreaBottom,
   },
   header: {
-    paddingTop: layout.headerPaddingTop,
-    paddingHorizontal: layout.screenPaddingH,
-    paddingBottom: layout.headerPaddingBottom,
+    marginBottom: spacing.xl,
   },
-  backButton: {
-    ...typography.bodyBold,
-    marginBottom: spacing.lg,
-  },
-  title: {
-    ...typography.h1,
-  },
-  form: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-  },
-  label: {
-    ...typography.bodyMedium,
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  input: {
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    ...typography.body,
-    borderWidth: 2,
-  },
-  searchInput: {
-    borderRadius: radius.md,
-    padding: spacing.md,
-    ...typography.body,
-    borderWidth: 2,
-  },
-  loadingState: {
-    flex: 1,
-    justifyContent: 'center',
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.xxxl,
   },
-  loadingText: {
-    ...typography.body,
-    marginTop: spacing.lg,
-  },
-  appList: {
+  scroll: {
     flex: 1,
-    marginTop: spacing.md,
   },
-  appListContent: {
+  scrollContent: {
     paddingBottom: spacing.xl,
   },
-  emptyState: {
-    paddingVertical: spacing.xxxl,
-    alignItems: 'center',
-  },
-  emptyText: {
-    ...typography.body,
-  },
-  appItem: {
+  form: {},
+  input: {
+    borderWidth: 1,
     borderRadius: radius.sm,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 2,
-    flexDirection: 'row',
+    padding: spacing.lg,
+    fontSize: typography.body.fontSize,
+  },
+  bottomSection: {
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  primaryButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.eelDarkBlue,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
     alignItems: 'center',
   },
-  appInfo: {
-    flex: 1,
-  },
-  appName: {
-    ...typography.bodyBold,
-  },
-  packageName: {
-    ...typography.caption,
-    marginTop: spacing.xs,
-  },
-  checkmark: {
-    fontSize: 20,
-    color: colors.ectoGreen,
-    fontWeight: '700',
-  },
-  saveButton: {
-    paddingVertical: spacing.lg,
-    marginBottom: spacing.xl,
-    borderRadius: radius.md,
-  },
-  saveButtonText: {
+  primaryButtonText: {
     ...typography.label,
+    color: colors.midnight,
     textAlign: 'center',
   },
 });

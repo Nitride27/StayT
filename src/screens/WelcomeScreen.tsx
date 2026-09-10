@@ -1,5 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+  Easing,
+} from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
@@ -9,69 +17,132 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
 };
 
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
 export default function WelcomeScreen({ navigation }: Props) {
   const { isDark } = useTheme();
+
+  // Entry animations
+  const heroOpacity = useSharedValue(0);
+  const heroTranslateY = useSharedValue(20);
+  const feature1Opacity = useSharedValue(0);
+  const feature1TranslateY = useSharedValue(20);
+  const feature2Opacity = useSharedValue(0);
+  const feature2TranslateY = useSharedValue(20);
+  const feature3Opacity = useSharedValue(0);
+  const feature3TranslateY = useSharedValue(20);
+  const buttonOpacity = useSharedValue(0);
+  const buttonTranslateY = useSharedValue(20);
+  const buttonScale = useSharedValue(1);
+
+  useEffect(() => {
+    heroOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    heroTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    feature1Opacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    feature1TranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    feature2Opacity.value = withDelay(350, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    feature2TranslateY.value = withDelay(350, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    feature3Opacity.value = withDelay(450, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    feature3TranslateY.value = withDelay(450, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    buttonOpacity.value = withDelay(600, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonTranslateY.value = withDelay(600, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+  }, []);
+
+  const heroAnimStyle = useAnimatedStyle(() => ({
+    opacity: heroOpacity.value,
+    transform: [{ translateY: heroTranslateY.value }],
+  }));
+
+  const feature1AnimStyle = useAnimatedStyle(() => ({
+    opacity: feature1Opacity.value,
+    transform: [{ translateY: feature1TranslateY.value }],
+  }));
+
+  const feature2AnimStyle = useAnimatedStyle(() => ({
+    opacity: feature2Opacity.value,
+    transform: [{ translateY: feature2TranslateY.value }],
+  }));
+
+  const feature3AnimStyle = useAnimatedStyle(() => ({
+    opacity: feature3Opacity.value,
+    transform: [{ translateY: feature3TranslateY.value }],
+  }));
+
+  const buttonAnimStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+    transform: [{ translateY: buttonTranslateY.value }, { scale: buttonScale.value }],
+  }));
+
+  const handlePressIn = () => {
+    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePressOut = () => {
+    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
       <View style={styles.topSection}>
-        <View style={styles.heroArea}>
-          <Text style={styles.heroEmoji}>🛡️</Text>
+        <Animated.View style={[styles.heroArea, heroAnimStyle]}>
+          {/* Shield icon — green circle with checkmark */}
+          <View style={[styles.shieldCircle, { backgroundColor: colors.ectoGreen }]}>
+            <Text style={styles.shieldCheck}>✓</Text>
+          </View>
           <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
             Stay focused.
           </Text>
           <Text style={[typography.h1, { color: colors.ectoGreen, textAlign: 'center', marginTop: spacing.xs }]}>
             Stay on track.
           </Text>
-        </View>
+        </Animated.View>
 
         <View style={styles.features}>
-          <FeatureRow
-            icon="🎯"
-            title="Set your focus"
-            desc="Pick one app to block during deep work"
-            dark={isDark}
-          />
-          <FeatureRow
-            icon="🔥"
-            title="Build your streak"
-            desc="Each day you resist builds your streak"
-            dark={isDark}
-          />
-          <FeatureRow
-            icon="⚡"
-            title="Stay in the zone"
-            desc="One-tap redirect keeps you on task"
-            dark={isDark}
-          />
+          <Animated.View style={[styles.featureRow, feature1AnimStyle]}>
+            <View style={[styles.featureDot, { backgroundColor: colors.ectoGreen }]} />
+            <View style={styles.featureText}>
+              <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Set your focus</Text>
+              <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Pick one app to block during deep work</Text>
+            </View>
+          </Animated.View>
+
+          <Animated.View style={[styles.featureRow, feature2AnimStyle]}>
+            <View style={[styles.featureDot, { backgroundColor: colors.fire }]} />
+            <View style={styles.featureText}>
+              <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Build your streak</Text>
+              <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Each day you resist builds your streak</Text>
+            </View>
+          </Animated.View>
+
+          <Animated.View style={[styles.featureRow, feature3AnimStyle]}>
+            <View style={[styles.featureDot, { backgroundColor: colors.macawBlue }]} />
+            <View style={styles.featureText}>
+              <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Stay in the zone</Text>
+              <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>One-tap redirect keeps you on task</Text>
+            </View>
+          </Animated.View>
         </View>
       </View>
 
-      <View style={styles.bottomSection}>
-        <TouchableOpacity
+      <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+        <AnimatedTouchable
           style={styles.primaryButton}
           activeOpacity={0.85}
           onPress={() => navigation.navigate('PermissionSetup')}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
         >
           <Text style={styles.primaryButtonText}>Get Started</Text>
-        </TouchableOpacity>
+        </AnimatedTouchable>
 
-        <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkMuted, textAlign: 'center', marginTop: spacing.md }]}>
+        <Text style={[typography.caption, { color: colors.inkMuted, textAlign: 'center', marginTop: spacing.md }]}>
           Takes 30 seconds to set up
         </Text>
-      </View>
-    </View>
-  );
-}
-
-function FeatureRow({ icon, title, desc, dark }: { icon: string; title: string; desc: string; dark: boolean }) {
-  return (
-    <View style={styles.featureRow}>
-      <Text style={styles.featureIcon}>{icon}</Text>
-      <View style={styles.featureText}>
-        <Text style={[typography.bodyMedium, { color: dark ? '#f5f5f5' : colors.midnight }]}>{title}</Text>
-        <Text style={[typography.caption, { color: dark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>{desc}</Text>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -91,8 +162,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xxxl,
   },
-  heroEmoji: {
-    fontSize: 64,
+  shieldCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shieldCheck: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.midnight,
   },
   features: {
     gap: spacing.xl,
@@ -102,12 +182,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.lg,
   },
-  featureIcon: {
-    fontSize: 28,
-    width: 44,
-    height: 44,
-    textAlign: 'center',
-    lineHeight: 44,
+  featureDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   featureText: {
     flex: 1,

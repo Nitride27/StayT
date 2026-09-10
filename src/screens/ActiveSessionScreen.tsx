@@ -1,154 +1,216 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withSpring,
+  Easing,
+} from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Task, Session } from '../types';
-import AppBlocker from '../native/AppBlocker';
+import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, buttons, gamification, layout } from '../theme/tokens';
+import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
+import AppBlocker from '../native/AppBlocker';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveSession'>;
-  route: {
-    params: {
-      task: Task;
-      session: Session;
-    };
-  };
+  route: { params: { task: Task; session: Session } };
 };
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  if (hrs > 0) return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
 export default function ActiveSessionScreen({ navigation, route }: Props) {
   const { task, session } = route.params;
-  const { colors } = useTheme();
-  const [elapsed, setElapsed] = useState(0);
-  const [streak, setStreak] = useState(task.streak);
+  const { isDark } = useTheme();
+  const [elapsed, setElapsed] = useState(session.startedAt ? Date.now() - session.startedAt : 0);
+  const [streak, setStreak] = useState(0);
   const [serviceAlive, setServiceAlive] = useState(true);
-  const checkRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Timer pulse animation
+  const pulseScale = useSharedValue(1);
+  const pulseOpacity = useSharedValue(0.3);
+
+  // Entry animations
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(20);
+  const timerOpacity = useSharedValue(0);
+  const timerScale = useSharedValue(0.9);
+  const infoOpacity = useSharedValue(0);
+  const infoTranslateY = useSharedValue(20);
+  const buttonOpacity = useSharedValue(0);
+  const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    const startTime = session.startedAt;
-    const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
 
-    return () => clearInterval(timer);
-  }, [session.startedAt]);
+    timerOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    timerScale.value = withDelay(250, withSpring(1, { damping: 12, stiffness: 200 }));
 
-  useEffect(() => {
-    checkRef.current = setInterval(async () => {
-      const enabled = await AppBlocker.isAccessibilityServiceEnabled();
-      setServiceAlive(enabled);
-    }, 5000);
-    return () => { if (checkRef.current) clearInterval(checkRef.current); };
+    infoOpacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    infoTranslateY.value = withDelay(400, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    buttonOpacity.value = withDelay(550, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    // Pulse animation
+    pulseScale.value = withRepeat(
+      withSequence(
+        withTiming(1.15, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
+    pulseOpacity.value = withRepeat(
+      withSequence(
+        withTiming(0.15, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.3, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
   }, []);
 
-  const formatTime = (seconds: number) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    if (hrs > 0) {
-      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  // Timer tick
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (session.startedAt) {
+        setElapsed(Date.now() - session.startedAt);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [session.startedAt]);
 
-  const handleEndTask = async () => {
+  // Service alive check
+  useEffect(() => {
+    const checkService = async () => {
+      const alive = await AppBlocker.isAccessibilityServiceEnabled();
+      setServiceAlive(alive);
+    };
+    const interval = setInterval(checkService, 5000);
+    checkService();
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const currentStreak = await store.getStreak();
+      setStreak(currentStreak);
+    })();
+  }, []);
+
+  const handleEndSession = async () => {
+    await store.saveSession({ ...session, status: 'completed', endedAt: Date.now(), duration: Date.now() - session.startedAt });
     await AppBlocker.stopBlocking();
-    const updatedSession: Session = {
-      ...session,
-      endedAt: Date.now(),
-      duration: Date.now() - session.startedAt,
-      status: 'completed',
-    };
-    await store.saveSession(updatedSession);
-
-    const updatedTask: Task = {
-      ...task,
-      lastUsed: Date.now(),
-      useCount: task.useCount + 1,
-      isActive: false,
-    };
-    await store.saveTask(updatedTask);
-
     navigation.navigate('TaskPicker');
   };
 
-  const handleSwitchTask = async () => {
-    await AppBlocker.stopBlocking();
-    const updatedSession: Session = {
-      ...session,
-      endedAt: Date.now(),
-      duration: Date.now() - session.startedAt,
-      status: 'cancelled',
-    };
-    await store.saveSession(updatedSession);
-    navigation.navigate('TaskPicker');
+  const headerAnimStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const timerAnimStyle = useAnimatedStyle(() => ({
+    opacity: timerOpacity.value,
+    transform: [{ scale: timerScale.value }],
+  }));
+
+  const pulseAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+    opacity: pulseOpacity.value,
+  }));
+
+  const infoAnimStyle = useAnimatedStyle(() => ({
+    opacity: infoOpacity.value,
+    transform: [{ translateY: infoTranslateY.value }],
+  }));
+
+  const buttonAnimStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const handlePressIn = () => {
+    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePressOut = () => {
+    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.paper }]}>
-      <View style={[styles.header, { paddingTop: layout.headerPaddingTop, paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.headerPaddingBottom }]}>
-        <Text style={[typography.h1, { color: colors.ink }]}>{task.name}</Text>
-        <Text style={[typography.body, { color: colors.inkMuted, marginTop: spacing.xs }]}>Blocking: {task.appName}</Text>
+    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+      <Animated.View style={[styles.header, headerAnimStyle]}>
+        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
+          Focusing on
+        </Text>
+        <Text style={[typography.h1, { color: colors.ectoGreen, textAlign: 'center', marginTop: spacing.xs }]}>
+          {task.name}
+        </Text>
+      </Animated.View>
+
+      <View style={styles.timerArea}>
+        {/* Pulse ring */}
+        <Animated.View style={[styles.pulseRing, pulseAnimStyle, { backgroundColor: colors.ectoGreen }]} />
+
+        <Animated.View style={[styles.timerCircle, timerAnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+          <Text style={[styles.timerText, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
+            {formatElapsed(elapsed)}
+          </Text>
+          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>
+            elapsed
+          </Text>
+        </Animated.View>
       </View>
 
-      <View style={styles.timerContainer}>
-        <Text style={[typography.timer, { color: colors.ectoGreen }]}>{formatTime(elapsed)}</Text>
-        <Text style={[typography.body, { color: colors.inkMuted, marginTop: spacing.sm }]}>Time focused</Text>
-      </View>
+      <Animated.View style={[styles.infoSection, infoAnimStyle]}>
+        <View style={styles.infoRow}>
+          <View style={[styles.infoCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+            <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Streak</Text>
+            <View style={styles.streakValue}>
+              <View style={[styles.streakDot, { backgroundColor: colors.fire }]} />
+              <Text style={[typography.h2, { color: colors.fire }]}>{streak}</Text>
+            </View>
+          </View>
 
-      {streak > 0 && (
-        <View style={styles.streakContainer}>
-          <View style={[styles.streakBadge, { backgroundColor: colors.paperCard }]}>
-            <Text style={{ fontSize: gamification.streak.fireSize }}>🔥</Text>
-            <Text style={[gamification.streak.numberFont, { color: colors.fire }]}>{streak}</Text>
-            <Text style={[typography.caption, { color: colors.inkMuted }]}>
-              {streak === 1 ? 'day' : 'days'} streak
-            </Text>
+          <View style={[styles.infoCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+            <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Blocked</Text>
+            <View style={styles.serviceStatus}>
+              <View style={[styles.statusDot, { backgroundColor: serviceAlive ? colors.ectoGreen : colors.fire }]} />
+              <Text style={[typography.h2, { color: serviceAlive ? colors.ectoGreen : colors.fire }]}>
+                {serviceAlive ? 'Active' : 'Off'}
+              </Text>
+            </View>
           </View>
         </View>
-      )}
+      </Animated.View>
 
-      {!serviceAlive && (
-        <View style={[styles.warningBanner, { backgroundColor: colors.fireDark || colors.paperCard, marginHorizontal: layout.screenPaddingH }]}>
-          <Text style={[typography.bodyMedium, { color: colors.midnight || colors.ink, textAlign: 'center', fontWeight: '600' }]}>⚠️ Blocking paused</Text>
-          <Text style={[typography.caption, { color: colors.midnight || colors.ink, textAlign: 'center', marginTop: spacing.xs }]}>
-            Accessibility service was disabled. Apps are no longer blocked.
-          </Text>
-          <TouchableOpacity
-            style={[styles.warningButton, { backgroundColor: colors.ectoGreen, borderRadius: radius.md }]}
-            activeOpacity={0.8}
-            onPress={() => AppBlocker.openAccessibilitySettings()}
-          >
-            <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>Re-enable Service</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <View style={[styles.buttonArea, { paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.safeAreaBottom }]}>
-        <TouchableOpacity
-          style={[
-            styles.endButton,
-            { backgroundColor: colors.ectoGreen, borderBottomWidth: 3, borderBottomColor: colors.eelDarkBlue, borderRadius: radius.md },
-          ]}
-          activeOpacity={0.8}
-          onPress={handleEndTask}
+      <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+        <AnimatedTouchable
+          style={[styles.primaryButton, { backgroundColor: gamification.blockedButton.override, borderBottomColor: colors.macawBlueDark }]}
+          activeOpacity={0.85}
+          onPress={handleEndSession}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
         >
-          <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>End Task</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.switchButton,
-            { backgroundColor: colors.paperCard, borderRadius: radius.md, borderWidth: 2, borderColor: colors.paperBorder },
-          ]}
-          activeOpacity={0.8}
-          onPress={handleSwitchTask}
-        >
-          <Text style={[typography.label, { color: colors.inkSecondary, textAlign: 'center' }]}>Switch Task</Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>End Session</Text>
+        </AnimatedTouchable>
+      </Animated.View>
     </View>
   );
 }
@@ -156,41 +218,84 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: layout.screenPaddingH,
+    paddingTop: layout.headerPaddingTop,
+    paddingBottom: layout.safeAreaBottom,
   },
-  header: {},
-  timerContainer: {
+  header: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.xxxl,
+  },
+  timerArea: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  streakContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.xxxl,
+  pulseRing: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
   },
-  streakBadge: {
+  timerCircle: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  timerText: {
+    fontSize: 40,
+    fontWeight: '300',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    letterSpacing: 2,
+  },
+  infoSection: {
+    marginTop: spacing.xxl,
+  },
+  infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.full,
-  },
-  warningBanner: {
-    padding: spacing.lg,
-    borderRadius: radius.md,
-    marginBottom: spacing.xl,
-  },
-  warningButton: {
-    marginTop: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  buttonArea: {
     gap: spacing.md,
   },
-  endButton: {
-    paddingVertical: spacing.lg,
+  infoCard: {
+    flex: 1,
+    padding: spacing.lg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    alignItems: 'center',
   },
-  switchButton: {
+  streakValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  streakDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  serviceStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  bottomSection: {
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  primaryButton: {
+    borderBottomWidth: 3,
+    borderRadius: radius.md,
     paddingVertical: spacing.lg,
+    alignItems: 'center',
   },
 });

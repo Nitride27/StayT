@@ -1,147 +1,182 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+  Easing,
+} from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task } from '../types';
-import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, buttons, gamification, shadows, layout } from '../theme/tokens';
+import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
+import { FREE_TASK_LIMIT } from './PaywallScreen';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TaskPicker'>;
 };
 
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+function TaskCard({ task, index, isDark, onPress }: { task: Task; index: number; isDark: boolean; onPress: () => void }) {
+  const delay = 300 + index * 50;
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(15);
+
+  useEffect(() => {
+    opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) }));
+  }, []);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  return (
+    <AnimatedTouchable
+      style={[styles.taskCard, animStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      <View style={styles.taskInfo}>
+        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, fontWeight: '500' }]}>{task.name}</Text>
+        <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>
+          {task.packageName}
+        </Text>
+      </View>
+      <View style={styles.taskAction}>
+        <View style={[styles.playDot, { backgroundColor: colors.ectoGreen }]} />
+      </View>
+    </AnimatedTouchable>
+  );
+}
+
 export default function TaskPickerScreen({ navigation }: Props) {
-  const { colors: themeColors } = useTheme();
+  const { isDark } = useTheme();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const [streak, setStreak] = useState(0);
-  const [pressedButton, setPressedButton] = useState<string | null>(null);
+  const [showPaywall, setShowPaywall] = useState(false);
+
+  // Entry animations
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(20);
+  const listOpacity = useSharedValue(0);
+  const listTranslateY = useSharedValue(20);
+  const buttonOpacity = useSharedValue(0);
+  const buttonScale = useSharedValue(1);
 
   useEffect(() => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    listOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    listTranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    buttonOpacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+  }, []);
+
   const loadData = async () => {
-    const loadedTasks = await store.getTasks();
-    setTasks(loadedTasks);
-    const enabled = await AppBlocker.isAccessibilityServiceEnabled();
-    setAccessibilityEnabled(enabled);
+    const allTasks = await store.getTasks();
+    setTasks(allTasks);
     const currentStreak = await store.getStreak();
     setStreak(currentStreak);
-  };
-
-  const handleNewTask = async () => {
     const prefs = await store.getPreferences();
-    if (!prefs.isSubscribed && tasks.length >= prefs.freeTaskLimit) {
-      navigation.navigate('Paywall');
-      return;
-    }
-    navigation.navigate('TaskSetup', {});
+    setShowPaywall(prefs.isSubscribed !== true && allTasks.length >= FREE_TASK_LIMIT);
   };
 
-  const handleTaskPress = async (task: Task) => {
-    if (!accessibilityEnabled) {
-      navigation.navigate('PermissionSetup');
-      return;
-    }
-
+  const handleSelectTask = async (task: Task) => {
     const session = {
-      id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `session-${Date.now()}`,
       taskId: task.id,
       startedAt: Date.now(),
       endedAt: null,
       duration: null,
       status: 'active' as const,
     };
-
     await store.saveSession(session);
-    await AppBlocker.startBlocking([task.packageName]);
     navigation.navigate('ActiveSession', { task, session });
   };
 
+  const handleAddTask = () => {
+    if (showPaywall) {
+      navigation.navigate('Paywall');
+    } else {
+      navigation.navigate('TaskSetup', {});
+    }
+  };
+
+  const headerAnimStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const listAnimStyle = useAnimatedStyle(() => ({
+    opacity: listOpacity.value,
+    transform: [{ translateY: listTranslateY.value }],
+  }));
+
+  const buttonAnimStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+  }));
+
+  const handlePressIn = () => {
+    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePressOut = () => {
+    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  };
+
+  const buttonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.paper }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+      <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.title, { color: themeColors.ink }]}>StayT</Text>
-            <Text style={[styles.subtitle, { color: themeColors.inkSecondary }]}>
-              Task-aware app blocker
-            </Text>
-          </View>
-          {streak > 0 && (
-            <View style={[styles.streakBadge, { backgroundColor: themeColors.paperCard, borderColor: themeColors.paperBorder }]}>
-              <Text style={styles.streakFire}>{gamification.streak.fireSize > 0 ? '🔥' : ''}</Text>
-              <Text style={[styles.streakNumber, { color: themeColors.ectoGreen }]}>{streak}</Text>
-            </View>
-          )}
+          <TouchableOpacity onPress={() => navigation.navigate('History')} activeOpacity={0.7}>
+            <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>History</Text>
+          </TouchableOpacity>
+          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Tasks</Text>
+          <View style={{ width: 50 }} />
         </View>
-      </View>
-
-      <ScrollView style={styles.taskList} contentContainerStyle={styles.taskListContent}>
-        {tasks.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={[styles.emptyIcon, { color: themeColors.inkFaint }]}>📋</Text>
-            <Text style={[styles.emptyText, { color: themeColors.ink }]}>No tasks yet</Text>
-            <Text style={[styles.emptySubtext, { color: themeColors.inkMuted }]}>
-              Create your first task to start blocking distracting apps
-            </Text>
+        {streak > 0 && (
+          <View style={styles.streakBadge}>
+            <View style={[styles.streakDot, { backgroundColor: colors.fire }]} />
+            <Text style={[typography.bodyMedium, { color: colors.fire, fontWeight: '600' }]}>{streak} day streak</Text>
           </View>
-        ) : (
-          tasks.map((task) => (
-            <TouchableOpacity
-              key={task.id}
-              style={[
-                styles.taskItem,
-                { backgroundColor: themeColors.paperCard, borderColor: themeColors.paperBorder },
-              ]}
-              onPress={() => handleTaskPress(task)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.taskInfo}>
-                <Text style={[styles.taskName, { color: themeColors.ink }]}>{task.name}</Text>
-                <Text style={[styles.taskApp, { color: themeColors.inkMuted }]}>{task.appName}</Text>
-              </View>
-              <View style={styles.taskMeta}>
-                {task.streak > 0 && (
-                  <View style={styles.streakRow}>
-                    <Text style={styles.streakEmoji}>🔥</Text>
-                    <Text style={[styles.streakValue, { color: themeColors.ectoGreen }]}>{task.streak}</Text>
-                  </View>
-                )}
-                <Text style={[styles.useCount, { color: themeColors.inkFaint }]}>×{task.useCount}</Text>
-              </View>
-            </TouchableOpacity>
-          ))
         )}
-      </ScrollView>
+      </Animated.View>
 
-      <TouchableOpacity
-        style={[
-          styles.addButton,
-          pressedButton === 'new' ? buttons.primaryPressed : buttons.primary,
-        ]}
-        onPress={handleNewTask}
-        onPressIn={() => setPressedButton('new')}
-        onPressOut={() => setPressedButton(null)}
-        activeOpacity={0.9}
-      >
-        <Text style={[styles.addButtonText, { color: themeColors.eelDarkBlue }]}>+ New Task</Text>
-      </TouchableOpacity>
+      <Animated.View style={[styles.list, listAnimStyle]}>
+        {tasks.map((task, index) => (
+          <TaskCard key={task.id} task={task} index={index} isDark={isDark} onPress={() => handleSelectTask(task)} />
+        ))}
+      </Animated.View>
 
-      {!accessibilityEnabled && (
-        <TouchableOpacity
-          style={[styles.permissionBanner, { backgroundColor: themeColors.permissionBanner, borderTopColor: themeColors.paperBorder }]}
-          onPress={() => navigation.navigate('PermissionSetup')}
-          activeOpacity={0.7}
+      <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+        <AnimatedTouchable
+          style={[styles.primaryButton, buttonStyle]}
+          activeOpacity={0.85}
+          onPress={handleAddTask}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
         >
-          <Text style={[styles.permissionText, { color: themeColors.permissionBannerText }]}>
-            ⚠️ Enable Accessibility Service
+          <Text style={styles.primaryButtonText}>
+            {showPaywall ? 'Add Task (Upgrade)' : 'Add New Task'}
           </Text>
-        </TouchableOpacity>
-      )}
+        </AnimatedTouchable>
+      </Animated.View>
     </View>
   );
 }
@@ -149,120 +184,67 @@ export default function TaskPickerScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: layout.screenPaddingH,
+    paddingTop: layout.headerPaddingTop,
+    paddingBottom: layout.safeAreaBottom,
   },
   header: {
-    paddingTop: layout.headerPaddingTop,
-    paddingHorizontal: layout.screenPaddingH,
-    paddingBottom: layout.headerPaddingBottom,
+    marginBottom: spacing.xl,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  title: {
-    ...typography.h1,
-  },
-  subtitle: {
-    ...typography.body,
-    marginTop: spacing.xs,
+    alignItems: 'center',
   },
   streakBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.full,
-    borderWidth: 2,
+    gap: spacing.xs,
+    marginTop: spacing.md,
   },
-  streakFire: {
-    fontSize: 20,
-    marginRight: spacing.xs,
+  streakDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  streakNumber: {
-    ...gamification.streak.numberFont,
-    fontSize: 24,
-  },
-  taskList: {
+  list: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
   },
-  taskListContent: {
-    paddingBottom: spacing.xl,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: spacing.xxxl,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: spacing.lg,
-  },
-  emptyText: {
-    ...typography.h2,
-  },
-  emptySubtext: {
-    ...typography.body,
-    marginTop: spacing.sm,
-    textAlign: 'center',
-  },
-  taskItem: {
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
+  taskCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 2,
-    ...shadows.card,
+    padding: spacing.lg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
   },
   taskInfo: {
     flex: 1,
   },
-  taskName: {
-    ...typography.bodyBold,
+  taskAction: {
+    marginLeft: spacing.md,
   },
-  taskApp: {
-    ...typography.caption,
-    marginTop: spacing.xs,
+  playDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
-  taskMeta: {
-    alignItems: 'flex-end',
+  bottomSection: {
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
   },
-  streakRow: {
-    flexDirection: 'row',
+  primaryButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.eelDarkBlue,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
     alignItems: 'center',
   },
-  streakEmoji: {
-    fontSize: 16,
-    marginRight: spacing.xs,
-  },
-  streakValue: {
-    ...typography.bodyBold,
-  },
-  useCount: {
-    ...typography.caption,
-    marginTop: spacing.xs,
-  },
-  addButton: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderRadius: radius.md,
-  },
-  addButtonText: {
+  primaryButtonText: {
     ...typography.label,
-    textAlign: 'center',
-  },
-  permissionBanner: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderTopWidth: 2,
-  },
-  permissionText: {
-    ...typography.bodyMedium,
+    color: colors.midnight,
     textAlign: 'center',
   },
 });

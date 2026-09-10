@@ -1,137 +1,177 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  Easing,
+} from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Session } from '../types';
+import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, gamification, layout } from '../theme/tokens';
+import { typography, spacing, radius, layout, colors } from '../theme/tokens';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'History'>;
 };
 
-type SessionWithTask = Session & { taskName: string };
+type HistoryItem = Session & { taskName?: string };
 
-export default function HistoryScreen({ navigation }: Props) {
-  const { colors } = useTheme();
-  const [sessions, setSessions] = useState<SessionWithTask[]>([]);
-  const [totalTime, setTotalTime] = useState(0);
-  const [streak, setStreak] = useState(0);
+function formatMs(ms: number): string {
+  const totalMin = Math.floor(ms / 60000);
+  const hrs = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  if (diff < 86400000 && now.getDate() === d.getDate()) return 'Today';
+  if (diff < 172800000) return 'Yesterday';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number; isDark: boolean }) {
+  const delay = 450 + index * 50;
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(12);
 
   useEffect(() => {
-    loadHistory();
+    opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) }));
   }, []);
 
-  const loadHistory = async () => {
-    const allSessions = await store.getSessions();
-    const tasks = await store.getTasks();
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
+  }));
 
-    const completed = allSessions
-      .filter(s => s.status === 'completed')
-      .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))
-      .map(s => ({
-        ...s,
-        taskName: tasks.find(t => t.id === s.taskId)?.name || 'Unknown',
-      }));
+  const completed = item.status === 'completed';
 
-    setSessions(completed);
-
-    const total = completed.reduce((acc, s) => acc + (s.duration || 0), 0);
-    setTotalTime(total);
-
-    const currentStreak = await store.getStreak();
-    setStreak(currentStreak);
-  };
-
-  const formatDuration = (ms: number) => {
-    const hrs = Math.floor(ms / 3600000);
-    const mins = Math.floor((ms % 3600000) / 60000);
-    if (hrs > 0) return `${hrs}h ${mins}m`;
-    return `${mins}m`;
-  };
-
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / 86400000);
-
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  const renderSession = ({ item }: { item: SessionWithTask }) => (
-    <View style={[styles.sessionCard, { backgroundColor: colors.paperCard, borderRadius: radius.md }]}>
-      <View style={styles.sessionRow}>
-        <View style={styles.sessionLeft}>
-          <Text style={[typography.bodyMedium, { color: colors.ink }]}>{item.taskName}</Text>
-          <Text style={[typography.caption, { color: colors.inkMuted, marginTop: spacing.xs }]}>
-            {formatDate(item.endedAt || item.startedAt)}
-          </Text>
-        </View>
-        <View style={styles.sessionRight}>
-          <Text style={[typography.bodyBold, { color: colors.ectoGreen }]}>
-            {formatDuration(item.duration || 0)}
-          </Text>
+  return (
+    <Animated.View style={[styles.sessionCard, animStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+      <View style={styles.sessionLeft}>
+        <View style={[styles.sessionDot, { backgroundColor: completed ? colors.ectoGreen : colors.fire }]} />
+        <View>
+          <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, fontWeight: '500' }]}>{item.taskName}</Text>
+          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>{formatDate(item.startedAt)}</Text>
         </View>
       </View>
-    </View>
+      <View style={styles.sessionRight}>
+        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, fontWeight: '500' }]}>{formatMs(item.duration || 0)}</Text>
+        <Text style={[typography.caption, { color: completed ? colors.ectoGreen : colors.fire, marginTop: 2, textAlign: 'right' }]}>
+          {completed ? 'Completed' : 'Gave in'}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+export default function HistoryScreen({ navigation }: Props) {
+  const { isDark } = useTheme();
+  const [sessions, setSessions] = useState<HistoryItem[]>([]);
+
+  // Entry animations
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(20);
+  const statsOpacity = useSharedValue(0);
+  const statsTranslateY = useSharedValue(20);
+  const listOpacity = useSharedValue(0);
+  const listTranslateY = useSharedValue(20);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    statsOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    statsTranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    listOpacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    listTranslateY.value = withDelay(400, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+  }, []);
+
+  const loadData = async () => {
+    const allSessions = await store.getSessions();
+    const tasks = await store.getTasks();
+    const taskMap = new Map(tasks.map((t: Task) => [t.id, t.name]));
+    const withNames: HistoryItem[] = allSessions.map((s: Session) => ({
+      ...s,
+      taskName: taskMap.get(s.taskId) || 'Unknown',
+    }));
+    setSessions(withNames);
+  };
+
+  const totalMinutes = sessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000;
+  const completedCount = sessions.filter((s) => s.status === 'completed').length;
+
+  const headerAnimStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const statsAnimStyle = useAnimatedStyle(() => ({
+    opacity: statsOpacity.value,
+    transform: [{ translateY: statsTranslateY.value }],
+  }));
+
+  const listAnimStyle = useAnimatedStyle(() => ({
+    opacity: listOpacity.value,
+    transform: [{ translateY: listTranslateY.value }],
+  }));
+
+  const renderItem = ({ item, index }: { item: HistoryItem; index: number }) => (
+    <SessionCard item={item} index={index} isDark={isDark} />
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.paper }]}>
-      <View style={[styles.header, { paddingTop: layout.headerPaddingTop, paddingHorizontal: layout.screenPaddingH, paddingBottom: layout.headerPaddingBottom }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+      <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>← Back</Text>
           </TouchableOpacity>
-          <Text style={[typography.h1, { color: colors.ink }]}>History</Text>
+          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight }]}>History</Text>
           <View style={{ width: 50 }} />
         </View>
-      </View>
+      </Animated.View>
 
-      {/* Stats Row */}
-      <View style={[styles.statsRow, { paddingHorizontal: layout.screenPaddingH, marginBottom: spacing.xl }]}>
-        <View style={[styles.statCard, { backgroundColor: colors.paperCard, borderRadius: radius.md }]}>
-          <Text style={[typography.caption, { color: colors.inkMuted }]}>Total Time</Text>
-          <Text style={[typography.h2, { color: colors.ectoGreen, marginTop: spacing.xs }]}>{formatDuration(totalTime)}</Text>
+      <Animated.View style={[styles.statsRow, statsAnimStyle]}>
+        <View style={[styles.statCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Sessions</Text>
+          <Text style={[typography.h2, { color: isDark ? '#f5f5f5' : colors.midnight, marginTop: spacing.xs }]}>{completedCount}</Text>
         </View>
-
-        <View style={[styles.statCard, { backgroundColor: colors.paperCard, borderRadius: radius.md }]}>
-          <Text style={[typography.caption, { color: colors.inkMuted }]}>Sessions</Text>
-          <Text style={[typography.h2, { color: colors.macawBlue, marginTop: spacing.xs }]}>{sessions.length}</Text>
+        <View style={[styles.statCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Focus Time</Text>
+          <Text style={[typography.h2, { color: colors.ectoGreen, marginTop: spacing.xs }]}>{Math.round(totalMinutes)}m</Text>
         </View>
+      </Animated.View>
 
-        <View style={[styles.statCard, { backgroundColor: colors.paperCard, borderRadius: radius.md }]}>
-          <Text style={[typography.caption, { color: colors.inkMuted }]}>Streak</Text>
-          <View style={styles.streakStat}>
-            <Text style={{ fontSize: 18 }}>🔥</Text>
-            <Text style={[typography.h2, { color: colors.fire, marginTop: spacing.xs }]}>{streak}</Text>
+      <Animated.View style={[styles.listSection, listAnimStyle]}>
+        {sessions.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center' }]}>
+              No sessions yet. Start your first focus session!
+            </Text>
           </View>
-        </View>
-      </View>
-
-      {/* Session List */}
-      {sessions.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={{ fontSize: 48 }}>📋</Text>
-          <Text style={[typography.bodyMedium, { color: colors.inkMuted, marginTop: spacing.lg }]}>
-            No sessions yet. Start your first task!
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={sessions}
-          renderItem={renderSession}
-          keyExtractor={item => item.id}
-          contentContainerStyle={[styles.listContent, { paddingHorizontal: layout.screenPaddingH }]}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+        ) : (
+          <FlatList
+            data={sessions}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+          />
+        )}
+      </Animated.View>
     </View>
   );
 }
@@ -139,50 +179,61 @@ export default function HistoryScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: layout.screenPaddingH,
+    paddingTop: layout.headerPaddingTop,
+    paddingBottom: layout.safeAreaBottom,
   },
-  header: {},
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  statCard: {
-    flex: 1,
-    padding: spacing.md,
-    alignItems: 'center',
-  },
-  streakStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  listContent: {
-    paddingBottom: spacing.xxxl,
-  },
-  sessionCard: {
-    padding: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  sessionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sessionLeft: {
-    flex: 1,
-  },
-  sessionRight: {
-    marginLeft: spacing.md,
+  header: {
+    marginBottom: spacing.xl,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  emptyContainer: {
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  statCard: {
+    flex: 1,
+    padding: spacing.lg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  listSection: {
+    flex: 1,
+  },
+  listContent: {
+    gap: spacing.md,
+  },
+  sessionCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  sessionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  sessionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  sessionRight: {
+    alignItems: 'flex-end',
+  },
+  emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: spacing.xxxl,
+    paddingVertical: spacing.xxxl,
   },
 });
