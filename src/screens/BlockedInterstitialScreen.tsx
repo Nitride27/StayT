@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -14,6 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
+import { mascotExpressions } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { store } from '../storage/store';
 
@@ -141,12 +142,10 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   return (
     <Animated.View style={[styles.overlay, overlayAnimStyle, { backgroundColor: isDark ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.9)' }]}>
       <View style={styles.container}>
-        {/* Shield icon */}
-        <Animated.View style={[styles.shieldContainer, shieldAnimStyle]}>
-          <View style={[styles.shieldCircle, { backgroundColor: 'rgba(76, 175, 80, 0.15)' }]}>
-            <View style={[styles.shieldInner, { backgroundColor: colors.ectoGreen }]}>
-              <View style={styles.shieldCheckDot} />
-            </View>
+        {/* Mascot */}
+        <Animated.View style={[styles.mascotContainer, shieldAnimStyle]}>
+          <View style={[styles.mascotDisc, { backgroundColor: colors.paperCard }]}>
+            <Image source={mascotExpressions.blocked} style={styles.mascotImage} resizeMode="contain" />
           </View>
         </Animated.View>
 
@@ -225,28 +224,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  shieldContainer: {
+  mascotContainer: {
     marginBottom: spacing.xxxl,
   },
-  shieldCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  mascotDisc: {
+    width: 172,
+    height: 172,
+    borderRadius: 86,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  shieldInner: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  shieldCheckDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+  mascotImage: {
+    width: 140,
+    height: 140,
   },
   titleSection: {
     marginBottom: spacing.md,

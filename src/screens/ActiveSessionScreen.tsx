@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -16,6 +16,7 @@ import { store } from '../storage/store';
 import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
+import { mascotExpressions } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 
 type Props = {
@@ -167,6 +168,9 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         <Text style={[typography.h1, { color: colors.ectoGreen, textAlign: 'center', marginTop: spacing.xs }]}>
           {task.name}
         </Text>
+        <View style={[styles.mascotDisc, { backgroundColor: colors.paperCard }]}>
+          <Image source={mascotExpressions.working} style={styles.mascotImage} resizeMode="contain" />
+        </View>
       </Animated.View>
 
       <View style={styles.timerArea}>
@@ -231,6 +235,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: spacing.xl,
     marginBottom: spacing.xxxl,
+  },
+  mascotDisc: {
+    width: 152,
+    height: 152,
+    borderRadius: 76,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  mascotImage: {
+    width: 120,
+    height: 120,
   },
   timerArea: {
     flex: 1,

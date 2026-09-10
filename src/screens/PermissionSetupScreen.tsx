@@ -272,11 +272,13 @@ export default function PermissionSetupScreen({ navigation }: Props) {
 
         {/* Mascot */}
         <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
-          <Image
-            source={bothGranted ? mascotExpressions.cheering : mascotExpressions.thinking}
-            style={styles.mascotImage}
-            resizeMode="contain"
-          />
+          <View style={[styles.mascotDisc, { backgroundColor: colors.paperCard }]}>
+            <Image
+              source={mascotExpressions.phone}
+              style={styles.mascotImage}
+              resizeMode="contain"
+            />
+          </View>
         </Animated.View>
 
         <View style={styles.cards}>
@@ -512,6 +514,13 @@ const styles = StyleSheet.create({
   mascotContainer: {
     alignItems: 'center',
     marginBottom: spacing.xl,
+  },
+  mascotDisc: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   mascotImage: {
     width: 96,
