@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "stayt-app",
-    "slug": "stayt-app",
+    "slug": "stayt",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -24,10 +24,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "0ee6556d-649e-43b6-9200-6eb321c6306d"
+        "projectId": "8573d825-7b21-4187-b7b7-aed3f71cf841"
       }
     },
-    "owner": "nitridee",
+    "owner": "nitrideeee",
     "plugins": [
       "./modules/blocker/plugin",
       "expo-font",
