@@ -56,6 +56,32 @@ function copyResFiles(projectRoot) {
 }
 
 function withBlocker(config) {
+  // 0. Play-safe manifest hygiene: drop unused SYSTEM_ALERT_WINDOW, ensure the
+  // LAUNCHER <queries> intent getInstalledApps relies on.
+  config = withAndroidManifest(config, (cfg) => {
+    const manifest = cfg.modResults.manifest;
+    if (manifest["uses-permission"]) {
+      manifest["uses-permission"] = manifest["uses-permission"].filter(
+        (p) => p.$?.["android:name"] !== "android.permission.SYSTEM_ALERT_WINDOW"
+      );
+    }
+    if (!manifest.queries) manifest.queries = [];
+    if (!manifest.queries[0]) manifest.queries[0] = {};
+    if (!manifest.queries[0].intent) manifest.queries[0].intent = [];
+    const hasLauncher = manifest.queries[0].intent.some(
+      (i) =>
+        i.action?.some((a) => a.$?.["android:name"] === "android.intent.action.MAIN") &&
+        i.category?.some((c) => c.$?.["android:name"] === "android.intent.category.LAUNCHER")
+    );
+    if (!hasLauncher) {
+      manifest.queries[0].intent.push({
+        action: [{ $: { "android:name": "android.intent.action.MAIN" } }],
+        category: [{ $: { "android:name": "android.intent.category.LAUNCHER" } }],
+      });
+    }
+    return cfg;
+  });
+
   // 1. Add <service> to AndroidManifest.xml inside <application>
   config = withAndroidManifest(config, (cfg) => {
     const app = cfg.modResults.manifest.application?.[0];

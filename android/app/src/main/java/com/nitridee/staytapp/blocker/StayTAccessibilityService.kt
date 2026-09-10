@@ -2,7 +2,8 @@ package com.nitridee.staytapp.blocker
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import java.util.concurrent.ConcurrentHashMap
@@ -10,17 +11,37 @@ import java.util.concurrent.ConcurrentHashMap
 class StayTAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "StayTAccessibility"
+        private const val BLOCK_COOLDOWN_MS = 1000L
+
         var instance: StayTAccessibilityService? = null
             private set
 
         @Volatile
         private var isBlocking = false
-        private val allowedPackages: MutableSet<String> = ConcurrentHashMap.newKeySet()
+        private val blockedPackages: MutableSet<String> = ConcurrentHashMap.newKeySet()
+        private val lastBlockedAt: MutableMap<String, Long> = ConcurrentHashMap()
+        private val handler = Handler(Looper.getMainLooper())
+        private var pauseRunnable: Runnable? = null
 
-        fun setBlocking(blocking: Boolean, allowed: List<String> = emptyList()) {
+        fun setBlocking(blocking: Boolean, blocked: List<String> = emptyList()) {
             isBlocking = blocking
-            allowedPackages.clear()
-            allowedPackages.addAll(allowed)
+            blockedPackages.clear()
+            blockedPackages.addAll(blocked)
+        }
+
+        fun pauseBlocking(seconds: Long) {
+            Log.d(TAG, "Pausing blocking for $seconds seconds")
+            isBlocking = false
+
+            // Cancel any existing pause
+            pauseRunnable?.let { handler.removeCallbacks(it) }
+
+            // Resume after delay
+            pauseRunnable = Runnable {
+                isBlocking = true
+                Log.d(TAG, "Blocking resumed after pause")
+            }
+            handler.postDelayed(pauseRunnable!!, seconds * 1000)
         }
     }
 
@@ -42,24 +63,30 @@ class StayTAccessibilityService : AccessibilityService() {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         if (!isBlocking) return
 
-        val packageName = event.packageName?.toString() ?: return
+        val openedPackage = event.packageName?.toString() ?: return
 
         // Allow our own package
-        if (packageName == "com.nitridee.staytapp") return
+        if (openedPackage == packageName) return
 
-        // Check if package is allowed
-        if (allowedPackages.isNotEmpty() && allowedPackages.contains(packageName)) return
+        // Check if package is in the blocked set
+        if (blockedPackages.isEmpty() || !blockedPackages.contains(openedPackage)) return
+
+        // Per-package cooldown: WINDOW_STATE_CHANGED fires in bursts
+        val now = System.currentTimeMillis()
+        val last = lastBlockedAt[openedPackage] ?: 0L
+        if (now - last < BLOCK_COOLDOWN_MS) return
+        lastBlockedAt[openedPackage] = now
 
         // Package is blocked - perform global action to go HOME
-        Log.d(TAG, "Blocked app: $packageName")
-        performGlobalAction(GLOBAL_ACTION_HOME)
-
-        // Broadcast to React Native
-        val intent = Intent("com.nitridee.staytapp.BLOCKED_ATTEMPT").apply {
-            putExtra("packageName", packageName)
-            putExtra("timestamp", System.currentTimeMillis())
+        Log.d(TAG, "Blocked app: $openedPackage")
+        if (!performGlobalAction(GLOBAL_ACTION_HOME)) {
+            Log.w(TAG, "performGlobalAction denied/throttled for $openedPackage")
+            lastBlockedAt.remove(openedPackage)
+            return
         }
-        sendBroadcast(intent)
+
+        // Emit event to React Native
+        AppBlockerModule.emitBlockedAttempt(openedPackage, now)
     }
 
     override fun onInterrupt() {
@@ -68,6 +95,11 @@ class StayTAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        isBlocking = false
+        blockedPackages.clear()
+        lastBlockedAt.clear()
+        pauseRunnable?.let { handler.removeCallbacks(it) }
+        pauseRunnable = null
         super.onDestroy()
         Log.d(TAG, "Accessibility service destroyed")
     }

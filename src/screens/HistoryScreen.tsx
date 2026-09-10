@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -8,6 +8,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Session, Task } from '../types';
@@ -86,9 +87,11 @@ export default function HistoryScreen({ navigation }: Props) {
   const listOpacity = useSharedValue(0);
   const listTranslateY = useSharedValue(20);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadData().catch(() => {});
+    }, []),
+  );
 
   useEffect(() => {
     headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
@@ -102,14 +105,18 @@ export default function HistoryScreen({ navigation }: Props) {
   }, []);
 
   const loadData = async () => {
-    const allSessions = await store.getSessions();
-    const tasks = await store.getTasks();
-    const taskMap = new Map(tasks.map((t: Task) => [t.id, t.name]));
-    const withNames: HistoryItem[] = allSessions.map((s: Session) => ({
-      ...s,
-      taskName: taskMap.get(s.taskId) || 'Unknown',
-    }));
-    setSessions(withNames);
+    try {
+      const allSessions = await store.getSessions();
+      const tasks = await store.getTasks();
+      const taskMap = new Map(tasks.map((t: Task) => [t.id, t.name]));
+      const withNames: HistoryItem[] = allSessions.map((s: Session) => ({
+        ...s,
+        taskName: taskMap.get(s.taskId) || 'Unknown',
+      }));
+      setSessions(withNames);
+    } catch {
+      setSessions([]);
+    }
   };
 
   const totalMinutes = sessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000;

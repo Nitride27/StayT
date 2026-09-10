@@ -6,45 +6,71 @@ const SESSIONS_KEY = '@stayt_sessions';
 const PREFERENCES_KEY = '@stayt_preferences';
 const BLOCKED_ATTEMPTS_KEY = '@stayt_blocked_attempts';
 
+function safeParse<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+// Serialize read-modify-write cycles per key so concurrent saves can't interleave.
+const writeChains = new Map<string, Promise<unknown>>();
+function serialized<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = writeChains.get(key) ?? Promise.resolve();
+  const next = (prev as Promise<void>).then(fn, fn);
+  writeChains.set(key, next.catch(() => {}));
+  return next;
+}
+
 export const store = {
   // Tasks
   async getTasks(): Promise<Task[]> {
     const data = await AsyncStorage.getItem(TASKS_KEY);
-    return data ? JSON.parse(data) : [];
+    return safeParse<Task[]>(data, []);
   },
 
   async saveTask(task: Task): Promise<void> {
-    const tasks = await this.getTasks();
-    const index = tasks.findIndex(t => t.id === task.id);
-    if (index >= 0) {
-      tasks[index] = task;
-    } else {
-      tasks.push(task);
-    }
-    await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    return serialized(TASKS_KEY, async () => {
+      const tasks = await this.getTasks();
+      const index = tasks.findIndex(t => t.id === task.id);
+      if (index >= 0) {
+        tasks[index] = task;
+      } else {
+        tasks.push(task);
+      }
+      await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    });
   },
 
   async deleteTask(taskId: string): Promise<void> {
-    const tasks = await this.getTasks();
-    const filtered = tasks.filter(t => t.id !== taskId);
-    await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(filtered));
+    return serialized(TASKS_KEY, async () => {
+      const tasks = await this.getTasks();
+      const filtered = tasks.filter(t => t.id !== taskId);
+      await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(filtered));
+    });
   },
 
   // Sessions
   async getSessions(): Promise<Session[]> {
     const data = await AsyncStorage.getItem(SESSIONS_KEY);
-    return data ? JSON.parse(data) : [];
+    return safeParse<Session[]>(data, []);
   },
 
   async saveSession(session: Session): Promise<void> {
-    const sessions = await this.getSessions();
-    const index = sessions.findIndex(s => s.id === session.id);
-    if (index >= 0) {
-      sessions[index] = session;
-    } else {
-      sessions.push(session);
-    }
-    await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    return serialized(SESSIONS_KEY, async () => {
+      const sessions = await this.getSessions();
+      const index = sessions.findIndex(s => s.id === session.id);
+      if (index >= 0) {
+        sessions[index] = session;
+      } else {
+        sessions.push(session);
+      }
+      // Cap history so storage can't grow unbounded.
+      const capped = sessions.slice(-500);
+      await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(capped));
+    });
   },
 
   async getActiveSession(): Promise<Session | null> {
@@ -55,7 +81,7 @@ export const store = {
   // Preferences
   async getPreferences(): Promise<UserPreferences> {
     const data = await AsyncStorage.getItem(PREFERENCES_KEY);
-    return data ? JSON.parse(data) : {
+    return safeParse<UserPreferences | null>(data, null) ?? {
       themeMode: 'system',
       notificationsEnabled: true,
       hapticFeedback: true,
@@ -85,6 +111,7 @@ export const store = {
         useCount: 0,
         isActive: true,
         streak: 0,
+        isPreset: true,
       },
       {
         id: 'preset-writing',
@@ -96,6 +123,7 @@ export const store = {
         useCount: 0,
         isActive: true,
         streak: 0,
+        isPreset: true,
       },
       {
         id: 'preset-studying',
@@ -107,6 +135,7 @@ export const store = {
         useCount: 0,
         isActive: true,
         streak: 0,
+        isPreset: true,
       },
     ];
 
@@ -116,13 +145,15 @@ export const store = {
   // Blocked Attempts
   async getBlockedAttempts(): Promise<BlockedAttempt[]> {
     const data = await AsyncStorage.getItem(BLOCKED_ATTEMPTS_KEY);
-    return data ? JSON.parse(data) : [];
+    return safeParse<BlockedAttempt[]>(data, []);
   },
 
   async saveBlockedAttempt(attempt: BlockedAttempt): Promise<void> {
-    const attempts = await this.getBlockedAttempts();
-    attempts.push(attempt);
-    await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify(attempts));
+    return serialized(BLOCKED_ATTEMPTS_KEY, async () => {
+      const attempts = await this.getBlockedAttempts();
+      attempts.push(attempt);
+      await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify(attempts.slice(-1000)));
+    });
   },
 
   async getBlockedAttemptsToday(): Promise<BlockedAttempt[]> {

@@ -109,25 +109,37 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   };
 
   const handleTakeBreak = async () => {
-    await AppBlocker.pauseBlocking(120);
-    await store.saveBlockedAttempt({
-      id: `blocked-${Date.now()}`,
-      packageName,
-      taskId: route.params.taskId,
-      timestamp: Date.now(),
-      action: 'override',
-    });
+    try {
+      await AppBlocker.pauseBlocking(120);
+    } catch {
+      // Best-effort; the break still counts locally below.
+    }
+    try {
+      await store.saveBlockedAttempt({
+        id: `blocked-${Date.now()}`,
+        packageName,
+        taskId: route.params.taskId,
+        timestamp: Date.now(),
+        action: 'override',
+      });
+    } catch {
+      // Best-effort logging must never trap the user on this screen.
+    }
     navigation.goBack();
   };
 
   const handleGiveIn = async () => {
-    await store.saveBlockedAttempt({
-      id: `blocked-${Date.now()}`,
-      packageName,
-      taskId: route.params.taskId,
-      timestamp: Date.now(),
-      action: 'give_in',
-    });
+    try {
+      await store.saveBlockedAttempt({
+        id: `blocked-${Date.now()}`,
+        packageName,
+        taskId: route.params.taskId,
+        timestamp: Date.now(),
+        action: 'give_in',
+      });
+    } catch {
+      // Best-effort logging must never trap the user on this screen.
+    }
     navigation.goBack();
   };
 

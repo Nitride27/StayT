@@ -24,6 +24,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
+import { store } from '../storage/store';
 import { Platform } from 'react-native';
 
 type Props = {
@@ -132,11 +133,11 @@ export default function PermissionSetupScreen({ navigation }: Props) {
     return () => sub.remove();
   }, []);
 
-  // --- Auto-advance when both permissions are granted ---
+  // --- Auto-advance when accessibility is granted (notifications optional) ---
   useEffect(() => {
-    if (accessibilityEnabled && notificationEnabled) {
+    if (accessibilityEnabled) {
       const timer = setTimeout(() => {
-        navigation.navigate('TaskPicker');
+        markOnboarded().finally(() => navigation.navigate('TaskPicker'));
       }, 1200);
       return () => clearTimeout(timer);
     }
@@ -200,7 +201,20 @@ export default function PermissionSetupScreen({ navigation }: Props) {
     transform: [{ scale: notifDotScale.value }],
   }));
 
-  const bothGranted = accessibilityEnabled && notificationEnabled;
+  // Notifications are optional: Continue requires accessibility only.
+  const canContinue = accessibilityEnabled;
+
+  // --- Handlers ---
+  const markOnboarded = async () => {
+    try {
+      const prefs = await store.getPreferences();
+      if (!prefs.hasOnboarded) {
+        await store.savePreferences({ ...prefs, hasOnboarded: true });
+      }
+    } catch {
+      // Best-effort; onboarding must never trap the user on a storage error.
+    }
+  };
 
   // --- Handlers ---
   const handleGrantAccessibility = async () => {
@@ -225,8 +239,8 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   };
 
   const handleContinue = () => {
-    if (bothGranted) {
-      navigation.navigate('TaskPicker');
+    if (canContinue) {
+      markOnboarded().finally(() => navigation.navigate('TaskPicker'));
     }
   };
 
@@ -444,7 +458,7 @@ export default function PermissionSetupScreen({ navigation }: Props) {
 
       {/* Bottom section */}
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
-        {bothGranted ? (
+        {canContinue ? (
           <View style={styles.successMessage}>
             <Text
               style={[
@@ -459,13 +473,13 @@ export default function PermissionSetupScreen({ navigation }: Props) {
           <AnimatedTouchable
             style={[
               styles.primaryButton,
-              { opacity: bothGranted ? 1 : 0.5 },
+              { opacity: canContinue ? 1 : 0.5 },
             ]}
             activeOpacity={0.85}
             onPress={handleContinue}
-            disabled={!bothGranted}
-            onPressIn={bothGranted ? handlePressIn : undefined}
-            onPressOut={bothGranted ? handlePressOut : undefined}
+            disabled={!canContinue}
+            onPressIn={canContinue ? handlePressIn : undefined}
+            onPressOut={canContinue ? handlePressOut : undefined}
           >
             <Text style={styles.primaryButtonText}>Continue</Text>
           </AnimatedTouchable>

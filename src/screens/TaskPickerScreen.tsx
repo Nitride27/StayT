@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -9,6 +9,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task } from '../types';
@@ -46,7 +47,9 @@ function TaskCard({ task, index, isDark, onPress }: { task: Task; index: number;
       <View style={styles.taskInfo}>
         <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{task.name}</Text>
         <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>
-          {task.packageName}
+          {task.blockedPackages && task.blockedPackages.length > 1
+            ? `${task.blockedPackages.length} apps blocked`
+            : task.packageName}
         </Text>
       </View>
       <View style={styles.taskAction}>
@@ -70,9 +73,12 @@ export default function TaskPickerScreen({ navigation }: Props) {
   const buttonOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // Reload on focus: goBack()/navigate() would otherwise show stale lists.
+  useFocusEffect(
+    useCallback(() => {
+      loadData().catch(() => {});
+    }, []),
+  );
 
   useEffect(() => {
     headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
@@ -85,15 +91,34 @@ export default function TaskPickerScreen({ navigation }: Props) {
   }, []);
 
   const loadData = async () => {
-    const allTasks = await store.getTasks();
-    setTasks(allTasks);
-    const currentStreak = await store.getStreak();
-    setStreak(currentStreak);
-    const prefs = await store.getPreferences();
-    setShowPaywall(prefs.isSubscribed !== true && allTasks.length >= FREE_TASK_LIMIT);
+    try {
+      const allTasks = await store.getTasks();
+      setTasks(allTasks);
+      const currentStreak = await store.getStreak();
+      setStreak(currentStreak);
+      const prefs = await store.getPreferences();
+      const userTasks = allTasks.filter(t => !t.isPreset).length;
+      setShowPaywall(prefs.isSubscribed !== true && userTasks >= FREE_TASK_LIMIT);
+    } catch {
+      setTasks([]);
+    }
   };
 
   const handleSelectTask = async (task: Task) => {
+    // Supersede any zombie active session (e.g. process kill) before starting new.
+    try {
+      const existing = await store.getActiveSession();
+      if (existing) {
+        await store.saveSession({
+          ...existing,
+          status: 'completed',
+          endedAt: Date.now(),
+          duration: Date.now() - existing.startedAt,
+        });
+      }
+    } catch {
+      // Best-effort; a stale session must not block starting a new one.
+    }
     const session = {
       id: `session-${Date.now()}`,
       taskId: task.id,

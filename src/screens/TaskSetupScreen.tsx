@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, TextInput, Platform } from 'react-native';
+import { View, Text, Image, Alert, TouchableOpacity, StyleSheet, ScrollView, TextInput, Platform } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -35,9 +35,23 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const [showAppPicker, setShowAppPicker] = useState(false);
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
   const [appSearchQuery, setAppSearchQuery] = useState('');
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [selectedApps, setSelectedApps] = useState<InstalledApp[]>(() => {
+    if (!existingTask) return [];
+    if (existingTask.blockedPackages && existingTask.blockedPackages.length > 0) {
+      return existingTask.blockedPackages.map(pkg => ({
+        packageName: pkg,
+        appName: pkg === existingTask.packageName ? existingTask.appName : pkg,
+      }));
+    }
+    return existingTask.packageName
+      ? [{ packageName: existingTask.packageName, appName: existingTask.appName }]
+      : [];
+  });
 
   useEffect(() => {
-    AppBlocker.getInstalledApps().then(setInstalledApps);
+    AppBlocker.getInstalledApps().then(setInstalledApps).catch(() => setInstalledApps([]));
+    store.getPreferences().then(p => setIsSubscribed(p.isSubscribed === true)).catch(() => {});
   }, []);
 
   const filteredApps = installedApps.filter(
@@ -47,9 +61,27 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   );
 
   const handlePickApp = (app: InstalledApp) => {
-    setPackageName(app.packageName);
-    setAppName(app.appName);
-    setShowAppPicker(false);
+    const already = selectedApps.some(a => a.packageName === app.packageName);
+    if (already) {
+      const next = selectedApps.filter(a => a.packageName !== app.packageName);
+      setSelectedApps(next);
+      setPackageName(next[0]?.packageName ?? '');
+      setAppName(next[0]?.appName ?? '');
+      return;
+    }
+    // Free users block a single app; multi-block is Pro.
+    if (!isSubscribed && selectedApps.length >= 1) {
+      Alert.alert('Pro feature', 'Blocking multiple apps at once needs Pro.', [
+        { text: 'View Pro', onPress: () => navigation.navigate('Paywall') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    const next = [...selectedApps, app];
+    setSelectedApps(next);
+    setPackageName(next[0].packageName);
+    setAppName(next[0].appName);
+    if (!isSubscribed) setShowAppPicker(false);
     setAppSearchQuery('');
   };
 
@@ -72,16 +104,23 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   }, []);
 
   const handleSave = async () => {
-    if (!taskName.trim() || !packageName.trim()) return;
+    if (!taskName.trim()) return;
+    // Manual override wins; otherwise use the picked app(s).
+    const pkgs = selectedApps.length > 0
+      ? selectedApps.map(a => a.packageName)
+      : (packageName.trim() ? [packageName.trim()] : []);
+    if (pkgs.length === 0) return;
+    const firstApp = selectedApps[0]?.appName || appName.trim() || pkgs[0];
 
     if (existingTask) {
-      await store.saveTask({ ...existingTask, name: taskName.trim(), packageName: packageName.trim(), appName: appName.trim() || packageName.trim() });
+      await store.saveTask({ ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs });
     } else {
       await store.saveTask({
         id: `task-${Date.now()}`,
         name: taskName.trim(),
-        packageName: packageName.trim(),
-        appName: appName.trim() || packageName.trim(),
+        packageName: pkgs[0],
+        appName: firstApp,
+        blockedPackages: pkgs,
         createdAt: Date.now(),
         lastUsed: 0,
         useCount: 0,
@@ -152,7 +191,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             style={[styles.pickerToggle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}
           >
             <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
-              {appName || 'Choose from installed apps'}
+              {selectedApps.length > 1 ? `${appName} +${selectedApps.length - 1} more` : (appName || 'Choose from installed apps')}
             </Text>
             <Text style={[typography.caption, { color: colors.ectoGreen }]}>{showAppPicker ? '▲' : '▼'}</Text>
           </TouchableOpacity>
@@ -183,7 +222,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                       style={[styles.pickerItem, { borderBottomColor: isDark ? '#1a1a1a' : colors.paperBorder }]}
                     >
                       <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]} numberOfLines={1}>
-                        {app.appName}
+                        {selectedApps.some(a => a.packageName === app.packageName) ? '✓ ' : ''}{app.appName}
                       </Text>
                       <Text style={[typography.caption, { color: colors.inkMuted }]} numberOfLines={1}>
                         {app.packageName}
@@ -203,19 +242,19 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             placeholder="e.g., com.instagram.android"
             placeholderTextColor={colors.inkMuted}
             value={packageName}
-            onChangeText={(text) => { setPackageName(text); setAppName(''); }}
+            onChangeText={(text) => { setPackageName(text); setAppName(''); setSelectedApps([]); }}
           />
         </Animated.View>
       </ScrollView>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
         <AnimatedTouchable
-          style={[styles.primaryButton, { opacity: taskName.trim() && packageName.trim() ? 1 : 0.5 }]}
+          style={[styles.primaryButton, { opacity: taskName.trim() && (selectedApps.length > 0 || packageName.trim()) ? 1 : 0.5 }]}
           activeOpacity={0.85}
           onPress={handleSave}
-          disabled={!taskName.trim() || !packageName.trim()}
-          onPressIn={taskName.trim() && packageName.trim() ? handlePressIn : undefined}
-          onPressOut={taskName.trim() && packageName.trim() ? handlePressOut : undefined}
+          disabled={!taskName.trim() || (selectedApps.length === 0 && !packageName.trim())}
+          onPressIn={taskName.trim() && (selectedApps.length > 0 || packageName.trim()) ? handlePressIn : undefined}
+          onPressOut={taskName.trim() && (selectedApps.length > 0 || packageName.trim()) ? handlePressOut : undefined}
         >
           <Text style={styles.primaryButtonText}>{existingTask ? 'Save Changes' : 'Create Task'}</Text>
         </AnimatedTouchable>

@@ -11,12 +11,15 @@ import java.util.concurrent.ConcurrentHashMap
 class StayTAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "StayTAccessibility"
+        private const val BLOCK_COOLDOWN_MS = 1000L
+
         var instance: StayTAccessibilityService? = null
             private set
 
         @Volatile
         private var isBlocking = false
         private val blockedPackages: MutableSet<String> = ConcurrentHashMap.newKeySet()
+        private val lastBlockedAt: MutableMap<String, Long> = ConcurrentHashMap()
         private val handler = Handler(Looper.getMainLooper())
         private var pauseRunnable: Runnable? = null
 
@@ -60,20 +63,30 @@ class StayTAccessibilityService : AccessibilityService() {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         if (!isBlocking) return
 
-        val packageName = event.packageName?.toString() ?: return
+        val openedPackage = event.packageName?.toString() ?: return
 
         // Allow our own package
-        if (packageName == "com.nitridee.staytapp") return
+        if (openedPackage == packageName) return
 
         // Check if package is in the blocked set
-        if (blockedPackages.isEmpty() || !blockedPackages.contains(packageName)) return
+        if (blockedPackages.isEmpty() || !blockedPackages.contains(openedPackage)) return
+
+        // Per-package cooldown: WINDOW_STATE_CHANGED fires in bursts
+        val now = System.currentTimeMillis()
+        val last = lastBlockedAt[openedPackage] ?: 0L
+        if (now - last < BLOCK_COOLDOWN_MS) return
+        lastBlockedAt[openedPackage] = now
 
         // Package is blocked - perform global action to go HOME
-        Log.d(TAG, "Blocked app: $packageName")
-        performGlobalAction(GLOBAL_ACTION_HOME)
+        Log.d(TAG, "Blocked app: $openedPackage")
+        if (!performGlobalAction(GLOBAL_ACTION_HOME)) {
+            Log.w(TAG, "performGlobalAction denied/throttled for $openedPackage")
+            lastBlockedAt.remove(openedPackage)
+            return
+        }
 
         // Emit event to React Native
-        AppBlockerModule.emitBlockedAttempt(packageName, System.currentTimeMillis())
+        AppBlockerModule.emitBlockedAttempt(openedPackage, now)
     }
 
     override fun onInterrupt() {
@@ -84,6 +97,7 @@ class StayTAccessibilityService : AccessibilityService() {
         instance = null
         isBlocking = false
         blockedPackages.clear()
+        lastBlockedAt.clear()
         pauseRunnable?.let { handler.removeCallbacks(it) }
         pauseRunnable = null
         super.onDestroy()

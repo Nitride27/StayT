@@ -13,7 +13,7 @@ import Animated, {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Session, Task } from '../types';
+import { Session, Task, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
@@ -97,9 +97,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     return () => clearInterval(interval);
   }, [session.startedAt]);
 
-  // Start blocking when session begins
+  // Start blocking when session begins; always release on unmount
+  // so a gesture-back can't leave blocking on with no session.
   useEffect(() => {
-    AppBlocker.startBlocking([task.packageName]);
+    AppBlocker.startBlocking(blockedPackagesOf(task)).catch(() => {});
+    return () => {
+      AppBlocker.stopBlocking().catch(() => {});
+    };
   }, []);
 
   // Service alive check

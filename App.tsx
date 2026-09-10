@@ -39,7 +39,7 @@ function AppNavigator() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Welcome');
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Anton: require('./assets/fonts/Anton-Regular.ttf'),
     'SpaceGrotesk-Regular': require('./assets/fonts/SpaceGrotesk-Regular.ttf'),
     'SpaceGrotesk-Medium': require('./assets/fonts/SpaceGrotesk-Medium.ttf'),
@@ -81,24 +81,31 @@ function AppNavigator() {
   // Listen for native blocked-attempt events and navigate to interstitial
   useEffect(() => {
     const unsub = AppBlocker.onBlockedAttempt(async (event) => {
-      const tasks = await store.getTasks();
-      const task = tasks.find(t => t.packageName === event.packageName);
-      if (navigationRef.isReady()) {
-        navigationRef.navigate('BlockedInterstitial', {
-          packageName: event.packageName,
-          taskId: task?.id ?? '',
-        });
+      try {
+        const tasks = await store.getTasks();
+        const task = tasks.find(
+          t => t.packageName === event.packageName || t.blockedPackages?.includes(event.packageName),
+        );
+        if (navigationRef.isReady()) {
+          navigationRef.navigate('BlockedInterstitial', {
+            packageName: event.packageName,
+            taskId: task?.id ?? '',
+          });
+        }
+      } catch {
+        // Best-effort navigation; a missed interstitial must never crash the app.
       }
     });
     return unsub;
   }, []);
 
-  // Hide splash screen once fonts are loaded and initial route is resolved
+  // Hide splash screen once fonts are resolved and initial route is ready.
+  // fontError is treated like loaded so a missing font can't stick the splash.
   useEffect(() => {
-    if (fontsLoaded && !loading) {
+    if ((fontsLoaded || fontError) && !loading) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, loading]);
+  }, [fontsLoaded, fontError, loading]);
 
   if (loading) {
     return (

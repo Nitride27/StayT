@@ -1,13 +1,14 @@
 package com.nitridee.staytapp.blocker
 
-import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
@@ -15,6 +16,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
     companion object {
+        private const val TAG = "StayTAppBlocker"
         private var instance: AppBlockerModule? = null
 
         fun emitBlockedAttempt(packageName: String, timestamp: Long) {
@@ -30,53 +32,94 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun isAccessibilityServiceEnabled(promise: Promise) {
-        val enabledServices = Settings.Secure.getString(
-            reactApplicationContext.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
+        try {
+            val enabledServices = Settings.Secure.getString(
+                reactApplicationContext.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
 
-        val componentName = "${reactApplicationContext.packageName}/com.nitridee.staytapp.blocker.StayTAccessibilityService"
-        val isEnabled = enabledServices.contains(componentName)
-        promise.resolve(isEnabled)
+            val componentName = "${reactApplicationContext.packageName}/com.nitridee.staytapp.blocker.StayTAccessibilityService"
+            promise.resolve(enabledServices.contains(componentName))
+        } catch (e: Exception) {
+            Log.e(TAG, "isAccessibilityServiceEnabled failed", e)
+            promise.reject("ACCESSIBILITY_CHECK_FAILED", e.message, e)
+        }
     }
 
     @ReactMethod
     fun openAccessibilitySettings() {
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactApplicationContext.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "openAccessibilitySettings failed", e)
         }
-        reactApplicationContext.startActivity(intent)
     }
 
     @ReactMethod
-    fun startBlocking(blockedPackages: List<String>) {
-        StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages)
+    fun startBlocking(blocked: ReadableArray?, promise: Promise) {
+        try {
+            if (blocked == null) {
+                promise.reject("INVALID_ARGS", "blockedPackages is null")
+                return
+            }
+            val blockedPackages = blocked.toArrayList().map { it.toString() }
+            StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "startBlocking failed", e)
+            promise.reject("START_BLOCKING_FAILED", e.message, e)
+        }
     }
 
     @ReactMethod
-    fun stopBlocking() {
-        StayTAccessibilityService.setBlocking(blocking = false)
+    fun stopBlocking(promise: Promise) {
+        try {
+            StayTAccessibilityService.setBlocking(blocking = false)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "stopBlocking failed", e)
+            promise.reject("STOP_BLOCKING_FAILED", e.message, e)
+        }
     }
 
     @ReactMethod
     fun getInstalledApps(promise: Promise) {
-        val pm = reactApplicationContext.packageManager
-        val apps = pm.getInstalledApplications(0)
-            .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
-            .map { appInfo ->
-                val map = Arguments.createMap()
-                map.putString("packageName", appInfo.packageName)
-                map.putString("appName", pm.getApplicationLabel(appInfo).toString())
-                map
-            }
-        val result = Arguments.createArray()
-        apps.forEach { result.pushMap(it) }
-        promise.resolve(result)
+        try {
+            // Launcher query: visible without QUERY_ALL_PACKAGES (Play-safe).
+            // Requires the LAUNCHER <queries> intent in AndroidManifest.xml.
+            val pm = reactApplicationContext.packageManager
+            val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val apps = pm.queryIntentActivities(launcher, 0)
+                .map { it.activityInfo.applicationInfo }
+                .distinctBy { it.packageName }
+                .sortedBy { pm.getApplicationLabel(it).toString() }
+                .map { appInfo ->
+                    val map = Arguments.createMap()
+                    map.putString("packageName", appInfo.packageName)
+                    map.putString("appName", pm.getApplicationLabel(appInfo).toString())
+                    map
+                }
+            val result = Arguments.createArray()
+            apps.forEach { result.pushMap(it) }
+            promise.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "getInstalledApps failed", e)
+            promise.reject("GET_APPS_FAILED", e.message, e)
+        }
     }
 
     @ReactMethod
-    fun pauseBlocking(seconds: Double) {
-        StayTAccessibilityService.pauseBlocking(seconds.toLong())
+    fun pauseBlocking(seconds: Double, promise: Promise) {
+        try {
+            StayTAccessibilityService.pauseBlocking(seconds.toLong())
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "pauseBlocking failed", e)
+            promise.reject("PAUSE_BLOCKING_FAILED", e.message, e)
+        }
     }
 
     @ReactMethod

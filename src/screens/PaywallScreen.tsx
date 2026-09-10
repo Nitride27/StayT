@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -12,6 +12,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { useIAP, type Purchase } from 'expo-iap';
+import { PRO_SKU, grantPro } from '../billing/pro';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Paywall'>;
@@ -55,6 +57,90 @@ const features = [
 
 export default function PaywallScreen({ navigation }: Props) {
   const { isDark } = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
+
+  const grantAndClose = async (purchase?: Purchase) => {
+    try {
+      // Unfinished purchases auto-refund on Android — always finish after grant.
+      if (purchase) await finishTransaction({ purchase, isConsumable: false });
+      await grantPro();
+      navigation.goBack();
+    } catch {
+      setStoreError('Purchase went through but activation failed. Tap Restore Purchase.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const {
+    connected,
+    products,
+    availablePurchases,
+    fetchProducts,
+    requestPurchase,
+    getAvailablePurchases,
+    finishTransaction,
+  } = useIAP({
+    onPurchaseSuccess: (purchase) => { void grantAndClose(purchase); },
+    onPurchaseError: (e) => {
+      setBusy(false);
+      if (e.code !== 'user-cancelled') setStoreError(e.message);
+    },
+  });
+
+  useEffect(() => {
+    if (connected) fetchProducts({ skus: [PRO_SKU] }).catch(() => {});
+  }, [connected]);
+
+  // Restore resolves via availablePurchases state after getAvailablePurchases().
+  useEffect(() => {
+    if (!restoring) return;
+    setRestoring(false);
+    setBusy(false);
+    const owned = availablePurchases.find(p => p.productId === PRO_SKU);
+    if (owned) {
+      setBusy(true);
+      void grantAndClose(owned);
+    } else {
+      setStoreError('No previous purchase found for this account.');
+    }
+  }, [availablePurchases]);
+
+  const price = products.find(p => p.id === PRO_SKU)?.displayPrice ?? '$4.99';
+
+  const handleUnlock = async () => {
+    setStoreError(null);
+    if (!connected) {
+      setStoreError('Store unavailable. Check your connection and reopen this screen.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await requestPurchase({ request: { google: { skus: [PRO_SKU] } }, type: 'in-app' });
+    } catch (e) {
+      setBusy(false);
+      setStoreError(e instanceof Error ? e.message : 'Purchase could not start.');
+    }
+  };
+
+  const handleRestore = async () => {
+    setStoreError(null);
+    if (!connected) {
+      setStoreError('Store unavailable. Check your connection and reopen this screen.');
+      return;
+    }
+    setBusy(true);
+    setRestoring(true);
+    try {
+      await getAvailablePurchases();
+    } catch {
+      setRestoring(false);
+      setBusy(false);
+      setStoreError('Restore failed. Check your connection and try again.');
+    }
+  };
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -136,18 +222,25 @@ export default function PaywallScreen({ navigation }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+        {storeError && (
+          <Text style={[typography.caption, { color: colors.danger, textAlign: 'center', marginBottom: spacing.md }]}>
+            {storeError}
+          </Text>
+        )}
         <AnimatedTouchable
-          style={[styles.primaryButton]}
+          style={[styles.primaryButton, { opacity: busy ? 0.6 : 1 }]}
           activeOpacity={0.85}
+          onPress={handleUnlock}
+          disabled={busy}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
           <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
-            Unlock Pro — $4.99
+            {busy ? 'Processing…' : `Unlock Pro — ${price}`}
           </Text>
         </AnimatedTouchable>
 
-        <TouchableOpacity style={styles.restoreButton} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.restoreButton} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
           <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center' }]}>
             Restore Purchase
           </Text>
