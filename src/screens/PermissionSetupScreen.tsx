@@ -49,10 +49,11 @@ export default function PermissionSetupScreen({ navigation }: Props) {
 
   const allGranted = permissions.accessibility;
 
-  const isOemDevice = Platform.OS === 'android' && 
-    ['xiaomi', 'samsung', 'oppo', 'realme', 'vivo', 'oneplus'].includes(
-      (Device.manufacturer || '').toLowerCase()
-    );
+  const manufacturer = (Device.manufacturer || '').toLowerCase();
+  const isXiaomi = Platform.OS === 'android' && ['xiaomi', 'poco', 'redmi'].includes(manufacturer);
+  const isSamsung = Platform.OS === 'android' && manufacturer === 'samsung';
+  const isOemDevice = isXiaomi || isSamsung || 
+    ['oppo', 'realme', 'vivo', 'oneplus'].includes(manufacturer);
 
   const handleContinue = async () => {
     const prefs = await store.getPreferences();
@@ -115,17 +116,21 @@ export default function PermissionSetupScreen({ navigation }: Props) {
           )}
         </View>
 
-        {/* HyperOS/MIUI Note */}
-        {Platform.OS === 'android' && (
+        {/* OEM-specific accessibility note */}
+        {isOemDevice && (
           <View style={[styles.noteCard, { backgroundColor: colors.permissionBanner, borderRadius: radius.md }]}>
             <Text style={[typography.bodyMedium, { color: colors.permissionBannerText }]}>
-              HyperOS/MIUI Note
+              {isSamsung ? 'Samsung Note' : 'HyperOS/MIUI Note'}
             </Text>
             <Text style={[typography.body, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
-              Go to Additional settings → Accessibility → Downloaded apps → StayT → Enable
+              {isSamsung
+                ? 'Go to Settings → Accessibility → Installed apps → StayT → Enable'
+                : 'Go to Additional settings → Accessibility → Downloaded apps → StayT → Enable'}
             </Text>
             <Text style={[typography.caption, { color: colors.permissionBannerText, marginTop: spacing.sm }]}>
-              If blocked: long-press StayT app icon → App info → ⋮ → Allow restricted settings
+              {isSamsung
+                ? 'If not listed: Settings → Apps → StayT → Permissions → Allow all permissions'
+                : 'If blocked: long-press StayT app icon → App info → ⋮ → Allow restricted settings'}
             </Text>
           </View>
         )}
