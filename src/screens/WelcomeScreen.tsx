@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -12,6 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { mascotSource } from '../theme/mascot';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
@@ -89,10 +90,8 @@ export default function WelcomeScreen({ navigation }: Props) {
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <View style={styles.topSection}>
         <Animated.View style={[styles.heroArea, heroAnimStyle]}>
-          {/* Shield icon — green circle with checkmark */}
-          <View style={[styles.shieldCircle, { backgroundColor: colors.ectoGreen }]}>
-            <View style={styles.shieldCheckDot} />
-          </View>
+          {/* Mascot */}
+          <Image source={mascotSource('waving', isDark)} style={styles.mascotImage} resizeMode="contain" />
           <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
             Stay focused.
           </Text>
@@ -162,18 +161,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xxxl,
   },
-  shieldCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  shieldCheckDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#ffffff',
+  mascotImage: {
+    width: 120,
+    height: 120,
   },
   features: {
     gap: spacing.xl,

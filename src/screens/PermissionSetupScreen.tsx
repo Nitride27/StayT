@@ -22,7 +22,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
-import { mascotExpressions } from '../theme/mascot';
+import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { Platform } from 'react-native';
 
@@ -272,13 +272,11 @@ export default function PermissionSetupScreen({ navigation }: Props) {
 
         {/* Mascot */}
         <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
-          <View style={[styles.mascotDisc, { backgroundColor: colors.paperCard }]}>
-            <Image
-              source={mascotExpressions.phone}
-              style={styles.mascotImage}
-              resizeMode="contain"
-            />
-          </View>
+          <Image
+            source={mascotSource('phone', isDark)}
+            style={styles.mascotImage}
+            resizeMode="contain"
+          />
         </Animated.View>
 
         <View style={styles.cards}>
@@ -514,13 +512,6 @@ const styles = StyleSheet.create({
   mascotContainer: {
     alignItems: 'center',
     marginBottom: spacing.xl,
-  },
-  mascotDisc: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   mascotImage: {
     width: 96,

@@ -14,7 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
-import { mascotExpressions } from '../theme/mascot';
+import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { store } from '../storage/store';
 
@@ -144,9 +144,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
       <View style={styles.container}>
         {/* Mascot */}
         <Animated.View style={[styles.mascotContainer, shieldAnimStyle]}>
-          <View style={[styles.mascotDisc, { backgroundColor: colors.paperCard }]}>
-            <Image source={mascotExpressions.blocked} style={styles.mascotImage} resizeMode="contain" />
-          </View>
+          <Image source={mascotSource('blocked', isDark)} style={styles.mascotImage} resizeMode="contain" />
         </Animated.View>
 
         {/* Title */}
@@ -226,13 +224,6 @@ const styles = StyleSheet.create({
   },
   mascotContainer: {
     marginBottom: spacing.xxxl,
-  },
-  mascotDisc: {
-    width: 172,
-    height: 172,
-    borderRadius: 86,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   mascotImage: {
     width: 140,

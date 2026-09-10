@@ -16,7 +16,7 @@ import { store } from '../storage/store';
 import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
-import { mascotExpressions } from '../theme/mascot';
+import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 
 type Props = {
@@ -168,9 +168,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         <Text style={[typography.h1, { color: colors.ectoGreen, textAlign: 'center', marginTop: spacing.xs }]}>
           {task.name}
         </Text>
-        <View style={[styles.mascotDisc, { backgroundColor: colors.paperCard }]}>
-          <Image source={mascotExpressions.working} style={styles.mascotImage} resizeMode="contain" />
-        </View>
+        <Image source={mascotSource('working', isDark)} style={styles.mascotImage} resizeMode="contain" />
       </Animated.View>
 
       <View style={styles.timerArea}>
@@ -236,17 +234,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginBottom: spacing.xxxl,
   },
-  mascotDisc: {
-    width: 152,
-    height: 152,
-    borderRadius: 76,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.lg,
-  },
   mascotImage: {
     width: 120,
     height: 120,
+    marginTop: spacing.lg,
   },
   timerArea: {
     flex: 1,
