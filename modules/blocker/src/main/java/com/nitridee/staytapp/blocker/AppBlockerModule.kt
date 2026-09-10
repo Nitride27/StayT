@@ -89,8 +89,9 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         // Required for NativeEventEmitter
     }
 
-    fun invalidate() {
+    override fun invalidate() {
         instance = null
+        super.invalidate()
     }
 
     private fun emitToJS(packageName: String, timestamp: Long) {

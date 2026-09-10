@@ -86,6 +86,11 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    override fun invalidate() {
+        stopListening()
+        super.invalidate()
+    }
+
     private fun emit(eventName: String, params: WritableMap) {
         reactApplicationContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)

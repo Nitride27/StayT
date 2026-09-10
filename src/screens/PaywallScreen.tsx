@@ -40,7 +40,7 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
     <Animated.View style={[styles.featureRow, animStyle]}>
       <View style={[styles.featureDot, { backgroundColor: feature.color }]} />
       <View style={styles.featureInfo}>
-        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, fontWeight: '500' }]}>{feature.title}</Text>
+        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{feature.title}</Text>
         <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
       </View>
     </Animated.View>

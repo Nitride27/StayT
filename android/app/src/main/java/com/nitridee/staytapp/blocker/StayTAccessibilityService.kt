@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import java.util.concurrent.ConcurrentHashMap
 
 class StayTAccessibilityService : AccessibilityService() {
     companion object {
@@ -12,8 +13,9 @@ class StayTAccessibilityService : AccessibilityService() {
         var instance: StayTAccessibilityService? = null
             private set
 
+        @Volatile
         private var isBlocking = false
-        private var allowedPackages = mutableSetOf<String>()
+        private val allowedPackages: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
         fun setBlocking(blocking: Boolean, allowed: List<String> = emptyList()) {
             isBlocking = blocking

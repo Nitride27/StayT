@@ -14,8 +14,9 @@ class StayTAccessibilityService : AccessibilityService() {
         var instance: StayTAccessibilityService? = null
             private set
 
+        @Volatile
         private var isBlocking = false
-        private var blockedPackages = ConcurrentHashMap.newKeySet<String>()
+        private val blockedPackages: MutableSet<String> = ConcurrentHashMap.newKeySet()
         private val handler = Handler(Looper.getMainLooper())
         private var pauseRunnable: Runnable? = null
 

@@ -10,15 +10,10 @@ class AppBlockerPackage : ReactPackage {
 
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
         module = AppBlockerModule(reactContext)
-        module?.startListening()
         return listOf(module!!)
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
         return emptyList()
-    }
-
-    fun onDestroy() {
-        module?.stopListening()
     }
 }
