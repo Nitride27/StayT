@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -252,10 +252,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   timerText: {
+    ...typography.timer,
     fontSize: 40,
-    fontWeight: '300',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    letterSpacing: 2,
   },
   infoSection: {
     marginTop: spacing.xxl,

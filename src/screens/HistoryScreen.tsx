@@ -59,12 +59,12 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
       <View style={styles.sessionLeft}>
         <View style={[styles.sessionDot, { backgroundColor: completed ? colors.ectoGreen : colors.fire }]} />
         <View>
-          <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, fontWeight: '500' }]}>{item.taskName}</Text>
+          <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{item.taskName}</Text>
           <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>{formatDate(item.startedAt)}</Text>
         </View>
       </View>
       <View style={styles.sessionRight}>
-        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, fontWeight: '500' }]}>{formatMs(item.duration || 0)}</Text>
+        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{formatMs(item.duration || 0)}</Text>
         <Text style={[typography.caption, { color: completed ? colors.ectoGreen : colors.fire, marginTop: 2, textAlign: 'right' }]}>
           {completed ? 'Completed' : 'Gave in'}
         </Text>

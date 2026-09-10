@@ -44,7 +44,7 @@ function TaskCard({ task, index, isDark, onPress }: { task: Task; index: number;
       onPress={onPress}
     >
       <View style={styles.taskInfo}>
-        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, fontWeight: '500' }]}>{task.name}</Text>
+        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{task.name}</Text>
         <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>
           {task.packageName}
         </Text>
