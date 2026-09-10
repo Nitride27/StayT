@@ -13,7 +13,7 @@ import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 
 type Props = {
@@ -21,6 +21,8 @@ type Props = {
 };
 
 type HistoryItem = Session & { taskName?: string };
+
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function formatMs(ms: number): string {
   const totalMin = Math.floor(ms / 60000);
@@ -39,6 +41,16 @@ function formatDate(ts: number): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatRange(item: Session): string {
+  const start = formatTime(item.startedAt);
+  const end = item.endedAt ? formatTime(item.endedAt) : 'now';
+  return `${formatDate(item.startedAt)} · ${start} – ${end}`;
+}
+
 function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number; isDark: boolean }) {
   const delay = 450 + index * 50;
   const opacity = useSharedValue(0);
@@ -54,23 +66,17 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
     transform: [{ translateY: translateY.value }],
   }));
 
-  const completed = item.status === 'completed';
+  const ink = isDark ? darkColors.ink : colors.ink;
+  const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
 
   return (
-    <Animated.View style={[styles.sessionCard, animStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
+    <Animated.View style={[styles.sessionCard, animStyle, { backgroundColor: isDark ? darkColors.paperCard : colors.paperCard, borderColor: isDark ? darkColors.ink : colors.ink }]}>
       <View style={styles.sessionLeft}>
-        <View style={[styles.sessionDot, { backgroundColor: completed ? colors.ectoGreen : colors.fire }]} />
-        <View>
-          <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{item.taskName}</Text>
-          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>{formatDate(item.startedAt)}</Text>
-        </View>
+        <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>{item.taskName}</Text>
+        <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>{formatRange(item)}</Text>
       </View>
-      <View style={styles.sessionRight}>
-        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{formatMs(item.duration || 0)}</Text>
-        <Text style={[typography.caption, { color: completed ? colors.ectoGreen : colors.fire, marginTop: 2, textAlign: 'right' }]}>
-          {completed ? 'Completed' : 'Gave in'}
-        </Text>
-      </View>
+      <Text style={[typography.bodyMedium, { color: ink }]}>{formatMs(item.duration || 0)}</Text>
+      <Text style={[typography.h2, { color: muted }]}>{'>'}</Text>
     </Animated.View>
   );
 }
@@ -78,6 +84,7 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
 export default function HistoryScreen({ navigation }: Props) {
   const { isDark } = useTheme();
   const [sessions, setSessions] = useState<HistoryItem[]>([]);
+  const [streak, setStreak] = useState(0);
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -114,13 +121,19 @@ export default function HistoryScreen({ navigation }: Props) {
         taskName: taskMap.get(s.taskId) || 'Unknown',
       }));
       setSessions(withNames);
+      setStreak(await store.getStreak());
     } catch {
       setSessions([]);
     }
   };
 
-  const totalMinutes = sessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000;
-  const completedCount = sessions.filter((s) => s.status === 'completed').length;
+  // Mon–Sun minutes, computed inline from sessions.
+  const weekMinutes = [0, 0, 0, 0, 0, 0, 0];
+  for (const s of sessions) {
+    if (!s.duration) continue;
+    weekMinutes[(new Date(s.startedAt).getDay() + 6) % 7] += s.duration / 60000;
+  }
+  const weekMax = Math.max(1, ...weekMinutes);
 
   const headerAnimStyle = useAnimatedStyle(() => ({
     opacity: headerOpacity.value,
@@ -141,34 +154,63 @@ export default function HistoryScreen({ navigation }: Props) {
     <SessionCard item={item} index={index} isDark={isDark} />
   );
 
+  const bg = isDark ? darkColors.paper : colors.paper;
+  const ink = isDark ? darkColors.ink : colors.ink;
+  const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+  const track = isDark ? darkColors.paperBorder : colors.paperBorder;
+
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>← Back</Text>
           </TouchableOpacity>
-          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight }]}>History</Text>
+          <Text style={[typography.h1, { color: ink }]}>History</Text>
           <View style={{ width: 50 }} />
         </View>
       </Animated.View>
 
-      <Animated.View style={[styles.statsRow, statsAnimStyle]}>
-        <View style={[styles.statCard, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
-          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Sessions</Text>
-          <Text style={[typography.h2, { color: isDark ? '#f5f5f5' : colors.midnight, marginTop: spacing.xs }]}>{completedCount}</Text>
-        </View>
-        <View style={[styles.statCard, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
-          <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Focus Time</Text>
-          <Text style={[typography.h2, { color: colors.ectoGreen, marginTop: spacing.xs }]}>{Math.round(totalMinutes)}m</Text>
+      <Animated.View style={[styles.streakSection, statsAnimStyle]}>
+        <Text style={[typography.h1, { color: colors.fire }]}>🔥</Text>
+        <Text style={[typography.displayXL, { color: ink }]}>{streak}</Text>
+        <Text style={[typography.button, { color: colors.fire, marginTop: spacing.xs }]}>DAY STREAK!</Text>
+        <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
+          {streak > 0 ? 'Keep going — every focus day counts.' : 'Finish a session to start your streak.'}
+        </Text>
+      </Animated.View>
+
+      <Animated.View style={[styles.chartSection, statsAnimStyle]}>
+        <View style={styles.chartRow}>
+          {weekMinutes.map((mins, i) => (
+            <View key={WEEK_DAYS[i]} style={styles.chartCol}>
+              <View style={styles.barTrack}>
+                <View
+                  style={[
+                    styles.bar,
+                    {
+                      height: mins > 0 ? 8 + (mins / weekMax) * 88 : 4,
+                      backgroundColor: mins > 0 ? colors.ectoGreen : track,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
+                {WEEK_DAYS[i][0]}
+              </Text>
+            </View>
+          ))}
         </View>
       </Animated.View>
 
       <Animated.View style={[styles.listSection, listAnimStyle]}>
+        <Text style={[typography.label, { color: muted, marginBottom: spacing.sm }]}>
+          PAST SESSIONS
+        </Text>
         {sessions.length === 0 ? (
           <View style={styles.emptyState}>
             <Image source={mascotSource('peeking', isDark)} style={styles.emptyImage} resizeMode="contain" />
-            <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center' }]}>
+            <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center' }]}>
               No sessions yet. Start your first focus session!
             </Text>
           </View>
@@ -193,23 +235,35 @@ const styles = StyleSheet.create({
     paddingBottom: layout.safeAreaBottom,
   },
   header: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
+  streakSection: {
+    alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  statCard: {
+  chartSection: {
+    marginBottom: spacing.xl,
+  },
+  chartRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  chartCol: {
     flex: 1,
-    padding: spacing.lg,
-    borderRadius: radius.sm,
-    borderWidth: 1,
+    alignItems: 'center',
+  },
+  barTrack: {
+    height: 104,
+    justifyContent: 'flex-end',
+  },
+  bar: {
+    width: 16,
+    borderRadius: 4,
   },
   listSection: {
     flex: 1,
@@ -219,25 +273,14 @@ const styles = StyleSheet.create({
   },
   sessionCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     padding: spacing.lg,
-    borderRadius: radius.sm,
-    borderWidth: 1,
+    borderRadius: radius.md,
+    borderWidth: 2,
+    gap: spacing.md,
   },
   sessionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     flex: 1,
-  },
-  sessionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  sessionRight: {
-    alignItems: 'flex-end',
   },
   emptyState: {
     flex: 1,

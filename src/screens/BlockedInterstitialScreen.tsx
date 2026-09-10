@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -6,14 +6,12 @@ import Animated, {
   withTiming,
   withDelay,
   withSpring,
-  withRepeat,
-  withSequence,
   Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
+import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { store } from '../storage/store';
@@ -26,59 +24,42 @@ type Props = {
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 export default function BlockedInterstitialScreen({ navigation, route }: Props) {
-  const { packageName } = route.params;
+  const { packageName, taskId } = route.params;
   const { isDark } = useTheme();
+  const [taskName, setTaskName] = useState<string | null>(null);
+
+  useEffect(() => {
+    store.getTasks()
+      .then(ts => setTaskName(ts.find(t => t.id === taskId)?.name ?? null))
+      .catch(() => {});
+  }, [taskId]);
 
   // Entry animations
-  const overlayOpacity = useSharedValue(0);
-  const shieldScale = useSharedValue(0.5);
-  const shieldOpacity = useSharedValue(0);
+  const mascotScale = useSharedValue(0.5);
+  const mascotOpacity = useSharedValue(0);
   const titleOpacity = useSharedValue(0);
   const titleTranslateY = useSharedValue(20);
   const subtitleOpacity = useSharedValue(0);
-  const quoteOpacity = useSharedValue(0);
-  const quoteTranslateY = useSharedValue(15);
   const buttonOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
   const button2Opacity = useSharedValue(0);
 
-  // Shield pulse
-  const shieldPulse = useSharedValue(1);
-
   useEffect(() => {
-    overlayOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
-
-    shieldScale.value = withDelay(200, withSpring(1, { damping: 10, stiffness: 150 }));
-    shieldOpacity.value = withDelay(200, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-
-    shieldPulse.value = withDelay(800, withRepeat(
-      withSequence(
-        withTiming(1.05, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1,
-      false,
-    ));
+    mascotScale.value = withDelay(200, withSpring(1, { damping: 10, stiffness: 150 }));
+    mascotOpacity.value = withDelay(200, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
 
     titleOpacity.value = withDelay(500, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
     titleTranslateY.value = withDelay(500, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
 
     subtitleOpacity.value = withDelay(650, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
 
-    quoteOpacity.value = withDelay(800, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    quoteTranslateY.value = withDelay(800, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
-
     buttonOpacity.value = withDelay(950, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
     button2Opacity.value = withDelay(1050, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
   }, []);
 
-  const overlayAnimStyle = useAnimatedStyle(() => ({
-    opacity: overlayOpacity.value,
-  }));
-
-  const shieldAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: shieldScale.value * shieldPulse.value }],
-    opacity: shieldOpacity.value,
+  const mascotAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: mascotScale.value }],
+    opacity: mascotOpacity.value,
   }));
 
   const titleAnimStyle = useAnimatedStyle(() => ({
@@ -90,11 +71,6 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     opacity: subtitleOpacity.value,
   }));
 
-  const quoteAnimStyle = useAnimatedStyle(() => ({
-    opacity: quoteOpacity.value,
-    transform: [{ translateY: quoteTranslateY.value }],
-  }));
-
   const buttonAnimStyle = useAnimatedStyle(() => ({
     opacity: buttonOpacity.value,
     transform: [{ scale: buttonScale.value }],
@@ -104,8 +80,13 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     opacity: button2Opacity.value,
   }));
 
-  const handleKeepFocus = () => {
+  const handleBackToTask = () => {
     navigation.goBack();
+  };
+
+  const handleSwitchTask = () => {
+    // Session stays active; user picks a different task to focus on.
+    navigation.navigate('TaskPicker');
   };
 
   const handleTakeBreak = async () => {
@@ -118,24 +99,9 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
       await store.saveBlockedAttempt({
         id: `blocked-${Date.now()}`,
         packageName,
-        taskId: route.params.taskId,
+        taskId,
         timestamp: Date.now(),
         action: 'override',
-      });
-    } catch {
-      // Best-effort logging must never trap the user on this screen.
-    }
-    navigation.goBack();
-  };
-
-  const handleGiveIn = async () => {
-    try {
-      await store.saveBlockedAttempt({
-        id: `blocked-${Date.now()}`,
-        packageName,
-        taskId: route.params.taskId,
-        timestamp: Date.now(),
-        action: 'give_in',
       });
     } catch {
       // Best-effort logging must never trap the user on this screen.
@@ -151,81 +117,71 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
 
+  const bg = isDark ? darkColors.paper : colors.paper;
+  const ink = isDark ? darkColors.ink : colors.ink;
+  const secondary = isDark ? darkColors.inkSecondary : colors.inkSecondary;
+  const outlineText = isDark ? colors.ectoGreen : colors.ectoGreenDark;
+
   return (
-    <Animated.View style={[styles.overlay, overlayAnimStyle, { backgroundColor: isDark ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.9)' }]}>
-      <View style={styles.container}>
-        {/* Mascot */}
-        <Animated.View style={[styles.mascotContainer, shieldAnimStyle]}>
-          <Image source={mascotSource('blocked', isDark)} style={styles.mascotImage} resizeMode="contain" />
-        </Animated.View>
+    <View style={[styles.container, { backgroundColor: bg }]}>
+      {/* Mascot */}
+      <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
+        <Image source={mascotSource('blocked', isDark)} style={styles.mascotImage} resizeMode="contain" />
+      </Animated.View>
 
-        {/* Title */}
-        <Animated.View style={[styles.titleSection, titleAnimStyle]}>
-          <Text style={[typography.h1, { color: '#f5f5f5', textAlign: 'center' }]}>
-            Stay Focused
+      {/* Title */}
+      <Animated.View style={[styles.titleSection, titleAnimStyle]}>
+        <Text style={[typography.display, { color: ink, textAlign: 'center' }]}>
+          {taskName ? `THIS ISN'T PART OF ${taskName.toUpperCase()}` : 'Stay Focused'}
+        </Text>
+      </Animated.View>
+
+      {/* Subtitle */}
+      <Animated.View style={[styles.subtitleSection, subtitleAnimStyle]}>
+        <Text style={[typography.body, { color: secondary, textAlign: 'center' }]}>
+          You're trying to open {packageName}, which isn't part of this task.
+        </Text>
+      </Animated.View>
+
+      {/* Buttons */}
+      <View style={styles.buttonSection}>
+        <AnimatedTouchable
+          style={[styles.backButton, buttonAnimStyle]}
+          activeOpacity={0.85}
+          onPress={handleBackToTask}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+        >
+          <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+            BACK TO TASK
           </Text>
-        </Animated.View>
+        </AnimatedTouchable>
 
-        {/* Subtitle */}
-        <Animated.View style={[styles.subtitleSection, subtitleAnimStyle]}>
-          <Text style={[typography.bodyMedium, { color: 'rgba(255,255,255,0.6)', textAlign: 'center' }]}>
-            You blocked {packageName} for this task
+        <AnimatedTouchable
+          style={[styles.outlineButton, button2AnimStyle, { borderColor: colors.ectoGreen }]}
+          activeOpacity={0.85}
+          onPress={handleSwitchTask}
+        >
+          <Text style={[typography.button, { color: outlineText, textAlign: 'center' }]}>
+            SWITCH TASK
           </Text>
-        </Animated.View>
+        </AnimatedTouchable>
 
-        {/* Motivational quote */}
-        <Animated.View style={[styles.quoteSection, quoteAnimStyle]}>
-          <Text style={[typography.bodyMedium, { color: 'rgba(255,255,255,0.8)', textAlign: 'center', fontStyle: 'italic' }]}>
-            "The secret of getting ahead is getting started."
+        <AnimatedTouchable
+          style={[styles.outlineButton, button2AnimStyle, { borderColor: colors.ectoGreen }]}
+          activeOpacity={0.85}
+          onPress={handleTakeBreak}
+        >
+          <Text style={[typography.button, { color: outlineText, textAlign: 'center' }]}>
+            2-MIN OVERRIDE
           </Text>
-          <Text style={[typography.caption, { color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: spacing.xs }]}>
-            — Mark Twain
-          </Text>
-        </Animated.View>
-
-        {/* Buttons */}
-        <View style={styles.buttonSection}>
-          <AnimatedTouchable
-            style={[styles.keepFocusButton, buttonAnimStyle]}
-            activeOpacity={0.85}
-            onPress={handleKeepFocus}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-          >
-            <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
-              Keep Focusing
-            </Text>
-          </AnimatedTouchable>
-
-          <AnimatedTouchable
-            style={[styles.breakButton, button2AnimStyle]}
-            activeOpacity={0.85}
-            onPress={handleTakeBreak}
-          >
-            <Text style={[typography.bodyMedium, { color: colors.ectoGreen, textAlign: 'center' }]}>
-              Take a Break (2 min)
-            </Text>
-          </AnimatedTouchable>
-
-          <AnimatedTouchable
-            style={[styles.giveInButton]}
-            activeOpacity={0.85}
-            onPress={handleGiveIn}
-          >
-            <Text style={[typography.bodyMedium, { color: 'rgba(255,255,255,0.5)', textAlign: 'center' }]}>
-              Give In
-            </Text>
-          </AnimatedTouchable>
-        </View>
+        </AnimatedTouchable>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-  },
   container: {
     flex: 1,
     paddingHorizontal: layout.screenPaddingH,
@@ -235,7 +191,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   mascotContainer: {
-    marginBottom: spacing.xxxl,
+    marginBottom: spacing.xl,
   },
   mascotImage: {
     width: 140,
@@ -246,16 +202,13 @@ const styles = StyleSheet.create({
   },
   subtitleSection: {
     marginBottom: spacing.xxxl,
-  },
-  quoteSection: {
-    marginBottom: spacing.xxxl * 1.5,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.md,
   },
   buttonSection: {
     width: '100%',
-    gap: spacing.lg,
+    gap: spacing.md,
   },
-  keepFocusButton: {
+  backButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
     borderBottomColor: colors.eelDarkBlue,
@@ -263,15 +216,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     alignItems: 'center',
   },
-  breakButton: {
-    paddingVertical: spacing.md,
+  outlineButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: spacing.lg,
     alignItems: 'center',
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(88, 204, 2, 0.3)',
-  },
-  giveInButton: {
-    paddingVertical: spacing.md,
-    alignItems: 'center',
+    borderWidth: 2,
   },
 });
