@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -21,6 +22,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { mascotExpressions } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { Platform } from 'react-native';
 
@@ -268,20 +270,13 @@ export default function PermissionSetupScreen({ navigation }: Props) {
           </Text>
         </Animated.View>
 
-        {/* Mascot placeholder */}
+        {/* Mascot */}
         <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
-          <View style={[styles.mascotCircle, { backgroundColor: isDark ? '#111111' : colors.paperCard }]}>
-            <View style={styles.mascotEyes}>
-              <View style={[styles.mascotEye, { backgroundColor: isDark ? '#f5f5f5' : colors.midnight }]} />
-              <View style={[styles.mascotEye, { backgroundColor: isDark ? '#f5f5f5' : colors.midnight }]} />
-            </View>
-            {bothGranted && (
-              <View style={styles.mascotMouthSmile} />
-            )}
-            {!bothGranted && (
-              <View style={styles.mascotMouthNeutral} />
-            )}
-          </View>
+          <Image
+            source={bothGranted ? mascotExpressions.happy : mascotExpressions.thinking}
+            style={styles.mascotImage}
+            resizeMode="contain"
+          />
         </Animated.View>
 
         <View style={styles.cards}>
@@ -518,45 +513,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  mascotCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.ectoGreen,
-  },
-  mascotEyes: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: -4,
-  },
-  mascotEye: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  mascotMouthSmile: {
-    width: 16,
-    height: 8,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 8,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderTopWidth: 2,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderBottomWidth: 0,
-    borderColor: colors.ectoGreen,
-    marginTop: 6,
-  },
-  mascotMouthNeutral: {
-    width: 14,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: '#777',
-    marginTop: 8,
+  mascotImage: {
+    width: 96,
+    height: 96,
   },
   cards: {
     gap: spacing.lg,
