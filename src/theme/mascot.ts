@@ -1,20 +1,20 @@
 // StayT mascot expressions — static requires (Metro needs literal paths).
-// NOTE: filenames are provisional; verify against actual art before renaming.
+// Names verified against the actual art.
 import type { ImageSourcePropType } from 'react-native';
 
 export const mascotExpressions = {
-  happy: require('../../assets/mascot/happy.png'),
   working: require('../../assets/mascot/working.png'),
-  thumbsUp: require('../../assets/mascot/thumbs_up.png'),
-  ok: require('../../assets/mascot/ok.png'),
-  starEyes: require('../../assets/mascot/star_eyes.png'),
-  heartEyes: require('../../assets/mascot/heart_eyes.png'),
+  laptop: require('../../assets/mascot/laptop.png'),
+  reading: require('../../assets/mascot/reading.png'),
+  blocked: require('../../assets/mascot/blocked.png'),
+  music: require('../../assets/mascot/music.png'),
+  phone: require('../../assets/mascot/phone.png'),
   thinking: require('../../assets/mascot/thinking.png'),
-  wink: require('../../assets/mascot/wink.png'),
-  sad: require('../../assets/mascot/sad.png'),
-  crying: require('../../assets/mascot/crying.png'),
-  angry: require('../../assets/mascot/angry.png'),
-  sleeping: require('../../assets/mascot/sleeping.png'),
+  waving: require('../../assets/mascot/waving.png'),
+  leaving: require('../../assets/mascot/leaving.png'),
+  coffee: require('../../assets/mascot/coffee.png'),
+  cheering: require('../../assets/mascot/cheering.png'),
+  peeking: require('../../assets/mascot/peeking.png'),
 } as Record<string, ImageSourcePropType>;
 
 export type MascotExpression = keyof typeof mascotExpressions;

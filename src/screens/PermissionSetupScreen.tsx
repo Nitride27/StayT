@@ -273,7 +273,7 @@ export default function PermissionSetupScreen({ navigation }: Props) {
         {/* Mascot */}
         <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
           <Image
-            source={bothGranted ? mascotExpressions.happy : mascotExpressions.thinking}
+            source={bothGranted ? mascotExpressions.cheering : mascotExpressions.thinking}
             style={styles.mascotImage}
             resizeMode="contain"
           />
