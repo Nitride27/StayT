@@ -199,8 +199,8 @@ export default function PaywallScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.closeButton}>
           <Text style={[typography.bodyMedium, { color: colors.inkMuted }]}>✕</Text>
         </TouchableOpacity>
-        <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
-          Unlock Full Power
+        <Text style={[typography.display, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
+          UNLOCK FULL POWER
         </Text>
       </Animated.View>
 
@@ -240,9 +240,9 @@ export default function PaywallScreen({ navigation }: Props) {
           </Text>
         </AnimatedTouchable>
 
-        <TouchableOpacity style={styles.restoreButton} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
-          <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center' }]}>
-            Restore Purchase
+        <TouchableOpacity style={[styles.restoreButton, { borderColor: colors.ectoGreen }]} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
+          <Text style={[typography.label, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
+            RESTORE PURCHASE
           </Text>
         </TouchableOpacity>
       </Animated.View>
@@ -267,8 +267,8 @@ const styles = StyleSheet.create({
   },
   pricingCard: {
     padding: spacing.xl,
-    borderRadius: radius.sm,
-    borderWidth: 1,
+    borderRadius: radius.md,
+    borderWidth: 2,
     marginBottom: spacing.xxl,
   },
   priceRow: {
@@ -311,5 +311,8 @@ const styles = StyleSheet.create({
   restoreButton: {
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 2,
+    marginTop: spacing.md,
   },
 });

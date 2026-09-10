@@ -11,6 +11,7 @@ import TaskSetupScreen from './src/screens/TaskSetupScreen';
 import ActiveSessionScreen from './src/screens/ActiveSessionScreen';
 import BlockedInterstitialScreen from './src/screens/BlockedInterstitialScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 import PermissionSetupScreen from './src/screens/PermissionSetupScreen';
 import PaywallScreen from './src/screens/PaywallScreen';
 import { store } from './src/storage/store';
@@ -29,6 +30,7 @@ export type RootStackParamList = {
   ActiveSession: { task: Task; session: Session };
   BlockedInterstitial: { packageName: string; taskId: string };
   History: undefined;
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -158,6 +160,11 @@ function AppNavigator() {
           <Stack.Screen
             name="History"
             component={HistoryScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={SettingsScreen}
             options={{ headerShown: false }}
           />
         </Stack.Navigator>

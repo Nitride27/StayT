@@ -92,16 +92,16 @@ export default function WelcomeScreen({ navigation }: Props) {
         <Animated.View style={[styles.heroArea, heroAnimStyle]}>
           {/* Mascot */}
           <Image source={mascotSource('waving', isDark)} style={styles.mascotImage} resizeMode="contain" />
-          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
-            Stay focused.
+          <Text style={[typography.display, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
+            STAY FOCUSED.
           </Text>
-          <Text style={[typography.h1, { color: colors.ectoGreen, textAlign: 'center', marginTop: spacing.xs }]}>
-            Stay on track.
+          <Text style={[typography.display, { color: colors.ectoGreen, textAlign: 'center', marginTop: spacing.xs }]}>
+            STAY ON TRACK.
           </Text>
         </Animated.View>
 
         <View style={styles.features}>
-          <Animated.View style={[styles.featureRow, feature1AnimStyle]}>
+          <Animated.View style={[styles.featureRow, feature1AnimStyle, { borderColor: isDark ? '#222222' : colors.paperBorder }]}>
             <View style={[styles.featureDot, { backgroundColor: colors.ectoGreen }]} />
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Set your focus</Text>
@@ -109,7 +109,7 @@ export default function WelcomeScreen({ navigation }: Props) {
             </View>
           </Animated.View>
 
-          <Animated.View style={[styles.featureRow, feature2AnimStyle]}>
+          <Animated.View style={[styles.featureRow, feature2AnimStyle, { borderColor: isDark ? '#222222' : colors.paperBorder }]}>
             <View style={[styles.featureDot, { backgroundColor: colors.fire }]} />
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Build your streak</Text>
@@ -117,7 +117,7 @@ export default function WelcomeScreen({ navigation }: Props) {
             </View>
           </Animated.View>
 
-          <Animated.View style={[styles.featureRow, feature3AnimStyle]}>
+          <Animated.View style={[styles.featureRow, feature3AnimStyle, { borderColor: isDark ? '#222222' : colors.paperBorder }]}>
             <View style={[styles.featureDot, { backgroundColor: colors.macawBlue }]} />
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Stay in the zone</Text>
@@ -135,7 +135,7 @@ export default function WelcomeScreen({ navigation }: Props) {
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={styles.primaryButtonText}>Get Started</Text>
+          <Text style={styles.primaryButtonText}>GET STARTED</Text>
         </AnimatedTouchable>
 
         <Text style={[typography.caption, { color: colors.inkMuted, textAlign: 'center', marginTop: spacing.md }]}>
@@ -172,6 +172,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.lg,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.lg,
   },
   featureDot: {
     width: 10,

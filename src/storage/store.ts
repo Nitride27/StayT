@@ -78,6 +78,12 @@ export const store = {
     return sessions.find(s => s.status === 'active') || null;
   },
 
+  async clearSessions(): Promise<void> {
+    return serialized(SESSIONS_KEY, async () => {
+      await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify([]));
+    });
+  },
+
   // Preferences
   async getPreferences(): Promise<UserPreferences> {
     const data = await AsyncStorage.getItem(PREFERENCES_KEY);
@@ -153,6 +159,12 @@ export const store = {
       const attempts = await this.getBlockedAttempts();
       attempts.push(attempt);
       await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify(attempts.slice(-1000)));
+    });
+  },
+
+  async clearBlockedAttempts(): Promise<void> {
+    return serialized(BLOCKED_ATTEMPTS_KEY, async () => {
+      await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify([]));
     });
   },
 

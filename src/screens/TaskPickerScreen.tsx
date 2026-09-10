@@ -182,11 +182,16 @@ export default function TaskPickerScreen({ navigation }: Props) {
           <TouchableOpacity onPress={() => navigation.navigate('History')} activeOpacity={0.7}>
             <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>History</Text>
           </TouchableOpacity>
-          <View style={[styles.streakPill, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={[styles.streakDot, { backgroundColor: colors.fire }]} />
-            <Text style={[typography.label, { color: colors.fire }]}>
-              {streak > 0 ? `${streak} day streak` : 'No streak yet'}
-            </Text>
+          <View style={styles.headerRight}>
+            <View style={[styles.streakPill, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <View style={[styles.streakDot, { backgroundColor: colors.fire }]} />
+              <Text style={[typography.label, { color: colors.fire }]}>
+                {streak > 0 ? `${streak} day streak` : 'No streak yet'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={styles.gearButton}>
+              <Text style={[typography.h2, { color: ink }]}>⚙</Text>
+            </TouchableOpacity>
           </View>
         </View>
         <Text style={[typography.display, { color: ink, marginTop: spacing.lg }]}>
@@ -240,6 +245,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  gearButton: {
+    padding: spacing.xs,
   },
   streakPill: {
     flexDirection: 'row',
