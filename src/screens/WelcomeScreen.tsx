@@ -86,12 +86,12 @@ export default function WelcomeScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <View style={styles.topSection}>
         <Animated.View style={[styles.heroArea, heroAnimStyle]}>
           {/* Shield icon — green circle with checkmark */}
           <View style={[styles.shieldCircle, { backgroundColor: colors.ectoGreen }]}>
-            <Text style={styles.shieldCheck}>✓</Text>
+            <View style={styles.shieldCheckDot} />
           </View>
           <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
             Stay focused.
@@ -169,10 +169,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  shieldCheck: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: colors.midnight,
+  shieldCheckDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
   },
   features: {
     gap: spacing.xl,

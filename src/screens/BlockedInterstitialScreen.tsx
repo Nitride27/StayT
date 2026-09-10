@@ -14,6 +14,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, gamification, layout, colors } from '../theme/tokens';
+import AppBlocker from '../native/AppBlocker';
+import { store } from '../storage/store';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BlockedInterstitial'>;
@@ -105,7 +107,26 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     navigation.goBack();
   };
 
-  const handleGiveIn = () => {
+  const handleTakeBreak = async () => {
+    await AppBlocker.pauseBlocking(120);
+    await store.saveBlockedAttempt({
+      id: `blocked-${Date.now()}`,
+      packageName,
+      taskId: route.params.taskId,
+      timestamp: Date.now(),
+      action: 'override',
+    });
+    navigation.goBack();
+  };
+
+  const handleGiveIn = async () => {
+    await store.saveBlockedAttempt({
+      id: `blocked-${Date.now()}`,
+      packageName,
+      taskId: route.params.taskId,
+      timestamp: Date.now(),
+      action: 'give_in',
+    });
     navigation.goBack();
   };
 
@@ -124,7 +145,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
         <Animated.View style={[styles.shieldContainer, shieldAnimStyle]}>
           <View style={[styles.shieldCircle, { backgroundColor: 'rgba(76, 175, 80, 0.15)' }]}>
             <View style={[styles.shieldInner, { backgroundColor: colors.ectoGreen }]}>
-              <Text style={styles.shieldCheck}>✓</Text>
+              <View style={styles.shieldCheckDot} />
             </View>
           </View>
         </Animated.View>
@@ -168,7 +189,17 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
           </AnimatedTouchable>
 
           <AnimatedTouchable
-            style={[styles.giveInButton, button2AnimStyle]}
+            style={[styles.breakButton, button2AnimStyle]}
+            activeOpacity={0.85}
+            onPress={handleTakeBreak}
+          >
+            <Text style={[typography.bodyMedium, { color: colors.ectoGreen, textAlign: 'center' }]}>
+              Take a Break (2 min)
+            </Text>
+          </AnimatedTouchable>
+
+          <AnimatedTouchable
+            style={[styles.giveInButton]}
             activeOpacity={0.85}
             onPress={handleGiveIn}
           >
@@ -211,10 +242,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  shieldCheck: {
-    fontSize: 32,
-    color: colors.midnight,
-    fontWeight: '700',
+  shieldCheckDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
   },
   titleSection: {
     marginBottom: spacing.md,
@@ -237,6 +269,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+  },
+  breakButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(88, 204, 2, 0.3)',
   },
   giveInButton: {
     paddingVertical: spacing.md,

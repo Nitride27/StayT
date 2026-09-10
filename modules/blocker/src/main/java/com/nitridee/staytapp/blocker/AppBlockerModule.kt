@@ -89,6 +89,10 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         // Required for NativeEventEmitter
     }
 
+    fun invalidate() {
+        instance = null
+    }
+
     private fun emitToJS(packageName: String, timestamp: Long) {
         val params = Arguments.createMap().apply {
             putString("packageName", packageName)

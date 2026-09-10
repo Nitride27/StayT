@@ -29,7 +29,9 @@
     },
     "owner": "nitridee",
     "plugins": [
-      "./modules/blocker/plugin"
+      "./modules/blocker/plugin",
+      "expo-font",
+      "expo-splash-screen"
     ]
   }
 }

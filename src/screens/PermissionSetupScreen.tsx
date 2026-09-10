@@ -1,11 +1,20 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  AppState,
+  AppStateStatus,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withDelay,
   withSpring,
+  withSequence,
   Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,21 +33,30 @@ const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 function getOEMWarning(): string | null {
   if (Platform.OS !== 'android') return null;
   const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
-  const manufacturer = (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
-  if (manufacturer.includes('xiaomi') || model.includes('xiaomi')) return 'Xiaomi: Settings > Apps > Manage apps > StayT > Autostart';
-  if (manufacturer.includes('samsung') || model.includes('samsung')) return 'Samsung: Settings > Battery > StayT > Allow background activity';
-  if (manufacturer.includes('huawei') || model.includes('huawei')) return 'Huawei: Settings > Battery > App launch > StayT > Manage manually';
+  const manufacturer =
+    (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
+  if (manufacturer.includes('xiaomi') || model.includes('xiaomi'))
+    return 'Xiaomi: Settings > Apps > Manage apps > StayT > Autostart';
+  if (manufacturer.includes('samsung') || model.includes('samsung'))
+    return 'Samsung: Settings > Battery > StayT > Allow background activity';
+  if (manufacturer.includes('huawei') || model.includes('huawei'))
+    return 'Huawei: Settings > Battery > App launch > StayT > Manage manually';
   return null;
 }
 
 export default function PermissionSetupScreen({ navigation }: Props) {
   const { isDark } = useTheme();
   const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [notificationRequested, setNotificationRequested] = useState(false);
+  const appState = useRef(AppState.currentState);
   const oemWarning = getOEMWarning();
 
-  // Entry animations
+  // --- Animations ---
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(20);
+  const mascotScale = useSharedValue(0.8);
+  const mascotOpacity = useSharedValue(0);
   const card1Opacity = useSharedValue(0);
   const card1TranslateY = useSharedValue(20);
   const card2Opacity = useSharedValue(0);
@@ -47,35 +65,109 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   const oemTranslateY = useSharedValue(20);
   const buttonOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
+  const checkDotScale = useSharedValue(1);
+
+  // Success pulse shared values for each card
+  const accDotScale = useSharedValue(1);
+  const notifDotScale = useSharedValue(1);
 
   useEffect(() => {
     headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
     headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
 
-    card1Opacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    card1TranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    mascotOpacity.value = withDelay(150, withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }));
+    mascotScale.value = withDelay(150, withSpring(1, { damping: 12, stiffness: 200 }));
 
-    card2Opacity.value = withDelay(350, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    card2TranslateY.value = withDelay(350, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    card1Opacity.value = withDelay(300, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    card1TranslateY.value = withDelay(300, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
 
-    oemOpacity.value = withDelay(450, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    oemTranslateY.value = withDelay(450, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    card2Opacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    card2TranslateY.value = withDelay(400, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
 
-    buttonOpacity.value = withDelay(550, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    oemOpacity.value = withDelay(500, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    oemTranslateY.value = withDelay(500, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+
+    buttonOpacity.value = withDelay(600, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
   }, []);
 
-  // Re-check when screen is focused
+  // --- Check both permissions on mount ---
   useEffect(() => {
-    const check = async () => {
-      const enabled = await AppBlocker.isAccessibilityServiceEnabled();
-      setAccessibilityEnabled(enabled);
+    const checkPermissions = async () => {
+      const [acc, notif] = await Promise.all([
+        AppBlocker.isAccessibilityServiceEnabled(),
+        AppBlocker.isNotificationPermissionGranted(),
+      ]);
+      setAccessibilityEnabled(acc);
+      setNotificationEnabled(notif);
+      setNotificationRequested(true);
     };
-    check();
+    checkPermissions();
   }, []);
 
+  // --- Request notification permission once on mount (after initial check) ---
+  useEffect(() => {
+    if (!notificationRequested) return;
+    if (notificationEnabled) return;
+
+    const requestNotif = async () => {
+      const granted = await AppBlocker.requestNotificationPermission();
+      setNotificationEnabled(granted);
+    };
+    requestNotif();
+  }, [notificationRequested, notificationEnabled]);
+
+  // --- AppState listener: re-check accessibility when returning from settings ---
+  useEffect(() => {
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        const acc = await AppBlocker.isAccessibilityServiceEnabled();
+        setAccessibilityEnabled(acc);
+      }
+      appState.current = nextState;
+    };
+
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, []);
+
+  // --- Auto-advance when both permissions are granted ---
+  useEffect(() => {
+    if (accessibilityEnabled && notificationEnabled) {
+      const timer = setTimeout(() => {
+        navigation.navigate('TaskPicker');
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [accessibilityEnabled, notificationEnabled, navigation]);
+
+  // --- Pulse dot on grant ---
+  useEffect(() => {
+    if (accessibilityEnabled) {
+      accDotScale.value = withSequence(
+        withSpring(1.6, { damping: 8, stiffness: 300 }),
+        withSpring(1, { damping: 10, stiffness: 200 })
+      );
+    }
+  }, [accessibilityEnabled]);
+
+  useEffect(() => {
+    if (notificationEnabled) {
+      notifDotScale.value = withSequence(
+        withSpring(1.6, { damping: 8, stiffness: 300 }),
+        withSpring(1, { damping: 10, stiffness: 200 })
+      );
+    }
+  }, [notificationEnabled]);
+
+  // --- Animated styles ---
   const headerAnimStyle = useAnimatedStyle(() => ({
     opacity: headerOpacity.value,
     transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const mascotAnimStyle = useAnimatedStyle(() => ({
+    opacity: mascotOpacity.value,
+    transform: [{ scale: mascotScale.value }],
   }));
 
   const card1AnimStyle = useAnimatedStyle(() => ({
@@ -98,12 +190,28 @@ export default function PermissionSetupScreen({ navigation }: Props) {
     transform: [{ scale: buttonScale.value }],
   }));
 
+  const accDotAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: accDotScale.value }],
+  }));
+
+  const notifDotAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: notifDotScale.value }],
+  }));
+
+  const bothGranted = accessibilityEnabled && notificationEnabled;
+
+  // --- Handlers ---
   const handleGrantAccessibility = async () => {
     try {
-      await AppBlocker.openAccessibilitySettings();
+      AppBlocker.openAccessibilitySettings();
     } catch {
       Alert.alert('Error', 'Could not open accessibility settings.');
     }
+  };
+
+  const handleGrantNotification = async () => {
+    const granted = await AppBlocker.requestNotificationPermission();
+    setNotificationEnabled(granted);
   };
 
   const handlePressIn = () => {
@@ -114,28 +222,110 @@ export default function PermissionSetupScreen({ navigation }: Props) {
     buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
 
+  const handleContinue = () => {
+    if (bothGranted) {
+      navigation.navigate('TaskPicker');
+    }
+  };
+
+  // --- Step indicator ---
+  const step1Color = accessibilityEnabled ? colors.ectoGreen : colors.inkMuted;
+  const step2Color = notificationEnabled ? colors.ectoGreen : colors.inkMuted;
+
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <View style={styles.topSection}>
+        {/* Step indicator */}
+        <Animated.View style={[styles.stepIndicator, headerAnimStyle]}>
+          <View style={styles.stepRow}>
+            <View style={[styles.stepDot, { backgroundColor: step1Color }]} />
+            <View style={[styles.stepLine, { backgroundColor: accessibilityEnabled ? colors.ectoGreen : colors.inkFaint }]} />
+            <View style={[styles.stepDot, { backgroundColor: step2Color }]} />
+          </View>
+        </Animated.View>
+
+        {/* Header */}
         <Animated.View style={[styles.header, headerAnimStyle]}>
-          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
+          <Text
+            style={[
+              typography.h1,
+              { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' },
+            ]}
+          >
             Grant Permissions
           </Text>
-          <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.md }]}>
-            StayT needs a few permissions to work properly
+          <Text
+            style={[
+              typography.bodyMedium,
+              {
+                color: isDark ? colors.inkMuted : colors.inkSecondary,
+                textAlign: 'center',
+                marginTop: spacing.sm,
+              },
+            ]}
+          >
+            StayT needs a couple of permissions to protect your focus
           </Text>
         </Animated.View>
 
+        {/* Mascot placeholder */}
+        <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
+          <View style={[styles.mascotCircle, { backgroundColor: isDark ? '#111111' : colors.paperCard }]}>
+            <View style={styles.mascotEyes}>
+              <View style={[styles.mascotEye, { backgroundColor: isDark ? '#f5f5f5' : colors.midnight }]} />
+              <View style={[styles.mascotEye, { backgroundColor: isDark ? '#f5f5f5' : colors.midnight }]} />
+            </View>
+            {bothGranted && (
+              <View style={styles.mascotMouthSmile} />
+            )}
+            {!bothGranted && (
+              <View style={styles.mascotMouthNeutral} />
+            )}
+          </View>
+        </Animated.View>
+
         <View style={styles.cards}>
-          <Animated.View style={[styles.permissionCard, card1AnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+          {/* Accessibility Service Card */}
+          <Animated.View
+            style={[
+              styles.permissionCard,
+              card1AnimStyle,
+              {
+                backgroundColor: isDark ? '#111111' : colors.paperCard,
+                borderColor: accessibilityEnabled
+                  ? colors.ectoGreen
+                  : isDark
+                  ? '#1a2d5e'
+                  : colors.paperBorder,
+              },
+            ]}
+          >
             <View style={styles.cardHeader}>
-              <View style={[styles.statusDot, accessibilityEnabled && styles.statusDotActive]} />
-              <Text style={[typography.bodyBold, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
+              <Animated.View style={accDotAnimStyle}>
+                <View style={[styles.statusDot, accessibilityEnabled && styles.statusDotActive]} />
+              </Animated.View>
+              <Text
+                style={[
+                  typography.bodyBold,
+                  { color: isDark ? '#f5f5f5' : colors.midnight },
+                ]}
+              >
                 Accessibility Service
               </Text>
+              {accessibilityEnabled && (
+                <Text style={[styles.checkMark, { color: colors.ectoGreen }]}>+</Text>
+              )}
             </View>
-            <Text style={[typography.body, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: spacing.xs }]}>
-              Allows StayT to detect and block distracting apps
+            <Text
+              style={[
+                typography.body,
+                {
+                  color: isDark ? colors.inkMuted : colors.inkSecondary,
+                  marginTop: spacing.xs,
+                },
+              ]}
+            >
+              Detects and blocks distracting apps so you stay focused
             </Text>
             <TouchableOpacity
               style={[styles.grantButton, accessibilityEnabled && styles.grantButtonDone]}
@@ -143,48 +333,148 @@ export default function PermissionSetupScreen({ navigation }: Props) {
               onPress={handleGrantAccessibility}
               disabled={accessibilityEnabled}
             >
-              <Text style={[typography.label, { color: accessibilityEnabled ? colors.ectoGreen : colors.midnight, textAlign: 'center' }]}>
-                {accessibilityEnabled ? 'Enabled' : 'Grant Access'}
+              <Text
+                style={[
+                  typography.label,
+                  {
+                    color: accessibilityEnabled ? colors.ectoGreen : colors.midnight,
+                    textAlign: 'center',
+                  },
+                ]}
+              >
+                {accessibilityEnabled ? 'Enabled' : 'Open Settings'}
               </Text>
             </TouchableOpacity>
           </Animated.View>
 
-          <Animated.View style={[styles.permissionCard, card2AnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+          {/* Notification Permission Card */}
+          <Animated.View
+            style={[
+              styles.permissionCard,
+              card2AnimStyle,
+              {
+                backgroundColor: isDark ? '#111111' : colors.paperCard,
+                borderColor: notificationEnabled
+                  ? colors.ectoGreen
+                  : isDark
+                  ? '#1a2d5e'
+                  : colors.paperBorder,
+              },
+            ]}
+          >
             <View style={styles.cardHeader}>
-              <View style={styles.statusDot} />
-              <Text style={[typography.bodyBold, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
-                Overlay Permission
+              <Animated.View style={notifDotAnimStyle}>
+                <View style={[styles.statusDot, notificationEnabled && styles.statusDotActive]} />
+              </Animated.View>
+              <Text
+                style={[
+                  typography.bodyBold,
+                  { color: isDark ? '#f5f5f5' : colors.midnight },
+                ]}
+              >
+                Notifications
               </Text>
+              {notificationEnabled && (
+                <Text style={[styles.checkMark, { color: colors.ectoGreen }]}>+</Text>
+              )}
             </View>
-            <Text style={[typography.body, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: spacing.xs }]}>
-              Required for the blocked app screen overlay
+            <Text
+              style={[
+                typography.body,
+                {
+                  color: isDark ? colors.inkMuted : colors.inkSecondary,
+                  marginTop: spacing.xs,
+                },
+              ]}
+            >
+              Sends you reminders and session updates
             </Text>
+            {!notificationEnabled && (
+              <TouchableOpacity
+                style={styles.grantButton}
+                activeOpacity={0.8}
+                onPress={handleGrantNotification}
+              >
+                <Text
+                  style={[
+                    typography.label,
+                    { color: colors.midnight, textAlign: 'center' },
+                  ]}
+                >
+                  Allow Notifications
+                </Text>
+              </TouchableOpacity>
+            )}
+            {notificationEnabled && (
+              <View style={styles.grantedBadge}>
+                <Text style={[typography.label, { color: colors.ectoGreen, textAlign: 'center' }]}>
+                  Granted
+                </Text>
+              </View>
+            )}
           </Animated.View>
         </View>
 
+        {/* OEM warning */}
         {oemWarning && (
-          <Animated.View style={[styles.oemWarning, oemAnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
-            <Text style={[typography.caption, { color: colors.fire, marginBottom: spacing.xs, fontWeight: '600' }]}>
+          <Animated.View
+            style={[
+              styles.oemWarning,
+              oemAnimStyle,
+              {
+                backgroundColor: isDark ? '#111111' : colors.paperCard,
+                borderColor: isDark ? '#1a2d5e' : colors.paperBorder,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                typography.caption,
+                { color: colors.fire, marginBottom: spacing.xs, fontWeight: '600' },
+              ]}
+            >
               Device-specific setting
             </Text>
-            <Text style={[typography.body, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>
+            <Text
+              style={[
+                typography.body,
+                { color: isDark ? colors.inkMuted : colors.inkSecondary },
+              ]}
+            >
               {oemWarning}
             </Text>
           </Animated.View>
         )}
       </View>
 
+      {/* Bottom section */}
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
-        <AnimatedTouchable
-          style={[styles.primaryButton, { opacity: accessibilityEnabled ? 1 : 0.5 }]}
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('TaskPicker')}
-          disabled={!accessibilityEnabled}
-          onPressIn={accessibilityEnabled ? handlePressIn : undefined}
-          onPressOut={accessibilityEnabled ? handlePressOut : undefined}
-        >
-          <Text style={styles.primaryButtonText}>Continue</Text>
-        </AnimatedTouchable>
+        {bothGranted ? (
+          <View style={styles.successMessage}>
+            <Text
+              style={[
+                typography.bodyMedium,
+                { color: colors.ectoGreen, textAlign: 'center' },
+              ]}
+            >
+              All set. Taking you to your tasks...
+            </Text>
+          </View>
+        ) : (
+          <AnimatedTouchable
+            style={[
+              styles.primaryButton,
+              { opacity: bothGranted ? 1 : 0.5 },
+            ]}
+            activeOpacity={0.85}
+            onPress={handleContinue}
+            disabled={!bothGranted}
+            onPressIn={bothGranted ? handlePressIn : undefined}
+            onPressOut={bothGranted ? handlePressOut : undefined}
+          >
+            <Text style={styles.primaryButtonText}>Continue</Text>
+          </AnimatedTouchable>
+        )}
       </Animated.View>
     </View>
   );
@@ -201,9 +491,72 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  stepIndicator: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  stepLine: {
+    width: 40,
+    height: 2,
+    marginHorizontal: spacing.sm,
+    borderRadius: 1,
+  },
   header: {
     alignItems: 'center',
-    marginBottom: spacing.xxxl,
+    marginBottom: spacing.lg,
+  },
+  mascotContainer: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  mascotCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.ectoGreen,
+  },
+  mascotEyes: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: -4,
+  },
+  mascotEye: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  mascotMouthSmile: {
+    width: 16,
+    height: 8,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 0,
+    borderColor: colors.ectoGreen,
+    marginTop: 6,
+  },
+  mascotMouthNeutral: {
+    width: 14,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#777',
+    marginTop: 8,
   },
   cards: {
     gap: spacing.lg,
@@ -216,7 +569,7 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   statusDot: {
     width: 8,
@@ -226,6 +579,11 @@ const styles = StyleSheet.create({
   },
   statusDotActive: {
     backgroundColor: colors.ectoGreen,
+  },
+  checkMark: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 'auto',
   },
   grantButton: {
     marginTop: spacing.md,
@@ -239,6 +597,11 @@ const styles = StyleSheet.create({
   grantButtonDone: {
     backgroundColor: 'transparent',
     borderBottomWidth: 0,
+  },
+  grantedBadge: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
   },
   oemWarning: {
     marginTop: spacing.lg,
@@ -261,5 +624,9 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.midnight,
     textAlign: 'center',
+  },
+  successMessage: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
   },
 });

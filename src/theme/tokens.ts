@@ -37,15 +37,15 @@ export const colors = {
 } as const;
 
 export const darkColors = {
-  paper: '#000437',
-  paperCard: '#0a1a4a',
-  paperBorder: '#1a2d5e',
-  ink: '#f5f5f5',
+  paper: '#000000',
+  paperCard: '#111111',
+  paperBorder: '#222222',
+  ink: '#ffffff',
   inkSecondary: '#c8c8c8',
-  inkMuted: '#8e8e93',
-  inkFaint: '#5a5a5e',
-  overlay: 'rgba(0, 4, 55, 0.85)',
-  surfaceElevated: '#0f2050',
+  inkMuted: '#888888',
+  inkFaint: '#555555',
+  overlay: 'rgba(0, 0, 0, 0.85)',
+  surfaceElevated: '#111111',
   permissionBanner: '#2a2200',
   permissionBannerText: '#ffc107',
 } as const;
@@ -53,65 +53,102 @@ export const darkColors = {
 export type Colors = typeof colors;
 
 export const typography = {
-  // Display — streak numbers, big counters
-  display: {
-    fontSize: 40,
-    fontWeight: '900' as const,
-    letterSpacing: -0.8,
-    lineHeight: 48,
+  // ─── Anton — brutalist personality, big moments only ───
+  displayXL: {
+    fontFamily: 'Anton',
+    fontSize: 72,
+    fontWeight: '400' as const,
+    letterSpacing: -0.04,
+    lineHeight: 65, // 0.9
   },
-  // Heading — screen titles
+  display: {
+    fontFamily: 'Anton',
+    fontSize: 48,
+    fontWeight: '400' as const,
+    letterSpacing: -0.03,
+    lineHeight: 43, // 0.9
+  },
+
+  // ─── Space Grotesk — geometric, technical, UI + headings ───
   h1: {
-    fontSize: 28,
+    fontFamily: 'SpaceGrotesk-Bold',
+    fontSize: 32,
     fontWeight: '700' as const,
-    letterSpacing: -0.28,
-    lineHeight: 34,
+    letterSpacing: -0.03,
+    lineHeight: 36,
   },
   h2: {
-    fontSize: 22,
-    fontWeight: '700' as const,
-    letterSpacing: -0.22,
+    fontFamily: 'SpaceGrotesk-SemiBold',
+    fontSize: 24,
+    fontWeight: '600' as const,
+    letterSpacing: -0.02,
     lineHeight: 28,
   },
-  // Body
-  body: {
-    fontSize: 16,
-    fontWeight: '400' as const,
-    letterSpacing: 0.02,
-    lineHeight: 22,
-  },
-  bodyMedium: {
-    fontSize: 16,
+  h3: {
+    fontFamily: 'SpaceGrotesk-Medium',
+    fontSize: 18,
     fontWeight: '500' as const,
-    letterSpacing: 0.02,
+    letterSpacing: -0.01,
     lineHeight: 22,
   },
-  bodyBold: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    letterSpacing: 0.02,
-    lineHeight: 22,
-  },
-  // Label — buttons, chips
-  label: {
+  button: {
+    fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 15,
     fontWeight: '700' as const,
-    letterSpacing: 0.04,
+    letterSpacing: 0.02,
     lineHeight: 20,
   },
-  // Caption
+  label: {
+    fontFamily: 'SpaceGrotesk-Medium',
+    fontSize: 12,
+    fontWeight: '500' as const,
+    letterSpacing: 0.04,
+    lineHeight: 16,
+  },
+  timer: {
+    fontFamily: 'SpaceGrotesk-Bold',
+    fontSize: 48,
+    fontWeight: '700' as const,
+    letterSpacing: -0.02,
+    lineHeight: 53, // 0.9
+  },
+
+  // ─── Inter — readability, longer text ───
+  body: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 16,
+    fontWeight: '400' as const,
+    letterSpacing: 0,
+    lineHeight: 22, // 1.4
+  },
+  bodyMedium: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 16,
+    fontWeight: '500' as const,
+    letterSpacing: 0,
+    lineHeight: 22,
+  },
+  bodyStrong: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 16,
+    fontWeight: '600' as const,
+    letterSpacing: 0,
+    lineHeight: 22,
+  },
+  // Alias for screens still using bodyBold
+  bodyBold: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 16,
+    fontWeight: '600' as const,
+    letterSpacing: 0,
+    lineHeight: 22,
+  },
   caption: {
+    fontFamily: 'Inter-Regular',
     fontSize: 13,
     fontWeight: '400' as const,
-    letterSpacing: 0.04,
+    letterSpacing: 0.02,
     lineHeight: 18,
-  },
-  // Timer — big countdown
-  timer: {
-    fontSize: 64,
-    fontWeight: '700' as const,
-    letterSpacing: -1.92,
-    lineHeight: 72,
   },
 } as const;
 
@@ -175,9 +212,10 @@ export const buttons = {
 export const gamification = {
   streak: {
     numberFont: {
+      fontFamily: 'Anton',
       fontSize: 48,
-      fontWeight: '900' as const,
-      letterSpacing: -0.96,
+      fontWeight: '400' as const,
+      letterSpacing: -0.03,
     },
     fireSize: 32,
   },

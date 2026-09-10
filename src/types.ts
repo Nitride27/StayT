@@ -20,8 +20,11 @@ export interface Session {
 }
 
 export interface BlockedAttempt {
+  id: string;
   packageName: string;
+  taskId: string;
   timestamp: number;
+  action: 'give_in' | 'override';
 }
 
 export interface UserPreferences {

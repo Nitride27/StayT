@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import java.util.concurrent.ConcurrentHashMap
 
 class StayTAccessibilityService : AccessibilityService() {
     companion object {
@@ -14,7 +15,7 @@ class StayTAccessibilityService : AccessibilityService() {
             private set
 
         private var isBlocking = false
-        private var blockedPackages = mutableSetOf<String>()
+        private var blockedPackages = ConcurrentHashMap.newKeySet<String>()
         private val handler = Handler(Looper.getMainLooper())
         private var pauseRunnable: Runnable? = null
 
@@ -80,6 +81,10 @@ class StayTAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        isBlocking = false
+        blockedPackages.clear()
+        pauseRunnable?.let { handler.removeCallbacks(it) }
+        pauseRunnable = null
         super.onDestroy()
         Log.d(TAG, "Accessibility service destroyed")
     }

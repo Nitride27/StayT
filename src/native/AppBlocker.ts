@@ -1,4 +1,5 @@
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 const { AppBlocker } = NativeModules;
 
@@ -55,6 +56,16 @@ class AppBlockerBridge {
       return [];
     }
     return AppBlocker.getInstalledApps();
+  }
+
+  async requestNotificationPermission(): Promise<boolean> {
+    const { status } = await Notifications.requestPermissionsAsync();
+    return status === 'granted';
+  }
+
+  async isNotificationPermissionGranted(): Promise<boolean> {
+    const { status } = await Notifications.getPermissionsAsync();
+    return status === 'granted';
   }
 
   onBlockedAttempt(callback: (event: BlockedAttemptEvent) => void): () => void {

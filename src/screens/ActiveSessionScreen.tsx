@@ -96,6 +96,11 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     return () => clearInterval(interval);
   }, [session.startedAt]);
 
+  // Start blocking when session begins
+  useEffect(() => {
+    AppBlocker.startBlocking([task.packageName]);
+  }, []);
+
   // Service alive check
   useEffect(() => {
     const checkService = async () => {
@@ -154,7 +159,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
           Focusing on
@@ -168,7 +173,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         {/* Pulse ring */}
         <Animated.View style={[styles.pulseRing, pulseAnimStyle, { backgroundColor: colors.ectoGreen }]} />
 
-        <Animated.View style={[styles.timerCircle, timerAnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+        <Animated.View style={[styles.timerCircle, timerAnimStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
           <Text style={[styles.timerText, { color: isDark ? '#f5f5f5' : colors.midnight }]}>
             {formatElapsed(elapsed)}
           </Text>
@@ -180,7 +185,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 
       <Animated.View style={[styles.infoSection, infoAnimStyle]}>
         <View style={styles.infoRow}>
-          <View style={[styles.infoCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+          <View style={[styles.infoCard, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
             <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Streak</Text>
             <View style={styles.streakValue}>
               <View style={[styles.streakDot, { backgroundColor: colors.fire }]} />
@@ -188,7 +193,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
             </View>
           </View>
 
-          <View style={[styles.infoCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+          <View style={[styles.infoCard, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
             <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Blocked</Text>
             <View style={styles.serviceStatus}>
               <View style={[styles.statusDot, { backgroundColor: serviceAlive ? colors.ectoGreen : colors.fire }]} />

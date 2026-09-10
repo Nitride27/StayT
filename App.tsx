@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import TaskPickerScreen from './src/screens/TaskPickerScreen';
@@ -15,6 +17,8 @@ import { store } from './src/storage/store';
 import { Task, Session } from './src/types';
 import AppBlocker from './src/native/AppBlocker';
 import { colors } from './src/theme/tokens';
+
+SplashScreen.preventAutoHideAsync();
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -33,6 +37,19 @@ function AppNavigator() {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Welcome');
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+
+  const [fontsLoaded] = useFonts({
+    Anton: require('./assets/fonts/Anton-Regular.ttf'),
+    'SpaceGrotesk-Regular': require('./assets/fonts/SpaceGrotesk-Regular.ttf'),
+    'SpaceGrotesk-Medium': require('./assets/fonts/SpaceGrotesk-Medium.ttf'),
+    'SpaceGrotesk-SemiBold': require('./assets/fonts/SpaceGrotesk-SemiBold.ttf'),
+    'SpaceGrotesk-Bold': require('./assets/fonts/SpaceGrotesk-Bold.ttf'),
+    'Inter-Regular': require('./assets/fonts/Inter-Regular.ttf'),
+    'Inter-Medium': require('./assets/fonts/Inter-Medium.ttf'),
+    'Inter-SemiBold': require('./assets/fonts/Inter-SemiBold.ttf'),
+    'Inter-Bold': require('./assets/fonts/Inter-Bold.ttf'),
+  });
 
   useEffect(() => {
     (async () => {
@@ -61,6 +78,28 @@ function AppNavigator() {
     })();
   }, []);
 
+  // Listen for native blocked-attempt events and navigate to interstitial
+  useEffect(() => {
+    const unsub = AppBlocker.onBlockedAttempt(async (event) => {
+      const tasks = await store.getTasks();
+      const task = tasks.find(t => t.packageName === event.packageName);
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('BlockedInterstitial', {
+          packageName: event.packageName,
+          taskId: task?.id ?? '',
+        });
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Hide splash screen once fonts are loaded and initial route is resolved
+  useEffect(() => {
+    if (fontsLoaded && !loading) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, loading]);
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? colors.midnight : colors.paper }}>
@@ -72,7 +111,7 @@ function AppNavigator() {
   return (
     <>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator initialRouteName={initialRoute}>
           <Stack.Screen
             name="Welcome"

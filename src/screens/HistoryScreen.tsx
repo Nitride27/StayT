@@ -55,7 +55,7 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
   const completed = item.status === 'completed';
 
   return (
-    <Animated.View style={[styles.sessionCard, animStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+    <Animated.View style={[styles.sessionCard, animStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
       <View style={styles.sessionLeft}>
         <View style={[styles.sessionDot, { backgroundColor: completed ? colors.ectoGreen : colors.fire }]} />
         <View>
@@ -134,7 +134,7 @@ export default function HistoryScreen({ navigation }: Props) {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
@@ -146,11 +146,11 @@ export default function HistoryScreen({ navigation }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.statsRow, statsAnimStyle]}>
-        <View style={[styles.statCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+        <View style={[styles.statCard, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
           <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Sessions</Text>
           <Text style={[typography.h2, { color: isDark ? '#f5f5f5' : colors.midnight, marginTop: spacing.xs }]}>{completedCount}</Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+        <View style={[styles.statCard, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
           <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>Focus Time</Text>
           <Text style={[typography.h2, { color: colors.ectoGreen, marginTop: spacing.xs }]}>{Math.round(totalMinutes)}m</Text>
         </View>

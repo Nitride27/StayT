@@ -108,7 +108,7 @@ export default function PaywallScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.closeButton}>
           <Text style={[typography.bodyMedium, { color: colors.inkMuted }]}>✕</Text>
@@ -118,7 +118,7 @@ export default function PaywallScreen({ navigation }: Props) {
         </Text>
       </Animated.View>
 
-      <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}>
+      <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
         <Text style={[typography.h2, { color: colors.ectoGreen, textAlign: 'center' }]}>Pro</Text>
         <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.xs }]}>
           One-time purchase

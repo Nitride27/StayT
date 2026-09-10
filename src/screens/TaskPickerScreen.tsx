@@ -39,7 +39,7 @@ function TaskCard({ task, index, isDark, onPress }: { task: Task; index: number;
 
   return (
     <AnimatedTouchable
-      style={[styles.taskCard, animStyle, { backgroundColor: isDark ? '#1a2332' : colors.paperCard, borderColor: isDark ? '#2a3a4a' : colors.paperBorder }]}
+      style={[styles.taskCard, animStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}
       activeOpacity={0.85}
       onPress={onPress}
     >
@@ -141,7 +141,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
   }));
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.midnight : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.navigate('History')} activeOpacity={0.7}>
