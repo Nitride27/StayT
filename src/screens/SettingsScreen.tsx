@@ -325,8 +325,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   mascotImage: {
-    width: 110,
-    height: 110,
+    width: 150,
+    height: 150,
     marginTop: spacing.lg,
   },
   headerRow: {
@@ -358,7 +358,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   segmentRow: {
-    flexDirection: 'row',
     gap: spacing.sm,
   },
   segment: {
