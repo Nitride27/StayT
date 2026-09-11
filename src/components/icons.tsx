@@ -1,5 +1,10 @@
-// StayT SVG icon family — one stroke style app-wide.
-// react-native-svg 15.15.4, 24 viewBox, strokeWidth 2, stroke=currentColor-ish via `color` prop.
+// StayT SVG icon family — one stroke style app-wide (FlameIcon is the
+// sole fill-based exception: a solid Duo-style streak mark with a
+// knockout teardrop so the background shows through in both themes).
+// react-native-svg 15.15.4, 24 viewBox, strokeWidth 2.6 default
+// (mockup glyphs are chunky/rounded, ~2.5-3px at 24 viewBox),
+// round caps/joins throughout. Same props API on every export
+// ({ size, color }) so call sites keep working.
 import React from 'react';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 
@@ -12,7 +17,7 @@ export type IconProps = {
 function Base({
   size = 24,
   color = '#000',
-  strokeWidth = 2,
+  strokeWidth = 2.6,
   children,
 }: IconProps & { children: React.ReactNode }) {
   return (
@@ -34,8 +39,8 @@ function Base({
 export function LaptopIcon(props: IconProps) {
   return (
     <Base {...props}>
-      <Rect x={3} y={4} width={18} height={12} rx={2} />
-      <Path d="M2 20h20" />
+      <Rect x={3.5} y={4} width={17} height={11.5} rx={2.5} />
+      <Path d="M2.5 19.5h19" />
     </Base>
   );
 }
@@ -43,7 +48,8 @@ export function LaptopIcon(props: IconProps) {
 export function PenIcon(props: IconProps) {
   return (
     <Base {...props}>
-      <Path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+      <Path d="M14.6 6.6l2.8 2.8L7.5 19.3 4 20.5l1.2-3.5 9.4-10.4z" />
+      <Path d="M11.8 9.7l2.6 2.7" />
     </Base>
   );
 }
@@ -51,8 +57,8 @@ export function PenIcon(props: IconProps) {
 export function BookIcon(props: IconProps) {
   return (
     <Base {...props}>
-      <Path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <Path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      <Path d="M12 6.5C10 5 7 4.5 4 4.5v13.7c3 0 6 .5 8 2 2-1.5 5-2 8-2V4.5c-3 0-6 .5-8 2z" />
+      <Path d="M12 6.5v13.7" />
     </Base>
   );
 }
@@ -68,7 +74,7 @@ export function BoltIcon(props: IconProps) {
 export function ChevronRightIcon(props: IconProps) {
   return (
     <Base {...props}>
-      <Path d="m9 18 6-6-6-6" />
+      <Path d="M9.5 5.5l6.5 6.5-6.5 6.5" />
     </Base>
   );
 }
@@ -76,7 +82,7 @@ export function ChevronRightIcon(props: IconProps) {
 export function ChevronLeftIcon(props: IconProps) {
   return (
     <Base {...props}>
-      <Path d="m15 18-6-6 6-6" />
+      <Path d="M14.5 5.5L8 12l6.5 6.5" />
     </Base>
   );
 }
@@ -124,6 +130,33 @@ export function CloseIcon(props: IconProps) {
       <Path d="M18 6 6 18" />
       <Path d="m6 6 12 12" />
     </Base>
+  );
+}
+
+// Streak flame — mockup's Duo-style blobby mark as vector. Two subpaths,
+// no stroke: outer silhouette in `color`, inner teardrop knocked out via
+// evenodd so the pill/card background shows through (reads at 18px pill
+// and 48px History; silhouette deliberately simplified to ~7 curves so
+// the small size stays legible instead of muddy).
+const FLAME_OUTER =
+  'M12 2.6C10.9 5.1 9.3 6.9 7.4 8.8C4.9 11.2 3.6 13.4 3.6 16.1' +
+  'C3.6 20.5 7.4 23.6 12 23.6C16.6 23.6 20.4 20.5 20.4 16.1' +
+  'C20.4 13.3 19.1 11.1 17.2 9.4C16.8 9 16.2 9.2 16.1 9.8' +
+  'C15.8 11.1 15.4 12.3 14.7 13.3C15.2 10.4 14.6 6.7 12 2.6Z';
+const FLAME_INNER =
+  'M12 12.9C11 14.3 9.4 15.7 9.4 17.7C9.4 19.7 10.7 21.1 12 21.1' +
+  'C13.3 21.1 14.6 19.7 14.6 17.7C14.6 15.7 13 14.3 12 12.9Z';
+
+export function FlameIcon({ size = 24, color = '#58cc02' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d={`${FLAME_OUTER} ${FLAME_INNER}`}
+        fill={color}
+        fillRule="evenodd"
+        stroke="none"
+      />
+    </Svg>
   );
 }
 

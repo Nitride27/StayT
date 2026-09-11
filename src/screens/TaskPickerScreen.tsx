@@ -16,7 +16,7 @@ import { Task, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon } from '../components/icons';
+import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon, FlameIcon } from '../components/icons';
 import { FREE_TASK_LIMIT } from './PaywallScreen';
 
 type Props = {
@@ -201,7 +201,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
               accessibilityRole="text"
               accessibilityLabel={`${streak} day streak`}
             >
-              <Image source={require('../../assets/flame.png')} style={styles.streakFlame} resizeMode="contain" />
+              <FlameIcon size={18} color={colors.midnight} />
               <Text style={[styles.streakCount]}>{streak}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">

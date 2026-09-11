@@ -15,7 +15,7 @@ import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { ChevronRightIcon, ChevronLeftIcon } from '../components/icons';
+import { ChevronRightIcon, ChevronLeftIcon, FlameIcon } from '../components/icons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'History'>;
@@ -176,7 +176,7 @@ export default function HistoryScreen({ navigation }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.streakSection, statsAnimStyle]}>
-        <Image source={require('../../assets/flame.png')} style={styles.streakFlame} resizeMode="contain" />
+        <FlameIcon size={48} color={colors.ectoGreen} />
         <Text style={[typography.displayXL, { color: ink }]}>{streak}</Text>
         <Text style={[typography.button, { color: colors.fire, marginTop: spacing.xs }]}>DAY STREAK!</Text>
         <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>

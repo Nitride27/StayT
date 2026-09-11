@@ -13,7 +13,7 @@ import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { CheckIcon, BoltIcon } from '../components/icons';
+import { CheckIcon, BoltIcon, FlameIcon } from '../components/icons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
@@ -114,7 +114,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 
           <Animated.View style={[styles.featureRow, feature2AnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
             <View style={styles.featureGlyph}>
-              <Image source={require('../../assets/flame.png')} style={styles.featureFlame} resizeMode="contain" />
+              <FlameIcon size={18} color={colors.midnight} />
             </View>
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Build your streak</Text>
