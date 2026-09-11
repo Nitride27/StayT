@@ -187,6 +187,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
           <TouchableOpacity
             onPress={() => navigation.navigate('History')}
             activeOpacity={0.7}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             style={styles.streakPill}
             accessibilityRole="button"
             accessibilityLabel="View history"
@@ -199,10 +200,10 @@ export default function TaskPickerScreen({ navigation }: Props) {
               accessibilityRole="text"
               accessibilityLabel={`${streak} day streak`}
             >
-            <FlameIcon size={16} color={colors.midnight} />
+            <FlameIcon size={14} color={colors.midnight} />
             <Text style={[styles.streakCount]}>{streak}</Text>
             </View>
-            <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
+            <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
               <GearIcon size={22} color={ink} />
             </TouchableOpacity>
           </View>
@@ -274,8 +275,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   gearButton: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: 38,
+    minHeight: 38,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderWidth: 2,
@@ -288,17 +289,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    paddingVertical: 4,
+    paddingVertical: 2,
     paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
     backgroundColor: colors.ectoGreen,
-    borderBottomWidth: 3,
+    borderBottomWidth: 2,
     borderBottomColor: colors.ectoGreenDark,
-    minHeight: 44,
+    minHeight: 38,
   },
   streakCount: {
     fontFamily: 'Anton',
-    fontSize: 18,
+    fontSize: 16,
     letterSpacing: -0.02,
     color: colors.midnight,
   },
