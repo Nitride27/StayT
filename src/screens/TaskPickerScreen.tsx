@@ -53,9 +53,7 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
       activeOpacity={0.85}
       onPress={onPress}
     >
-      <View style={styles.iconBox}>
-        <TaskGlyph name={task.name} size={22} color={colors.midnight} />
-      </View>
+      <TaskGlyph name={task.name} size={34} color={ink} />
       <View style={styles.taskInfo}>
         <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
         <Text style={[typography.caption, { color: muted }]} numberOfLines={1}>{subtitle}</Text>
@@ -193,17 +191,22 @@ export default function TaskPickerScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel="History"
           >
-            <Text style={[typography.label, { color: colors.midnight }]}>HISTORY</Text>
+            <View style={styles.historyButtonRow}>
+              <ClockIcon size={16} color={colors.midnight} />
+              <Text style={[typography.button, { color: colors.midnight }]}>History</Text>
+            </View>
           </TouchableOpacity>
           <View style={styles.headerRight}>
-            <View
+            <TouchableOpacity
+              onPress={() => navigation.navigate('History')}
+              activeOpacity={0.7}
               style={styles.streakPill}
-              accessibilityRole="text"
-              accessibilityLabel={`${streak} day streak`}
+              accessibilityRole="button"
+              accessibilityLabel={`${streak} day streak. View history.`}
             >
               <FlameIcon size={18} color={colors.midnight} />
               <Text style={[styles.streakCount]}>{streak}</Text>
-            </View>
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
               <GearIcon size={22} color={ink} />
             </TouchableOpacity>
@@ -289,11 +292,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: colors.ectoGreenDark,
     borderRadius: radius.xl,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  historyButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   streakPill: {
     flexDirection: 'row',
@@ -301,7 +309,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.full,
+    borderRadius: radius.md,
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
     borderBottomColor: colors.ectoGreenDark,
@@ -334,14 +342,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 2,
     gap: spacing.md,
-  },
-  iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.ectoGreen,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   taskInfo: {
     flex: 1,

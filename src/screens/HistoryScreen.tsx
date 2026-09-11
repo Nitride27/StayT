@@ -15,7 +15,7 @@ import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { ChevronRightIcon, ChevronLeftIcon } from '../components/icons';
+import { ChevronRightIcon, ChevronLeftIcon, FlameIcon } from '../components/icons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'History'>;
@@ -81,8 +81,6 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
     </Animated.View>
   );
 }
-
-const flamePng = require('../../assets/flame.png');
 
 export default function HistoryScreen({ navigation }: Props) {
   const { isDark } = useTheme();
@@ -187,9 +185,11 @@ export default function HistoryScreen({ navigation }: Props) {
             </Animated.View>
 
             <Animated.View style={[styles.streakSection, statsAnimStyle]}>
-              <Image source={flamePng} style={styles.streakFlame} resizeMode="contain" accessibilityLabel="Streak flame" />
-              <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
-              <Text style={[typography.button, { color: streakGreen, marginTop: spacing.xs }]}>DAY STREAK!</Text>
+              <View style={styles.streakRow}>
+                <FlameIcon size={48} color={streakGreen} />
+                <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
+                <Text style={[typography.button, { color: streakGreen }]}>DAY STREAK!</Text>
+              </View>
               <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center' }]}>
                 Keep going. You're building great habits.
               </Text>
@@ -283,9 +283,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  streakFlame: {
-    width: 48,
-    height: 48,
+  streakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
   },
   chartSection: {
     marginBottom: spacing.xl,

@@ -262,11 +262,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                       </View>
                     )}
                     <View style={styles.appInfo}>
-                      <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
+                      <Text style={[{ fontFamily: 'SpaceGrotesk-SemiBold', fontSize: 16, lineHeight: 22 }, { color: ink }]} numberOfLines={1}>
                         {app.appName}
-                      </Text>
-                      <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkMuted }]} numberOfLines={1}>
-                        {app.packageName}
                       </Text>
                     </View>
                   </TouchableOpacity>

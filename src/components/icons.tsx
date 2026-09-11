@@ -1,6 +1,7 @@
-// StayT SVG icon family — chunky strokes app-wide (FlameIcon is fill-based).
-// Task glyphs (Laptop/Pen/Book/Bolt) are FILLED solids per the mockup's
-// task cards; everything else stays stroke style for row-level consistency.
+// StayT SVG icon family — detailed OUTLINE line glyphs app-wide (FlameIcon is fill-based).
+// Task glyphs (Laptop/Pen/Book/Bolt) are outline style per the mockup's
+// line glyphs: 2.6 weight with detail strokes (screen+base, body+ferrule,
+// open book+spine, bolt). Everything else stays stroke style.
 // react-native-svg 15.15.4, 24 viewBox, strokeWidth 2.6 default
 // (mockup glyphs are chunky/rounded, ~2.5-3px at 24 viewBox),
 // round caps/joins throughout. Same props API on every export
@@ -50,34 +51,36 @@ function Solid({
 
 export function LaptopIcon(props: IconProps) {
   return (
-    <Solid {...props}>
-      <Rect x={3.5} y={4} width={17} height={11.5} rx={2.5} />
-      <Rect x={2.5} y={17.2} width={19} height={2.8} rx={1.4} />
-    </Solid>
+    <Base {...props}>
+      <Rect x={3} y={4} width={18} height={12} rx={2} />
+      <Path d="M2 20h20" />
+    </Base>
   );
 }
 
 export function PenIcon(props: IconProps) {
   return (
-    <Solid {...props}>
-      <Path d="M14.6 6.6l2.8 2.8L7.5 19.3 4 20.5l1.2-3.5 9.4-10.4z" />
-    </Solid>
+    <Base {...props}>
+      <Path d="M17 3l4 4L8 20l-5 1 1-5L17 3z" />
+      <Path d="M15 5l4 4" />
+    </Base>
   );
 }
 
 export function BookIcon(props: IconProps) {
   return (
-    <Solid {...props}>
-      <Path d="M12 6.5C10 5 7 4.5 4 4.5v13.7c3 0 6 .5 8 2 2-1.5 5-2 8-2V4.5c-3 0-6 .5-8 2z" />
-    </Solid>
+    <Base {...props}>
+      <Path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2z" />
+      <Path d="M12 6v14" />
+    </Base>
   );
 }
 
 export function BoltIcon(props: IconProps) {
   return (
-    <Solid {...props}>
+    <Base {...props}>
       <Path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-    </Solid>
+    </Base>
   );
 }
 
@@ -139,6 +142,15 @@ export function CloseIcon(props: IconProps) {
     <Base {...props}>
       <Path d="M18 6 6 18" />
       <Path d="m6 6 12 12" />
+    </Base>
+  );
+}
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <Circle cx={12} cy={12} r={9} />
+      <Path d="M12 7v5l3.5 2" />
     </Base>
   );
 }

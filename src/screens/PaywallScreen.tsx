@@ -46,8 +46,8 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
         <CheckIcon size={16} color={colors.midnight} />
       </View>
       <View style={styles.featureInfo}>
-        <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{feature.title}</Text>
-        <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
+        <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>{feature.title}</Text>
+        <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
       </View>
     </Animated.View>
   );
@@ -199,7 +199,7 @@ export default function PaywallScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? darkColors.paper : colors.paper }]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -209,7 +209,7 @@ export default function PaywallScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close">
           <CloseIcon size={20} color={isDark ? darkColors.inkMuted : colors.inkMuted} />
         </TouchableOpacity>
-        <Text style={[typography.display, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
+        <Text style={[typography.display, { color: isDark ? darkColors.ink : colors.midnight, textAlign: 'center' }]}>
           UNLOCK FULL POWER
         </Text>
       </Animated.View>
@@ -218,14 +218,14 @@ export default function PaywallScreen({ navigation }: Props) {
         <Image source={mascotSource('thinking', isDark)} style={styles.mascotImage} resizeMode="contain" />
       </Animated.View>
 
-      <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? darkColors.ink : colors.ink }]}>
+      <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? darkColors.paperCard : colors.paperCard, borderColor: isDark ? darkColors.ink : colors.ink }]}>
         <Text style={[typography.h2, { color: colors.ectoGreen, textAlign: 'center' }]}>Pro</Text>
-        <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.xs }]}>
+        <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.xs }]}>
           One-time purchase
         </Text>
         <View style={styles.priceRow}>
-          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{price}</Text>
-          <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}> forever</Text>
+          <Text style={[typography.h1, { color: isDark ? darkColors.ink : colors.midnight }]}>{price}</Text>
+          <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}> forever</Text>
         </View>
       </Animated.View>
 

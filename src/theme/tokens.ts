@@ -67,78 +67,78 @@ export const typography = {
     lineHeight: 43, // 0.9
   },
 
-  // ─── Archivo — neobrutalist premium grotesk, UI + headings ───
+  // ─── SpaceGrotesk — UI + headings ───
   h1: {
-    fontFamily: 'Archivo-Bold',
+    fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 32,
     letterSpacing: -0.03,
     lineHeight: 36,
   },
   h2: {
-    fontFamily: 'Archivo-SemiBold',
+    fontFamily: 'SpaceGrotesk-SemiBold',
     fontSize: 24,
     letterSpacing: -0.02,
     lineHeight: 28,
   },
   h3: {
-    fontFamily: 'Archivo-Medium',
+    fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 18,
     letterSpacing: -0.01,
     lineHeight: 22,
   },
   button: {
-    fontFamily: 'Archivo-Bold',
+    fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 15,
     letterSpacing: 0.02,
     lineHeight: 20,
   },
   label: {
-    fontFamily: 'Archivo-Medium',
+    fontFamily: 'SpaceGrotesk-Medium',
     fontSize: 12,
     letterSpacing: 0.04,
     lineHeight: 16,
   },
   timer: {
-    fontFamily: 'Archivo-Bold',
+    fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 48,
     letterSpacing: -0.02,
     lineHeight: 53, // 0.9
   },
   timerXL: {
-    fontFamily: 'Archivo-Bold',
+    fontFamily: 'Anton',
     fontSize: 72,
     letterSpacing: -0.02,
     lineHeight: 79,
   },
 
-  // ─── Archivo — readability, longer text ───
+  // ─── Inter — readability, longer text ───
   body: {
-    fontFamily: 'Archivo-Regular',
+    fontFamily: 'Inter-Regular',
     fontSize: 16,
     letterSpacing: 0,
     lineHeight: 22, // 1.4
   },
   bodyMedium: {
-    fontFamily: 'Archivo-Medium',
+    fontFamily: 'SpaceGrotesk-Medium',
     fontSize: 16,
     letterSpacing: 0,
     lineHeight: 22,
   },
   bodyStrong: {
-    fontFamily: 'Archivo-SemiBold',
+    fontFamily: 'Inter-SemiBold',
     fontSize: 16,
     letterSpacing: 0,
     lineHeight: 22,
   },
   // Alias for screens still using bodyBold
   bodyBold: {
-    fontFamily: 'Archivo-SemiBold',
+    fontFamily: 'Inter-SemiBold',
     fontSize: 16,
     letterSpacing: 0,
     lineHeight: 22,
   },
   caption: {
-    fontFamily: 'Archivo-Regular',
+    fontFamily: 'Inter-Regular',
     fontSize: 13,
     letterSpacing: 0.02,
     lineHeight: 18,

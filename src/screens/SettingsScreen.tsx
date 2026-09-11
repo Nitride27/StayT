@@ -21,7 +21,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 import appConfig from '../../app.json';
@@ -185,7 +185,7 @@ export default function SettingsScreen({ navigation }: Props) {
     transform: [{ translateY: bodyTranslateY.value }],
   }));
 
-  const ink = isDark ? '#f5f5f5' : colors.midnight;
+  const ink = isDark ? darkColors.ink : colors.midnight;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.paper }]}>

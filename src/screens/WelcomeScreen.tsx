@@ -88,7 +88,7 @@ export default function WelcomeScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? darkColors.paper : colors.paper }]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -98,7 +98,7 @@ export default function WelcomeScreen({ navigation }: Props) {
         <Animated.View style={[styles.heroArea, heroAnimStyle]}>
           {/* Mascot */}
           <Image source={mascotSource('waving', isDark)} style={styles.mascotImage} resizeMode="contain" />
-          <Text style={[typography.display, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
+          <Text style={[typography.display, { color: isDark ? darkColors.ink : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
             STAY FOCUSED.
           </Text>
           <Text style={[typography.display, { color: colors.ectoGreen, textAlign: 'center', marginTop: spacing.xs }]}>
@@ -112,8 +112,8 @@ export default function WelcomeScreen({ navigation }: Props) {
               <CheckIcon size={18} color={colors.midnight} />
             </View>
             <View style={styles.featureText}>
-              <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Set your focus</Text>
-              <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Pick one app to block during deep work</Text>
+              <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>Set your focus</Text>
+              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Pick one app to block during deep work</Text>
             </View>
           </Animated.View>
 
@@ -122,8 +122,8 @@ export default function WelcomeScreen({ navigation }: Props) {
               <FlameIcon size={18} color={colors.midnight} />
             </View>
             <View style={styles.featureText}>
-              <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Build your streak</Text>
-              <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Each day you resist builds your streak</Text>
+              <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>Build your streak</Text>
+              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Each day you resist builds your streak</Text>
             </View>
           </Animated.View>
 
@@ -132,8 +132,8 @@ export default function WelcomeScreen({ navigation }: Props) {
               <BoltIcon size={18} color={colors.midnight} />
             </View>
             <View style={styles.featureText}>
-              <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Stay in the zone</Text>
-              <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>One-tap redirect keeps you on task</Text>
+              <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>Stay in the zone</Text>
+              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>One-tap redirect keeps you on task</Text>
             </View>
           </Animated.View>
         </View>
