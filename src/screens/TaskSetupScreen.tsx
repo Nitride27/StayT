@@ -205,7 +205,9 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             TASK NAME
           </Text>
           <View style={styles.nameRow}>
-            <TaskGlyph name={taskName || existingTask?.name || ''} size={28} color={ink} />
+            <View style={styles.taskGlyphBox}>
+              <TaskGlyph name={taskName || existingTask?.name || ''} size={22} color={colors.midnight} />
+            </View>
             <TextInput
               style={[styles.input, styles.nameInput, { color: ink, backgroundColor: cardBg, borderColor: border }]}
               placeholder="e.g. Deep Work"
@@ -340,6 +342,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+  },
+  taskGlyphBox: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.md,
+    backgroundColor: colors.ectoGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   nameInput: {
     flex: 1,
