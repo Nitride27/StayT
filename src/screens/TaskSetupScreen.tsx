@@ -15,6 +15,7 @@ import { Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
+import { TaskGlyph, CheckIcon, ChevronLeftIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 
 type InstalledApp = { packageName: string; appName: string; iconBase64?: string };
@@ -109,13 +110,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    formOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    formTranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    formOpacity.value = withDelay(250, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    formTranslateY.value = withDelay(250, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    buttonOpacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonOpacity.value = withDelay(400, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const handleSave = async () => {
@@ -171,11 +172,11 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   }));
 
   const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
 
   const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
   const bg = isDark ? darkColors.paper : colors.paper;
@@ -188,8 +189,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backRow}>
-            <Text style={[typography.bodyMedium, { color: ink }]}>{'‹'}</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backRow} accessibilityRole="button" accessibilityLabel="Back">
+            <ChevronLeftIcon size={18} color={ink} />
             <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
           </TouchableOpacity>
           <Text style={[typography.h1, { color: ink }]}>
@@ -204,13 +205,18 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           <Text style={[typography.label, { color: ink, marginBottom: spacing.sm }]}>
             TASK NAME
           </Text>
-          <TextInput
-            style={[styles.input, { color: ink, backgroundColor: cardBg, borderColor: border }]}
-            placeholder="e.g. Deep Work"
-            placeholderTextColor={isDark ? darkColors.inkMuted : colors.inkMuted}
-            value={taskName}
-            onChangeText={setTaskName}
-          />
+          <View style={styles.nameRow}>
+            <View style={styles.taskGlyphBox}>
+              <TaskGlyph name={taskName || existingTask?.name || ''} size={22} color={colors.midnight} />
+            </View>
+            <TextInput
+              style={[styles.input, styles.nameInput, { color: ink, backgroundColor: cardBg, borderColor: border }]}
+              placeholder="e.g. Deep Work"
+              placeholderTextColor={isDark ? darkColors.inkMuted : colors.inkMuted}
+              value={taskName}
+              onChangeText={setTaskName}
+            />
+          </View>
 
           <Text style={[typography.label, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
             INSTALLED APPS
@@ -242,7 +248,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                   >
                     <View style={[styles.checkbox, { borderColor: border }, checked && styles.checkboxChecked]}>
                       {checked && (
-                        <Text style={[typography.label, { color: colors.midnight }]}>✓</Text>
+                        <CheckIcon size={14} color={colors.midnight} />
                       )}
                     </View>
                     {app.iconBase64 ? (
@@ -252,9 +258,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                       />
                     ) : (
                       <View style={styles.appIconFallback}>
-                        <Text style={[typography.label, { color: colors.midnight }]}>
-                          {(app.appName.trim()[0] || '?').toUpperCase()}
-                        </Text>
+                        <TaskGlyph name={app.appName} size={18} color={colors.midnight} />
                       </View>
                     )}
                     <View style={styles.appInfo}>
@@ -332,12 +336,28 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   form: {},
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  taskGlyphBox: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.md,
+    backgroundColor: colors.ectoGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   input: {
     borderWidth: 2,
     borderRadius: radius.md,
     padding: spacing.lg,
     fontFamily: 'Inter-Regular',
     fontSize: typography.body.fontSize,
+  },
+  nameInput: {
+    flex: 1,
   },
   appList: {
     borderWidth: 2,
@@ -384,8 +404,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   noAppsImage: {
-    width: 100,
-    height: 100,
+    width: 130,
+    height: 130,
   },
   bottomSection: {
     paddingTop: spacing.lg,
@@ -394,9 +414,10 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

@@ -15,6 +15,7 @@ import { Session, Task, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
+import { SwitchArrowsIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 
 type Props = {
@@ -47,13 +48,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    timerOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    timerScale.value = withDelay(250, withSpring(1, { damping: 12, stiffness: 200 }));
+    timerOpacity.value = withDelay(250, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    timerScale.value = withDelay(250, withSpring(1, { damping: 16, stiffness: 200 }));
 
-    buttonOpacity.value = withDelay(550, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonOpacity.value = withDelay(550, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   // Timer tick
@@ -101,24 +102,25 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   }));
 
   const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
 
   const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
-  const outlineColor = isDark ? colors.ectoGreen : colors.ectoGreenDark;
+  const endBg = isDark ? '#1a1a1a' : colors.midnight;
+  const endText = '#ffffff';
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <Image source={mascotSource('working', isDark)} style={styles.mascotImage} resizeMode="contain" />
         <Text style={[typography.display, { color: ink, textAlign: 'center', marginTop: spacing.lg }]}>
-          {task.name}
+          {task.name.toUpperCase()}
         </Text>
       </Animated.View>
 
@@ -133,16 +135,19 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
         <AnimatedTouchable
-          style={[styles.switchButton, { borderColor: outlineColor }]}
+          style={styles.switchButton}
           activeOpacity={0.85}
           onPress={handleEndSession}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={[typography.button, { color: outlineColor, textAlign: 'center' }]}>SWITCH TASK</Text>
+          <View style={styles.switchRow}>
+            <SwitchArrowsIcon size={18} color={colors.midnight} />
+            <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>SWITCH TASK</Text>
+          </View>
         </AnimatedTouchable>
-        <TouchableOpacity activeOpacity={0.7} onPress={handleEndSession} style={styles.endButton}>
-          <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+        <TouchableOpacity activeOpacity={0.7} onPress={handleEndSession} style={[styles.endButton, { backgroundColor: endBg }]}>
+          <Text style={[typography.button, { color: endText, textAlign: 'center' }]}>
             END SESSION
           </Text>
         </TouchableOpacity>
@@ -163,8 +168,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   mascotImage: {
-    width: 180,
-    height: 180,
+    width: 220,
+    height: 220,
   },
   timerArea: {
     flex: 1,
@@ -172,11 +177,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   endButton: {
-    backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: '#000000',
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
@@ -187,12 +192,19 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   switchButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
 });

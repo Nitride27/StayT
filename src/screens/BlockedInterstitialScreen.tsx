@@ -47,16 +47,16 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const button2Opacity = useSharedValue(0);
 
   useEffect(() => {
-    mascotScale.value = withDelay(200, withSpring(1, { damping: 10, stiffness: 150 }));
-    mascotOpacity.value = withDelay(200, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    mascotScale.value = withDelay(200, withSpring(1, { damping: 16, stiffness: 150 }));
+    mascotOpacity.value = withDelay(200, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    titleOpacity.value = withDelay(500, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    titleTranslateY.value = withDelay(500, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    titleOpacity.value = withDelay(500, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    titleTranslateY.value = withDelay(500, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    subtitleOpacity.value = withDelay(650, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    subtitleOpacity.value = withDelay(650, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    buttonOpacity.value = withDelay(950, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    button2Opacity.value = withDelay(1050, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonOpacity.value = withDelay(950, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    button2Opacity.value = withDelay(1050, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const mascotAnimStyle = useAnimatedStyle(() => ({
@@ -112,11 +112,11 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   };
 
   const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
 
   const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
   const bg = isDark ? darkColors.paper : colors.paper;
@@ -196,8 +196,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   mascotImage: {
-    width: 180,
-    height: 180,
+    width: 220,
+    height: 220,
   },
   titleSection: {
     marginBottom: spacing.md,
@@ -213,9 +213,10 @@ const styles = StyleSheet.create({
   backButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

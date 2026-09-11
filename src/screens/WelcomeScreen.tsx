@@ -13,6 +13,7 @@ import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
+import { CheckIcon, BoltIcon } from '../components/icons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
@@ -37,20 +38,20 @@ export default function WelcomeScreen({ navigation }: Props) {
   const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    heroOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    heroTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    heroOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    heroTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    feature1Opacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    feature1TranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    feature1Opacity.value = withDelay(250, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    feature1TranslateY.value = withDelay(250, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    feature2Opacity.value = withDelay(350, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    feature2TranslateY.value = withDelay(350, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    feature2Opacity.value = withDelay(350, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    feature2TranslateY.value = withDelay(350, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    feature3Opacity.value = withDelay(450, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    feature3TranslateY.value = withDelay(450, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    feature3Opacity.value = withDelay(450, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    feature3TranslateY.value = withDelay(450, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    buttonOpacity.value = withDelay(600, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    buttonTranslateY.value = withDelay(600, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonOpacity.value = withDelay(600, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    buttonTranslateY.value = withDelay(600, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const heroAnimStyle = useAnimatedStyle(() => ({
@@ -79,11 +80,11 @@ export default function WelcomeScreen({ navigation }: Props) {
   }));
 
   const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
 
   const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
   return (
@@ -102,7 +103,9 @@ export default function WelcomeScreen({ navigation }: Props) {
 
         <View style={styles.features}>
           <Animated.View style={[styles.featureRow, feature1AnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
-            <View style={[styles.featureDot, { backgroundColor: colors.ectoGreen }]} />
+            <View style={styles.featureGlyph}>
+              <CheckIcon size={18} color={colors.midnight} />
+            </View>
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Set your focus</Text>
               <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Pick one app to block during deep work</Text>
@@ -110,7 +113,9 @@ export default function WelcomeScreen({ navigation }: Props) {
           </Animated.View>
 
           <Animated.View style={[styles.featureRow, feature2AnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
-            <View style={[styles.featureDot, { backgroundColor: colors.fire }]} />
+            <View style={styles.featureGlyph}>
+              <Image source={require('../../assets/flame.png')} style={styles.featureFlame} resizeMode="contain" />
+            </View>
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Build your streak</Text>
               <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Each day you resist builds your streak</Text>
@@ -118,7 +123,9 @@ export default function WelcomeScreen({ navigation }: Props) {
           </Animated.View>
 
           <Animated.View style={[styles.featureRow, feature3AnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
-            <View style={[styles.featureDot, { backgroundColor: colors.macawBlue }]} />
+            <View style={styles.featureGlyph}>
+              <BoltIcon size={18} color={colors.midnight} />
+            </View>
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Stay in the zone</Text>
               <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>One-tap redirect keeps you on task</Text>
@@ -162,8 +169,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxxl,
   },
   mascotImage: {
-    width: 160,
-    height: 160,
+    width: 220,
+    height: 220,
   },
   features: {
     gap: spacing.xl,
@@ -176,10 +183,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.lg,
   },
-  featureDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  featureGlyph: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.ectoGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  featureFlame: {
+    width: 20,
+    height: 20,
   },
   featureText: {
     flex: 1,
@@ -190,9 +204,10 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

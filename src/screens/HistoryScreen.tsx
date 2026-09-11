@@ -15,6 +15,7 @@ import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
+import { ChevronRightIcon, ChevronLeftIcon } from '../components/icons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'History'>;
@@ -57,8 +58,8 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
   const translateY = useSharedValue(12);
 
   useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) }));
+    opacity.value = withDelay(delay, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -76,7 +77,7 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
         <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>{formatRange(item)}</Text>
       </View>
       <Text style={[typography.bodyMedium, { color: ink }]}>{formatMs(item.duration || 0)}</Text>
-      <Text style={[typography.h2, { color: muted }]}>{'>'}</Text>
+      <ChevronRightIcon size={20} color={muted} />
     </Animated.View>
   );
 }
@@ -101,14 +102,14 @@ export default function HistoryScreen({ navigation }: Props) {
   );
 
   useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    statsOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    statsTranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    statsOpacity.value = withDelay(250, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    statsTranslateY.value = withDelay(250, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    listOpacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    listTranslateY.value = withDelay(400, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    listOpacity.value = withDelay(400, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    listTranslateY.value = withDelay(400, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const loadData = async () => {
@@ -163,8 +164,11 @@ export default function HistoryScreen({ navigation }: Props) {
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink}>
-            <Text style={[typography.bodyMedium, { color: ink }]}>← Back</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink} accessibilityRole="button" accessibilityLabel="Back">
+            <View style={styles.backRow}>
+              <ChevronLeftIcon size={18} color={ink} />
+              <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
+            </View>
           </TouchableOpacity>
           <Text style={[typography.h1, { color: ink }]}>History</Text>
           <View style={{ width: 50 }} />
@@ -257,6 +261,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderRadius: radius.md,
   },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
   streakSection: {
     alignItems: 'center',
     marginBottom: spacing.xl,
@@ -308,17 +317,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxxl,
   },
   emptyImage: {
-    width: 130,
-    height: 130,
+    width: 160,
+    height: 160,
     marginBottom: spacing.lg,
   },
   emptyButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
     paddingHorizontal: spacing.xl,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

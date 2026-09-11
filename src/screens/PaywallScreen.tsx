@@ -13,6 +13,7 @@ import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
+import { CheckIcon, CloseIcon } from '../components/icons';
 import { useIAP, type Purchase } from 'expo-iap';
 import { PRO_SKU, grantPro } from '../billing/pro';
 
@@ -30,8 +31,8 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
   const translateY = useSharedValue(15);
 
   useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) }));
+    opacity.value = withDelay(delay, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -41,7 +42,9 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
 
   return (
     <Animated.View style={[styles.featureRow, animStyle]}>
-      <View style={[styles.featureDot, { backgroundColor: feature.color }]} />
+      <View style={styles.featureGlyph}>
+        <CheckIcon size={16} color={colors.midnight} />
+      </View>
       <View style={styles.featureInfo}>
         <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{feature.title}</Text>
         <Text style={[typography.caption, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
@@ -51,9 +54,9 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
 }
 
 const features = [
-  { title: 'Unlimited Tasks', desc: 'Block as many apps as you need', color: colors.ectoGreen },
-  { title: 'Scheduling', desc: 'Auto-block during focus hours', color: colors.macawBlue },
-  { title: 'Advanced Stats', desc: 'Track your productivity over time', color: colors.gold },
+  { title: 'Unlimited Tasks', desc: 'Block as many apps as you need' },
+  { title: 'Scheduling', desc: 'Auto-block during focus hours' },
+  { title: 'Advanced Stats', desc: 'Track your productivity over time' },
 ];
 
 export default function PaywallScreen({ navigation }: Props) {
@@ -155,16 +158,16 @@ export default function PaywallScreen({ navigation }: Props) {
   const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    cardOpacity.value = withDelay(300, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    cardTranslateY.value = withDelay(300, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    cardOpacity.value = withDelay(300, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    cardTranslateY.value = withDelay(300, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    featuresOpacity.value = withDelay(500, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    featuresTranslateY.value = withDelay(500, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    featuresOpacity.value = withDelay(500, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    featuresTranslateY.value = withDelay(500, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    buttonOpacity.value = withDelay(700, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonOpacity.value = withDelay(700, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const headerAnimStyle = useAnimatedStyle(() => ({
@@ -188,18 +191,18 @@ export default function PaywallScreen({ navigation }: Props) {
   }));
 
   const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
 
   const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close">
-          <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkMuted }]}>✕</Text>
+          <CloseIcon size={20} color={isDark ? darkColors.inkMuted : colors.inkMuted} />
         </TouchableOpacity>
         <Text style={[typography.display, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
           UNLOCK FULL POWER
@@ -283,8 +286,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   mascotImage: {
-    width: 170,
-    height: 170,
+    width: 220,
+    height: 220,
   },
   pricingCard: {
     padding: spacing.xl,
@@ -307,11 +310,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.md,
   },
-  featureDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 6,
+  featureGlyph: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
+    backgroundColor: colors.ectoGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
   },
   featureInfo: {
     flex: 1,
@@ -324,9 +330,10 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

@@ -63,16 +63,16 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   const buttonScale = useSharedValue(1);
 
   useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    mascotOpacity.value = withDelay(150, withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }));
-    mascotScale.value = withDelay(150, withSpring(1, { damping: 12, stiffness: 200 }));
+    mascotOpacity.value = withDelay(150, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    mascotScale.value = withDelay(150, withSpring(1, { damping: 16, stiffness: 200 }));
 
-    oemOpacity.value = withDelay(500, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    oemTranslateY.value = withDelay(500, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    oemOpacity.value = withDelay(500, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    oemTranslateY.value = withDelay(500, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    buttonOpacity.value = withDelay(600, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonOpacity.value = withDelay(600, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   // --- Check accessibility on mount ---
@@ -150,11 +150,11 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   };
 
   const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
 
   const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
   const bg = isDark ? darkColors.paper : colors.paper;
@@ -249,8 +249,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   mascotImage: {
-    width: 180,
-    height: 180,
+    width: 220,
+    height: 220,
   },
   oemLine: {
     paddingHorizontal: spacing.lg,
@@ -261,9 +261,10 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

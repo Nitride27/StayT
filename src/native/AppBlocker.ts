@@ -20,6 +20,13 @@ export interface BlockedDeepLink {
   appLabel?: string;
 }
 
+/**
+ * Exact deep link fired natively by the service-owned block overlay's
+ * SWITCH TASK button (StayTAccessibilityService.foregroundTaskPicker).
+ * App.tsx routes it to TaskPicker.
+ */
+export const TASKS_DEEP_LINK = 'exp+stayt-app://tasks';
+
 class AppBlockerBridge {
   private eventEmitter: NativeEventEmitter | null = null;
 
@@ -109,6 +116,15 @@ class AppBlockerBridge {
   async isNotificationPermissionGranted(): Promise<boolean> {
     const { status } = await Notifications.getPermissionsAsync();
     return status === 'granted';
+  }
+
+  /**
+   * Match the overlay's SWITCH TASK deep link (`exp+stayt-app://tasks`,
+   * optionally with query params). Returns true only for the exact tasks
+   * path — same strict-scheme-first validation as parseBlockedDeepLink.
+   */
+  isTasksDeepLink(url: string): boolean {
+    return url === TASKS_DEEP_LINK || url.startsWith('exp+stayt-app://tasks?');
   }
 
   onBlockedAttempt(callback: (event: BlockedAttemptEvent) => void): () => void {

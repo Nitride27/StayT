@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -16,6 +16,7 @@ import { Task, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
+import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon } from '../components/icons';
 import { FREE_TASK_LIMIT } from './PaywallScreen';
 
 type Props = {
@@ -30,8 +31,8 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
   const translateY = useSharedValue(15);
 
   useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) }));
+    opacity.value = withDelay(delay, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -53,16 +54,14 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
       onPress={onPress}
     >
       <View style={styles.iconBox}>
-        <Text style={[typography.button, { color: colors.midnight }]}>
-          {(task.name.trim()[0] || '?').toUpperCase()}
-        </Text>
+        <TaskGlyph name={task.name} size={22} color={colors.midnight} />
       </View>
       <View style={styles.taskInfo}>
-        <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name}</Text>
+        <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
         <Text style={[typography.caption, { color: muted }]} numberOfLines={1}>{subtitle}</Text>
       </View>
       <TouchableOpacity onPress={onEdit} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`} style={styles.editHit}>
-        <Text style={[typography.h2, { color: muted }]}>{'>'}</Text>
+        <ChevronRightIcon size={20} color={muted} />
       </TouchableOpacity>
     </AnimatedTouchable>
   );
@@ -90,13 +89,13 @@ export default function TaskPickerScreen({ navigation }: Props) {
   );
 
   useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    listOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    listTranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    listOpacity.value = withDelay(250, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    listTranslateY.value = withDelay(250, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    buttonOpacity.value = withDelay(400, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    buttonOpacity.value = withDelay(400, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const loadData = async () => {
@@ -168,11 +167,11 @@ export default function TaskPickerScreen({ navigation }: Props) {
   }));
 
   const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
 
   const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
   const buttonStyle = useAnimatedStyle(() => ({
@@ -182,25 +181,31 @@ export default function TaskPickerScreen({ navigation }: Props) {
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
-  const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
-  const cardBorder = isDark ? darkColors.paperBorder : colors.paperBorder;
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.navigate('History')} activeOpacity={0.7} style={styles.navLink}>
-            <Text style={[typography.bodyMedium, { color: ink }]}>History</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('History')}
+            activeOpacity={0.85}
+            style={styles.historyButton}
+            accessibilityRole="button"
+            accessibilityLabel="History"
+          >
+            <Text style={[typography.label, { color: colors.midnight }]}>HISTORY</Text>
           </TouchableOpacity>
           <View style={styles.headerRight}>
-            <View style={[styles.streakPill, { backgroundColor: cardBg, borderColor: ink }]}>
+            <View
+              style={styles.streakPill}
+              accessibilityRole="text"
+              accessibilityLabel={`${streak} day streak`}
+            >
               <Image source={require('../../assets/flame.png')} style={styles.streakFlame} resizeMode="contain" />
-              <Text style={[typography.label, { color: colors.fire }]}>
-                {streak > 0 ? `${streak} day streak` : 'No streak yet'}
-              </Text>
+              <Text style={[styles.streakCount]}>{streak}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
-              <Text style={[typography.h3, { color: ink }]}>···</Text>
+              <GearIcon size={22} color={ink} />
             </TouchableOpacity>
           </View>
         </View>
@@ -209,7 +214,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
         </Text>
       </Animated.View>
 
-      <Animated.View style={[styles.list, listAnimStyle]}>
+      <Animated.View style={[styles.listWrap, listAnimStyle]}>
         {tasks.length === 0 ? (
           <View style={styles.emptyState}>
             <Image source={mascotSource('peeking', isDark)} style={styles.emptyImage} resizeMode="contain" />
@@ -218,9 +223,15 @@ export default function TaskPickerScreen({ navigation }: Props) {
             </Text>
           </View>
         ) : (
-          tasks.map((task, index) => (
-            <TaskCard key={task.id} task={task} index={index} isDark={isDark} onPress={() => handleSelectTask(task)} onEdit={() => navigation.navigate('TaskSetup', { task })} />
-          ))
+          <ScrollView
+            style={styles.listScroll}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {tasks.map((task, index) => (
+              <TaskCard key={task.id} task={task} index={index} isDark={isDark} onPress={() => handleSelectTask(task)} onEdit={() => navigation.navigate('TaskSetup', { task })} />
+            ))}
+          </ScrollView>
         )}
       </Animated.View>
 
@@ -232,9 +243,12 @@ export default function TaskPickerScreen({ navigation }: Props) {
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={styles.primaryButtonText}>
-            {showPaywall ? 'ADD TASK (UPGRADE)' : '+ NEW TASK'}
-          </Text>
+          <View style={styles.primaryButtonRow}>
+            <PlusIcon size={18} color={colors.midnight} />
+            <Text style={styles.primaryButtonText}>
+              {showPaywall ? 'ADD TASK (UPGRADE)' : 'NEW TASK'}
+            </Text>
+          </View>
         </AnimatedTouchable>
       </Animated.View>
     </View>
@@ -270,11 +284,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  navLink: {
+  historyButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
     minHeight: 44,
     justifyContent: 'center',
-    backgroundColor: 'transparent',
-    borderRadius: radius.md,
+    alignItems: 'center',
   },
   streakPill: {
     flexDirection: 'row',
@@ -282,16 +301,31 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 2,
+    borderRadius: radius.full,
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    minHeight: 44,
+  },
+  streakCount: {
+    fontFamily: 'Anton',
+    fontSize: 20,
+    letterSpacing: -0.02,
+    color: colors.midnight,
   },
   streakFlame: {
-    width: 18,
-    height: 18,
+    width: 20,
+    height: 20,
   },
-  list: {
+  listWrap: {
     flex: 1,
+  },
+  listScroll: {
+    flex: 1,
+  },
+  listContent: {
     gap: spacing.md,
+    paddingBottom: spacing.md,
   },
   taskCard: {
     flexDirection: 'row',
@@ -325,8 +359,8 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   emptyImage: {
-    width: 96,
-    height: 96,
+    width: 130,
+    height: 130,
   },
   bottomSection: {
     paddingTop: spacing.lg,
@@ -335,12 +369,18 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+  },
+  primaryButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   primaryButtonText: {
     ...typography.button,

@@ -164,40 +164,41 @@ export const radius = {
 } as const;
 
 // Duolingo-style button tokens
+// Button chrome may use ONLY ectoGreen/ectoGreenDark (+midnight text) and danger red.
 export const buttons = {
   primary: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
   },
   primaryPressed: {
     backgroundColor: colors.ectoGreenDark,
     borderBottomWidth: 1,
-    borderBottomColor: colors.eelDarkBlue,
+    borderBottomColor: colors.ectoGreenDark,
     marginTop: 2,
   },
   outlined: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: colors.lingotLime,
-    borderRadius: radius.md,
+    borderColor: colors.ectoGreen,
+    borderRadius: radius.xl,
   },
   outlinedBlue: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: colors.macawBlue,
-    borderRadius: radius.md,
+    borderColor: colors.ectoGreen,
+    borderRadius: radius.xl,
   },
   ghost: {
     backgroundColor: 'transparent',
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
   },
   danger: {
     backgroundColor: colors.danger,
     borderBottomWidth: 3,
     borderBottomColor: colors.dangerDark,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
   },
 } as const;
 
@@ -216,8 +217,8 @@ export const gamification = {
   },
   blockedButton: {
     returnToTask: colors.ectoGreen,
-    override: colors.macawBlue,
-    switchTask: colors.lingotLime,
+    override: colors.ectoGreen,
+    switchTask: colors.ectoGreen,
   },
 } as const;
 

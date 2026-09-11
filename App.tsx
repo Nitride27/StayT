@@ -118,6 +118,12 @@ function AppNavigator() {
   // Cold-start / background tap on the "blocked app" notification deep-links here.
   useEffect(() => {
     const handleUrl = async (url: string) => {
+      // Overlay SWITCH TASK lands here — TaskPicker, no session write
+      // (picking a new task supersedes via the zombie-session logic).
+      if (AppBlocker.isTasksDeepLink(url)) {
+        if (navigationRef.isReady()) navigationRef.navigate('TaskPicker');
+        return;
+      }
       const link = AppBlocker.parseBlockedDeepLink(url);
       if (!link || !navigationRef.isReady()) return;
       if (!shouldNavigateBlocked(link.packageName)) return;

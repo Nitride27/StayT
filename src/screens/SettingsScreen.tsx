@@ -22,6 +22,7 @@ import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 import appConfig from '../../app.json';
 
@@ -42,6 +43,41 @@ const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
+function SectionHeader({ label, color, glyph }: { label: string; color: string; glyph: React.ReactNode }) {
+  return (
+    <View style={sectionHeaderStyles.row}>
+      <View style={[sectionHeaderStyles.glyphBox, label === 'DANGER ZONE' && sectionHeaderStyles.glyphDanger]}>
+        {glyph}
+      </View>
+      <Text style={[sectionHeaderStyles.label, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+const sectionHeaderStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  glyphBox: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
+    backgroundColor: colors.ectoGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  glyphDanger: {
+    backgroundColor: colors.danger,
+  },
+  label: {
+    ...typography.label,
+  },
+});
+
 export default function SettingsScreen({ navigation }: Props) {
   const { isDark, colors: theme, mode, setMode } = useTheme();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -54,10 +90,10 @@ export default function SettingsScreen({ navigation }: Props) {
   const bodyTranslateY = useSharedValue(20);
 
   React.useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    bodyOpacity.value = withDelay(250, withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }));
-    bodyTranslateY.value = withDelay(250, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    bodyOpacity.value = withDelay(250, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    bodyTranslateY.value = withDelay(250, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const loadPrefs = async () => {
@@ -159,8 +195,11 @@ export default function SettingsScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Animated.View style={[styles.header, headerAnimStyle]}>
           <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink}>
-              <Text style={[typography.bodyMedium, { color: ink }]}>‹ Back</Text>
+            <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink} accessibilityRole="button" accessibilityLabel="Back">
+              <View style={styles.backRow}>
+                <ChevronLeftIcon size={18} color={ink} />
+                <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
+              </View>
             </TouchableOpacity>
             <View style={{ width: 50 }} />
           </View>
@@ -169,7 +208,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
         <Animated.View style={bodyAnimStyle}>
           {/* Appearance */}
-          <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>APPEARANCE</Text>
+          <SectionHeader label="APPEARANCE" color={theme.inkSecondary} glyph={<GearIcon size={16} color={colors.midnight} />} />
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             <View style={styles.segmentRow}>
               {THEME_OPTIONS.map(opt => {
@@ -185,7 +224,7 @@ export default function SettingsScreen({ navigation }: Props) {
                           backgroundColor: active ? colors.ectoGreen : 'transparent',
                           borderColor: theme.ink,
                           ...(active
-                            ? { borderBottomWidth: 3, borderBottomColor: colors.eelDarkBlue }
+                            ? { borderBottomWidth: 3, borderBottomColor: colors.ectoGreenDark }
                             : null),
                         },
                       ]}
@@ -205,7 +244,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
 
           {/* Feedback */}
-          <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>FEEDBACK</Text>
+          <SectionHeader label="FEEDBACK" color={theme.inkSecondary} glyph={<BoltIcon size={16} color={colors.midnight} />} />
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             <View style={styles.switchRow}>
               <Text style={[typography.bodyMedium, { color: ink }]}>Notifications</Text>
@@ -229,7 +268,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
 
           {/* Subscription */}
-          <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>SUBSCRIPTION</Text>
+          <SectionHeader label="SUBSCRIPTION" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             {isSubscribed ? (
               <View style={[styles.proPill, { backgroundColor: colors.ectoGreen }]}>
@@ -252,7 +291,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
 
           {/* Support */}
-          <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>SUPPORT</Text>
+          <SectionHeader label="SUPPORT" color={theme.inkSecondary} glyph={<BookIcon size={16} color={colors.midnight} />} />
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             <Text style={[typography.bodyMedium, { color: ink }]}>StayT</Text>
             <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
@@ -263,12 +302,15 @@ export default function SettingsScreen({ navigation }: Props) {
               onPress={() => Linking.openURL(SUPPORT_URL).catch(() => {})}
               style={styles.supportRow}
             >
-              <Text style={[typography.bodyMedium, { color: ink }]}>Help & source code ›</Text>
+              <View style={styles.supportRowInner}>
+                <Text style={[typography.bodyMedium, { color: ink }]}>Help & source code</Text>
+                <ChevronRightIcon size={18} color={ink} />
+              </View>
             </TouchableOpacity>
           </View>
 
           {/* Danger zone */}
-          <Text style={[styles.sectionLabel, { color: colors.danger }]}>DANGER ZONE</Text>
+          <SectionHeader label="DANGER ZONE" color={colors.danger} glyph={<CloseIcon size={16} color="#ffffff" />} />
           <View style={[styles.card, styles.dangerCard, { backgroundColor: cardBg, borderColor: colors.danger }]}>
             <TouchableOpacity activeOpacity={0.7} onPress={handleResetOnboarding} style={styles.dangerRow}>
               <Text style={[typography.bodyMedium, { color: colors.danger }]}>Reset onboarding</Text>
@@ -308,10 +350,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderRadius: radius.md,
   },
-  sectionLabel: {
-    ...typography.label,
-    marginTop: spacing.xl,
-    marginBottom: spacing.md,
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   card: {
     borderWidth: 2,
@@ -349,10 +391,11 @@ const styles = StyleSheet.create({
   upgradeButton: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
-    borderBottomColor: colors.eelDarkBlue,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 14,
     paddingHorizontal: spacing.xl,
+    marginLeft: spacing.md,
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
@@ -368,6 +411,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
     borderRadius: radius.md,
+  },
+  supportRowInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   dangerCard: {
     borderWidth: 2,
