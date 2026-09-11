@@ -150,7 +150,7 @@ export default function WelcomeScreen({ navigation }: Props) {
           <Text style={styles.primaryButtonText}>GET STARTED</Text>
         </AnimatedTouchable>
 
-        <Text style={[typography.caption, { color: colors.inkMuted, textAlign: 'center', marginTop: spacing.md }]}>
+        <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.md }]}>
           Takes 30 seconds to set up
         </Text>
       </Animated.View>
