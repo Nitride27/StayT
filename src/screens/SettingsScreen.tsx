@@ -220,7 +220,7 @@ export default function SettingsScreen({ navigation }: Props) {
                     style={[
                       styles.segment,
                       active && styles.segmentActive,
-                      { backgroundColor: active ? colors.ectoGreen : 'transparent' },
+                      { backgroundColor: active ? colors.ectoGreen : 'transparent', borderColor: theme.ink },
                     ]}
                   >
                     <Text
@@ -362,6 +362,7 @@ const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
+    borderWidth: 2,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
@@ -369,7 +370,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   segmentActive: {
-    borderBottomWidth: 3,
+    borderBottomWidth: 5,
     borderBottomColor: colors.ectoGreenDark,
   },
   switchRow: {
