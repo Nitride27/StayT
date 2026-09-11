@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   primaryButtonText: {
-    ...typography.label,
+    ...typography.button,
     color: colors.midnight,
     textAlign: 'center',
   },

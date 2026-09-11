@@ -206,7 +206,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           </Text>
           <TextInput
             style={[styles.input, { color: ink, backgroundColor: cardBg, borderColor: border }]}
-            placeholder="e.g., Morning Focus"
+            placeholder="e.g. Deep Work"
             placeholderTextColor={isDark ? darkColors.inkMuted : colors.inkMuted}
             value={taskName}
             onChangeText={setTaskName}
@@ -349,6 +349,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     paddingVertical: spacing.md,
+    minHeight: 44,
   },
   checkbox: {
     width: 24,
@@ -397,6 +398,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   primaryButtonText: {
     ...typography.button,

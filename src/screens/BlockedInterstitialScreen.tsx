@@ -160,7 +160,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
         </AnimatedTouchable>
 
         <AnimatedTouchable
-          style={[styles.outlineButton, button2AnimStyle, { borderColor: colors.ectoGreen }]}
+          style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText }]}
           activeOpacity={0.85}
           onPress={handleSwitchTask}
         >
@@ -170,7 +170,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
         </AnimatedTouchable>
 
         <AnimatedTouchable
-          style={[styles.outlineButton, button2AnimStyle, { borderColor: colors.ectoGreen }]}
+          style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText }]}
           activeOpacity={0.85}
           onPress={handleTakeBreak}
         >
@@ -217,11 +217,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   outlineButton: {
     backgroundColor: 'transparent',
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
     borderRadius: radius.md,
     borderWidth: 2,
   },

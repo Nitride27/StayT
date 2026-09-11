@@ -184,6 +184,9 @@ export default function SettingsScreen({ navigation }: Props) {
                         {
                           backgroundColor: active ? colors.ectoGreen : 'transparent',
                           borderColor: theme.ink,
+                          ...(active
+                            ? { borderBottomWidth: 3, borderBottomColor: colors.eelDarkBlue }
+                            : null),
                         },
                       ]}
                   >
@@ -193,7 +196,7 @@ export default function SettingsScreen({ navigation }: Props) {
                         { color: active ? colors.midnight : theme.inkSecondary, textAlign: 'center' },
                       ]}
                     >
-                      {opt.label}
+                      {opt.label.toUpperCase()}
                     </Text>
                   </TouchableOpacity>
                 );

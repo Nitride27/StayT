@@ -213,6 +213,15 @@ export default function HistoryScreen({ navigation }: Props) {
             <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center' }]}>
               No sessions yet. Start your first focus session!
             </Text>
+            <TouchableOpacity
+              style={styles.emptyButton}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('TaskPicker')}
+            >
+              <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+                START A SESSION
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <FlatList
@@ -302,5 +311,18 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     marginBottom: spacing.lg,
+  },
+  emptyButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.eelDarkBlue,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: spacing.lg,
+    alignSelf: 'stretch',
   },
 });

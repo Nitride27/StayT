@@ -216,7 +216,7 @@ export default function PaywallScreen({ navigation }: Props) {
           One-time purchase
         </Text>
         <View style={styles.priceRow}>
-          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight }]}>$4.99</Text>
+          <Text style={[typography.h1, { color: isDark ? '#f5f5f5' : colors.midnight }]}>{price}</Text>
           <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary }]}> forever</Text>
         </View>
       </Animated.View>
@@ -241,13 +241,13 @@ export default function PaywallScreen({ navigation }: Props) {
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
-            {busy ? 'Processing…' : `Unlock Pro — ${price}`}
+          <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+            {busy ? 'PROCESSING…' : `UNLOCK PRO — ${price}`}
           </Text>
         </AnimatedTouchable>
 
         <TouchableOpacity style={[styles.restoreButton, { borderColor: isDark ? colors.ectoGreen : colors.ectoGreenDark }]} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
-          <Text style={[typography.label, { color: isDark ? colors.ectoGreen : colors.ectoGreenDark, textAlign: 'center' }]}>
+          <Text style={[typography.button, { color: isDark ? colors.ectoGreen : colors.ectoGreenDark, textAlign: 'center' }]}>
             RESTORE PURCHASE
           </Text>
         </TouchableOpacity>
