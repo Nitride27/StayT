@@ -192,8 +192,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backIcon} accessibilityRole="button" accessibilityLabel="Back">
             <ChevronLeftIcon size={24} color={ink} />
           </TouchableOpacity>
-          <Text style={[typography.h1, { color: ink }]}>
-            {existingTask ? 'Edit Task' : 'New Task'}
+          <Text style={[typography.display, { color: ink }]}>
+            {existingTask ? 'EDIT TASK' : 'NEW TASK'}
           </Text>
           <View style={{ width: 60 }} />
         </View>
