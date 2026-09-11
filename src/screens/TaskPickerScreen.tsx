@@ -24,7 +24,7 @@ type Props = {
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
-function TaskCard({ task, index, isDark, onPress }: { task: Task; index: number; isDark: boolean; onPress: () => void }) {
+function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index: number; isDark: boolean; onPress: () => void; onEdit: () => void }) {
   const delay = 300 + index * 50;
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(15);
@@ -58,7 +58,9 @@ function TaskCard({ task, index, isDark, onPress }: { task: Task; index: number;
       <View style={styles.taskInfo}>
         <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name}</Text>
       </View>
-      <Text style={[typography.h2, { color: muted }]}>{'>'}</Text>
+      <TouchableOpacity onPress={onEdit} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`}>
+        <Text style={[typography.h2, { color: muted }]}>{'>'}</Text>
+      </TouchableOpacity>
     </AnimatedTouchable>
   );
 }
@@ -183,8 +185,8 @@ export default function TaskPickerScreen({ navigation }: Props) {
             <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>History</Text>
           </TouchableOpacity>
           <View style={styles.headerRight}>
-            <View style={[styles.streakPill, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <View style={[styles.streakDot, { backgroundColor: colors.fire }]} />
+            <View style={[styles.streakPill, { backgroundColor: cardBg, borderColor: ink }]}>
+              <Image source={require('../../assets/flame.png')} style={styles.streakFlame} resizeMode="contain" />
               <Text style={[typography.label, { color: colors.fire }]}>
                 {streak > 0 ? `${streak} day streak` : 'No streak yet'}
               </Text>
@@ -209,7 +211,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
           </View>
         ) : (
           tasks.map((task, index) => (
-            <TaskCard key={task.id} task={task} index={index} isDark={isDark} onPress={() => handleSelectTask(task)} />
+            <TaskCard key={task.id} task={task} index={index} isDark={isDark} onPress={() => handleSelectTask(task)} onEdit={() => navigation.navigate('TaskSetup', { task })} />
           ))
         )}
       </Animated.View>
@@ -260,13 +262,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.full,
-    borderWidth: 1,
+    borderRadius: radius.md,
+    borderWidth: 2,
   },
-  streakDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  streakFlame: {
+    width: 18,
+    height: 14,
   },
   list: {
     flex: 1,
@@ -283,7 +284,7 @@ const styles = StyleSheet.create({
   iconBox: {
     width: 44,
     height: 44,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     backgroundColor: colors.ectoGreen,
     justifyContent: 'center',
     alignItems: 'center',

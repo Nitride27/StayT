@@ -249,8 +249,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   mascotImage: {
-    width: 120,
-    height: 120,
+    width: 180,
+    height: 180,
   },
   oemLine: {
     paddingHorizontal: spacing.lg,

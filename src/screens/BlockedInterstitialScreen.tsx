@@ -132,7 +132,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
       {/* Title */}
       <Animated.View style={[styles.titleSection, titleAnimStyle]}>
         <Text style={[typography.display, { color: ink, textAlign: 'center' }]}>
-          {taskName ? `THIS ISN'T PART OF ${taskName.toUpperCase()}` : 'Stay Focused'}
+          {taskName ? `THIS ISN'T PART OF ${taskName.toUpperCase()}` : 'STAY FOCUSED'}
         </Text>
       </Animated.View>
 
@@ -194,8 +194,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   mascotImage: {
-    width: 140,
-    height: 140,
+    width: 180,
+    height: 180,
   },
   titleSection: {
     marginBottom: spacing.md,

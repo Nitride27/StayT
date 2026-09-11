@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar, View, ActivityIndicator } from 'react-native';
+import { StatusBar, View, ActivityIndicator, Linking } from 'react-native';
 import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFonts } from 'expo-font';
@@ -99,6 +99,35 @@ function AppNavigator() {
       }
     });
     return unsub;
+  }, []);
+
+  // Cold-start / background tap on the "blocked app" notification deep-links here.
+  useEffect(() => {
+    const handleUrl = async (url: string) => {
+      const link = AppBlocker.parseBlockedDeepLink(url);
+      if (!link || !navigationRef.isReady()) return;
+      try {
+        const tasks = await store.getTasks();
+        const task = tasks.find(
+          t => t.packageName === link.packageName || t.blockedPackages?.includes(link.packageName),
+        );
+        navigationRef.navigate('BlockedInterstitial', {
+          packageName: link.packageName,
+          taskId: task?.id ?? '',
+        });
+      } catch {
+        // Best-effort navigation; must never crash the app.
+      }
+    };
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      handleUrl(url).catch(() => {});
+    });
+    Linking.getInitialURL()
+      .then(url => {
+        if (url) handleUrl(url).catch(() => {});
+      })
+      .catch(() => {});
+    return () => sub.remove();
   }, []);
 
   // Hide splash screen once fonts are resolved and initial route is ready.

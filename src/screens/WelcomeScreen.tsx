@@ -11,7 +11,7 @@ import Animated, {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 
 type Props = {
@@ -101,7 +101,7 @@ export default function WelcomeScreen({ navigation }: Props) {
         </Animated.View>
 
         <View style={styles.features}>
-          <Animated.View style={[styles.featureRow, feature1AnimStyle, { borderColor: isDark ? '#222222' : colors.paperBorder }]}>
+          <Animated.View style={[styles.featureRow, feature1AnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
             <View style={[styles.featureDot, { backgroundColor: colors.ectoGreen }]} />
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Set your focus</Text>
@@ -109,7 +109,7 @@ export default function WelcomeScreen({ navigation }: Props) {
             </View>
           </Animated.View>
 
-          <Animated.View style={[styles.featureRow, feature2AnimStyle, { borderColor: isDark ? '#222222' : colors.paperBorder }]}>
+          <Animated.View style={[styles.featureRow, feature2AnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
             <View style={[styles.featureDot, { backgroundColor: colors.fire }]} />
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Build your streak</Text>
@@ -117,7 +117,7 @@ export default function WelcomeScreen({ navigation }: Props) {
             </View>
           </Animated.View>
 
-          <Animated.View style={[styles.featureRow, feature3AnimStyle, { borderColor: isDark ? '#222222' : colors.paperBorder }]}>
+          <Animated.View style={[styles.featureRow, feature3AnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
             <View style={[styles.featureDot, { backgroundColor: colors.macawBlue }]} />
             <View style={styles.featureText}>
               <Text style={[typography.bodyMedium, { color: isDark ? '#f5f5f5' : colors.midnight }]}>Stay in the zone</Text>
@@ -162,8 +162,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxxl,
   },
   mascotImage: {
-    width: 120,
-    height: 120,
+    width: 160,
+    height: 160,
   },
   features: {
     gap: spacing.xl,

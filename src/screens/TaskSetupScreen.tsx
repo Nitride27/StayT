@@ -17,7 +17,7 @@ import { typography, spacing, radius, layout, colors, darkColors } from '../them
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 
-type InstalledApp = { packageName: string; appName: string };
+type InstalledApp = { packageName: string; appName: string; iconBase64?: string };
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TaskSetup'>;
@@ -156,7 +156,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const ink = isDark ? darkColors.ink : colors.ink;
   const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
   const border = isDark ? darkColors.ink : colors.ink;
-  const hairline = isDark ? darkColors.paperBorder : colors.paperBorder;
   const canSave = taskName.trim() && (selectedApps.length > 0 || packageName.trim());
 
   return (
@@ -213,13 +212,25 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                     key={app.packageName}
                     activeOpacity={0.7}
                     onPress={() => handlePickApp(app)}
-                    style={[styles.appRow, { borderBottomColor: hairline }]}
+                    style={styles.appRow}
                   >
                     <View style={[styles.checkbox, { borderColor: border }, checked && styles.checkboxChecked]}>
                       {checked && (
                         <Text style={[typography.label, { color: colors.midnight }]}>✓</Text>
                       )}
                     </View>
+                    {app.iconBase64 ? (
+                      <Image
+                        source={{ uri: `data:image/png;base64,${app.iconBase64}` }}
+                        style={styles.appIcon}
+                      />
+                    ) : (
+                      <View style={styles.appIconFallback}>
+                        <Text style={[typography.label, { color: colors.midnight }]}>
+                          {(app.appName.trim()[0] || '?').toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.appInfo}>
                       <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
                         {app.appName}
@@ -256,7 +267,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           onPressIn={canSave ? handlePressIn : undefined}
           onPressOut={canSave ? handlePressOut : undefined}
         >
-          <Text style={styles.primaryButtonText}>{existingTask ? 'SAVE TASK' : 'CREATE TASK'}</Text>
+          <Text style={styles.primaryButtonText}>SAVE TASK</Text>
         </AnimatedTouchable>
       </Animated.View>
     </View>
@@ -295,6 +306,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: radius.md,
     padding: spacing.lg,
+    fontFamily: 'Inter-Regular',
     fontSize: typography.body.fontSize,
   },
   appList: {
@@ -307,7 +319,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   checkbox: {
     width: 24,
@@ -321,6 +332,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.ectoGreen,
     borderColor: colors.ectoGreen,
   },
+  appIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  appIconFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: colors.ectoGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   appInfo: {
     flex: 1,
   },
@@ -329,8 +353,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   noAppsImage: {
-    width: 64,
-    height: 64,
+    width: 100,
+    height: 100,
   },
   bottomSection: {
     paddingTop: spacing.lg,

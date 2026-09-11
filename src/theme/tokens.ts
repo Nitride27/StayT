@@ -57,14 +57,12 @@ export const typography = {
   displayXL: {
     fontFamily: 'Anton',
     fontSize: 72,
-    fontWeight: '400' as const,
     letterSpacing: -0.04,
     lineHeight: 65, // 0.9
   },
   display: {
     fontFamily: 'Anton',
     fontSize: 48,
-    fontWeight: '400' as const,
     letterSpacing: -0.03,
     lineHeight: 43, // 0.9
   },
@@ -73,65 +71,62 @@ export const typography = {
   h1: {
     fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 32,
-    fontWeight: '700' as const,
     letterSpacing: -0.03,
     lineHeight: 36,
   },
   h2: {
     fontFamily: 'SpaceGrotesk-SemiBold',
     fontSize: 24,
-    fontWeight: '600' as const,
     letterSpacing: -0.02,
     lineHeight: 28,
   },
   h3: {
     fontFamily: 'SpaceGrotesk-Medium',
     fontSize: 18,
-    fontWeight: '500' as const,
     letterSpacing: -0.01,
     lineHeight: 22,
   },
   button: {
     fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 15,
-    fontWeight: '700' as const,
     letterSpacing: 0.02,
     lineHeight: 20,
   },
   label: {
     fontFamily: 'SpaceGrotesk-Medium',
     fontSize: 12,
-    fontWeight: '500' as const,
     letterSpacing: 0.04,
     lineHeight: 16,
   },
   timer: {
     fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 48,
-    fontWeight: '700' as const,
     letterSpacing: -0.02,
     lineHeight: 53, // 0.9
+  },
+  timerXL: {
+    fontFamily: 'SpaceGrotesk-Bold',
+    fontSize: 72,
+    letterSpacing: -0.02,
+    lineHeight: 79,
   },
 
   // ─── Inter — readability, longer text ───
   body: {
     fontFamily: 'Inter-Regular',
     fontSize: 16,
-    fontWeight: '400' as const,
     letterSpacing: 0,
     lineHeight: 22, // 1.4
   },
   bodyMedium: {
     fontFamily: 'Inter-Medium',
     fontSize: 16,
-    fontWeight: '500' as const,
     letterSpacing: 0,
     lineHeight: 22,
   },
   bodyStrong: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 16,
-    fontWeight: '600' as const,
     letterSpacing: 0,
     lineHeight: 22,
   },
@@ -139,14 +134,12 @@ export const typography = {
   bodyBold: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 16,
-    fontWeight: '600' as const,
     letterSpacing: 0,
     lineHeight: 22,
   },
   caption: {
     fontFamily: 'Inter-Regular',
     fontSize: 13,
-    fontWeight: '400' as const,
     letterSpacing: 0.02,
     lineHeight: 18,
   },
@@ -214,7 +207,6 @@ export const gamification = {
     numberFont: {
       fontFamily: 'Anton',
       fontSize: 48,
-      fontWeight: '400' as const,
       letterSpacing: -0.03,
     },
     fireSize: 32,

@@ -8,6 +8,16 @@ export interface BlockedAttemptEvent {
   timestamp: number;
 }
 
+export interface InstalledApp {
+  packageName: string;
+  appName: string;
+  iconBase64?: string;
+}
+
+export interface BlockedDeepLink {
+  packageName: string;
+}
+
 class AppBlockerBridge {
   private eventEmitter: NativeEventEmitter | null = null;
 
@@ -51,11 +61,29 @@ class AppBlockerBridge {
     return AppBlocker.pauseBlocking(seconds);
   }
 
-  async getInstalledApps(): Promise<{ packageName: string; appName: string }[]> {
+  async getInstalledApps(): Promise<InstalledApp[]> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return [];
     }
     return AppBlocker.getInstalledApps();
+  }
+
+  /**
+   * Parse an incoming `exp+stayt-app://blocked?packageName=X` deep link
+   * (tapped from the native blocked notification). Returns the packageName
+   * so the caller can resolve taskId via the existing store lookup, or null
+   * when the URL is not a blocked link. App.tsx wires this to Linking.
+   */
+  parseBlockedDeepLink(url: string): BlockedDeepLink | null {
+    try {
+      const match = /(?:\?|&)packageName=([^&]+)/.exec(url);
+      if (!match) return null;
+      if (!url.startsWith('exp+stayt-app://blocked')) return null;
+      const packageName = decodeURIComponent(match[1]);
+      return packageName ? { packageName } : null;
+    } catch {
+      return null;
+    }
   }
 
   async requestNotificationPermission(): Promise<boolean> {

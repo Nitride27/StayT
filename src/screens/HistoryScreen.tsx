@@ -172,7 +172,7 @@ export default function HistoryScreen({ navigation }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.streakSection, statsAnimStyle]}>
-        <Text style={[typography.h1, { color: colors.fire }]}>🔥</Text>
+        <Image source={require('../../assets/flame.png')} style={styles.streakFlame} resizeMode="contain" />
         <Text style={[typography.displayXL, { color: ink }]}>{streak}</Text>
         <Text style={[typography.button, { color: colors.fire, marginTop: spacing.xs }]}>DAY STREAK!</Text>
         <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
@@ -246,6 +246,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
+  streakFlame: {
+    width: 48,
+    height: 36,
+  },
   chartSection: {
     marginBottom: spacing.xl,
   },
@@ -289,8 +293,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxxl,
   },
   emptyImage: {
-    width: 96,
-    height: 96,
+    width: 130,
+    height: 130,
     marginBottom: spacing.lg,
   },
 });

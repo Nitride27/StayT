@@ -2,6 +2,13 @@ package com.nitridee.staytapp.blocker
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -12,6 +19,8 @@ class StayTAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "StayTAccessibility"
         private const val BLOCK_COOLDOWN_MS = 1000L
+        private const val BLOCK_CHANNEL_ID = "stayt_blocked"
+        private const val BLOCK_CHANNEL_NAME = "Blocked apps"
 
         var instance: StayTAccessibilityService? = null
             private set
@@ -50,6 +59,16 @@ class StayTAccessibilityService : AccessibilityService() {
         instance = this
         Log.d(TAG, "Accessibility service connected")
 
+        // Channel for the Play-safe tap-to-return blocked notification.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                BLOCK_CHANNEL_ID,
+                BLOCK_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+        }
+
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
@@ -87,6 +106,51 @@ class StayTAccessibilityService : AccessibilityService() {
 
         // Emit event to React Native
         AppBlockerModule.emitBlockedAttempt(openedPackage, now)
+
+        // Play-safe v1: plain high-priority notification whose tap deep-links
+        // back into StayT (packageName only — JS resolves taskId like App.tsx does).
+        // No SYSTEM_ALERT_WINDOW, no full-screen intent.
+        postBlockedNotification(openedPackage)
+    }
+
+    private fun postBlockedNotification(openedPackage: String) {
+        try {
+            val deepLink = Uri.parse(
+                "exp+stayt-app://blocked?packageName=${Uri.encode(openedPackage)}"
+            )
+            val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
+                setPackage(packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val pending = PendingIntent.getActivity(
+                this,
+                openedPackage.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val appLabel = try {
+                val info = packageManager.getApplicationInfo(openedPackage, 0)
+                packageManager.getApplicationLabel(info).toString()
+            } catch (_: Exception) {
+                openedPackage
+            }
+            val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, BLOCK_CHANNEL_ID)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
+                .setContentTitle("Blocked $appLabel")
+                .setContentText("Tap to return to your task")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .build()
+            getSystemService(NotificationManager::class.java)
+                ?.notify(openedPackage.hashCode(), notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "postBlockedNotification failed for $openedPackage", e)
+        }
     }
 
     override fun onInterrupt() {

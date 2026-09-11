@@ -1,8 +1,12 @@
 package com.nitridee.staytapp.blocker
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.provider.Settings
+import android.util.Base64
 import android.util.Log
+import java.io.ByteArrayOutputStream
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -100,6 +104,8 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
                     val map = Arguments.createMap()
                     map.putString("packageName", appInfo.packageName)
                     map.putString("appName", pm.getApplicationLabel(appInfo).toString())
+                    // Per-app best-effort: one bad icon must never fail the whole list.
+                    map.putString("iconBase64", loadIconBase64(appInfo.packageName))
                     map
                 }
             val result = Arguments.createArray()
@@ -135,6 +141,31 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     override fun invalidate() {
         instance = null
         super.invalidate()
+    }
+
+    /**
+     * Render a launchable app's icon to a 48px PNG Base64 string (no-wrap).
+     * Returns "" on ANY failure — a single bad icon must never fail the list.
+     */
+    private fun loadIconBase64(packageName: String): String {
+        try {
+            val pm = reactApplicationContext.packageManager
+            val drawable = pm.getApplicationIcon(packageName)
+            // Draw large first (adaptive icons scale cleanly), then downscale to 48px.
+            val src = Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(src)
+            drawable.setBounds(0, 0, 192, 192)
+            drawable.draw(canvas)
+            val small = Bitmap.createScaledBitmap(src, 48, 48, true)
+            src.recycle()
+            val out = ByteArrayOutputStream()
+            small.compress(Bitmap.CompressFormat.PNG, 100, out)
+            small.recycle()
+            return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        } catch (e: Exception) {
+            Log.w(TAG, "icon load failed for $packageName", e)
+            return ""
+        }
     }
 
     private fun emitToJS(packageName: String, timestamp: Long) {

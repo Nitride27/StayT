@@ -118,10 +118,10 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.timerArea, timerAnimStyle]}>
-        <Text style={[styles.timerText, { color: ink }]}>
+        <Text style={[typography.timerXL, { color: ink }]}>
           {formatElapsed(elapsed)}
         </Text>
-        <Text style={[typography.caption, { color: muted, marginTop: spacing.sm, fontStyle: 'italic' }]}>
+        <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
           Small steps build big progress.
         </Text>
       </Animated.View>
@@ -136,8 +136,8 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         >
           <Text style={[typography.button, { color: colors.ectoGreen, textAlign: 'center' }]}>SWITCH TASK</Text>
         </AnimatedTouchable>
-        <TouchableOpacity activeOpacity={0.7} onPress={handleEndSession} style={styles.endLink}>
-          <Text style={[typography.caption, { color: muted, textAlign: 'center' }]}>
+        <TouchableOpacity activeOpacity={0.7} onPress={handleEndSession} style={[styles.endButton, { borderColor: colors.ectoGreen }]}>
+          <Text style={[typography.button, { color: colors.ectoGreen, textAlign: 'center' }]}>
             End session
           </Text>
         </TouchableOpacity>
@@ -158,18 +158,20 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   mascotImage: {
-    width: 120,
-    height: 120,
+    width: 180,
+    height: 180,
   },
   timerArea: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  timerText: {
-    ...typography.timer,
-    fontSize: 72,
-    lineHeight: 79,
+  endButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
   },
   bottomSection: {
     paddingTop: spacing.lg,
@@ -181,10 +183,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
-    alignItems: 'center',
-  },
-  endLink: {
-    paddingVertical: spacing.sm,
     alignItems: 'center',
   },
 });

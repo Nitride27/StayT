@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -11,7 +11,8 @@ import Animated, {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
-import { typography, spacing, radius, layout, colors } from '../theme/tokens';
+import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
+import { mascotSource } from '../theme/mascot';
 import { useIAP, type Purchase } from 'expo-iap';
 import { PRO_SKU, grantPro } from '../billing/pro';
 
@@ -204,7 +205,11 @@ export default function PaywallScreen({ navigation }: Props) {
         </Text>
       </Animated.View>
 
-      <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? '#222222' : colors.paperBorder }]}>
+      <Animated.View style={[styles.mascotWrap, headerAnimStyle]}>
+        <Image source={mascotSource('thinking', isDark)} style={styles.mascotImage} resizeMode="contain" />
+      </Animated.View>
+
+      <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? '#111111' : colors.paperCard, borderColor: isDark ? darkColors.ink : colors.ink }]}>
         <Text style={[typography.h2, { color: colors.ectoGreen, textAlign: 'center' }]}>Pro</Text>
         <Text style={[typography.bodyMedium, { color: isDark ? colors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.xs }]}>
           One-time purchase
@@ -264,6 +269,14 @@ const styles = StyleSheet.create({
   closeButton: {
     alignSelf: 'flex-end',
     marginBottom: spacing.xl,
+  },
+  mascotWrap: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  mascotImage: {
+    width: 170,
+    height: 170,
   },
   pricingCard: {
     padding: spacing.xl,

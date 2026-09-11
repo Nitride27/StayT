@@ -168,7 +168,7 @@ export default function SettingsScreen({ navigation }: Props) {
         <Animated.View style={bodyAnimStyle}>
           {/* Appearance */}
           <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>APPEARANCE</Text>
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.paperBorder }]}>
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             <View style={styles.segmentRow}>
               {THEME_OPTIONS.map(opt => {
                 const active = mode === opt.key;
@@ -177,13 +177,13 @@ export default function SettingsScreen({ navigation }: Props) {
                     key={opt.key}
                     activeOpacity={0.8}
                     onPress={() => handleTheme(opt.key)}
-                    style={[
-                      styles.segment,
-                      {
-                        backgroundColor: active ? colors.ectoGreen : 'transparent',
-                        borderColor: theme.paperBorder,
-                      },
-                    ]}
+                      style={[
+                        styles.segment,
+                        {
+                          backgroundColor: active ? colors.ectoGreen : 'transparent',
+                          borderColor: theme.ink,
+                        },
+                      ]}
                   >
                     <Text
                       style={[
@@ -201,7 +201,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
           {/* Feedback */}
           <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>FEEDBACK</Text>
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.paperBorder }]}>
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             <View style={styles.switchRow}>
               <Text style={[typography.bodyMedium, { color: ink }]}>Notifications</Text>
               <Switch
@@ -225,7 +225,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
           {/* Subscription */}
           <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>SUBSCRIPTION</Text>
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.paperBorder }]}>
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             {isSubscribed ? (
               <View style={[styles.proPill, { backgroundColor: colors.ectoGreen }]}>
                 <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO — ACTIVE</Text>
@@ -248,7 +248,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
           {/* Support */}
           <Text style={[styles.sectionLabel, { color: theme.inkSecondary }]}>SUPPORT</Text>
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.paperBorder }]}>
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
             <Text style={[typography.bodyMedium, { color: ink }]}>StayT</Text>
             <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
               v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   proPill: {
-    borderRadius: radius.full,
+    borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
   },
