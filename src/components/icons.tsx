@@ -1,6 +1,6 @@
-// StayT SVG icon family — one stroke style app-wide (FlameIcon is the
-// sole fill-based exception: a solid Duo-style streak mark with a
-// knockout teardrop so the background shows through in both themes).
+// StayT SVG icon family — chunky strokes app-wide (FlameIcon is fill-based).
+// Task glyphs (Laptop/Pen/Book/Bolt) are FILLED solids per the mockup's
+// task cards; everything else stays stroke style for row-level consistency.
 // react-native-svg 15.15.4, 24 viewBox, strokeWidth 2.6 default
 // (mockup glyphs are chunky/rounded, ~2.5-3px at 24 viewBox),
 // round caps/joins throughout. Same props API on every export
@@ -36,38 +36,48 @@ function Base({
   );
 }
 
+function Solid({
+  size = 24,
+  color = '#000',
+  children,
+}: IconProps & { children: React.ReactNode }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      {children}
+    </Svg>
+  );
+}
+
 export function LaptopIcon(props: IconProps) {
   return (
-    <Base {...props}>
+    <Solid {...props}>
       <Rect x={3.5} y={4} width={17} height={11.5} rx={2.5} />
-      <Path d="M2.5 19.5h19" />
-    </Base>
+      <Rect x={2.5} y={17.2} width={19} height={2.8} rx={1.4} />
+    </Solid>
   );
 }
 
 export function PenIcon(props: IconProps) {
   return (
-    <Base {...props}>
+    <Solid {...props}>
       <Path d="M14.6 6.6l2.8 2.8L7.5 19.3 4 20.5l1.2-3.5 9.4-10.4z" />
-      <Path d="M11.8 9.7l2.6 2.7" />
-    </Base>
+    </Solid>
   );
 }
 
 export function BookIcon(props: IconProps) {
   return (
-    <Base {...props}>
+    <Solid {...props}>
       <Path d="M12 6.5C10 5 7 4.5 4 4.5v13.7c3 0 6 .5 8 2 2-1.5 5-2 8-2V4.5c-3 0-6 .5-8 2z" />
-      <Path d="M12 6.5v13.7" />
-    </Base>
+    </Solid>
   );
 }
 
 export function BoltIcon(props: IconProps) {
   return (
-    <Base {...props}>
+    <Solid {...props}>
       <Path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-    </Base>
+    </Solid>
   );
 }
 
