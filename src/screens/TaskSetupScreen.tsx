@@ -201,7 +201,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Animated.View style={[styles.form, formAnimStyle]}>
-          <Text style={[typography.h3, { color: ink, marginBottom: spacing.sm }]}>
+          <Text style={[typography.display, { color: ink, marginBottom: spacing.md }]}>
             TASK NAME
           </Text>
           <View style={styles.nameRow}>

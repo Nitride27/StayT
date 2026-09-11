@@ -53,9 +53,9 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
       activeOpacity={0.85}
       onPress={onPress}
     >
-      <TaskGlyph name={task.name} size={40} color={ink} />
+      <TaskGlyph name={task.name} size={34} color={ink} />
       <View style={styles.taskInfo}>
-        <Text style={[typography.display, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
+        <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
         <Text style={[typography.caption, { color: muted }]} numberOfLines={1}>{subtitle}</Text>
       </View>
       <TouchableOpacity onPress={onEdit} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`} style={styles.editHit}>
