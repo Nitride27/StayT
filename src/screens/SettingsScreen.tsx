@@ -61,9 +61,9 @@ const sectionHeaderStyles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   glyphBox: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.sm,
+    width: 32,
+    height: 32,
+    borderRadius: radius.md,
     backgroundColor: colors.ectoGreen,
     justifyContent: 'center',
     alignItems: 'center',
@@ -216,6 +216,7 @@ export default function SettingsScreen({ navigation }: Props) {
                     onPress={() => handleTheme(opt.key)}
                     style={[
                       styles.segment,
+                      active && styles.segmentActive,
                       { backgroundColor: active ? colors.ectoGreen : 'transparent' },
                     ]}
                   >
@@ -341,6 +342,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.lg,
     gap: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   segmentRow: {
     flexDirection: 'row',
@@ -348,11 +354,15 @@ const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
-    borderRadius: radius.full,
+    borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+  },
+  segmentActive: {
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
   },
   switchRow: {
     flexDirection: 'row',

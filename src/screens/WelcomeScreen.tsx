@@ -212,6 +212,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bottomSection: {
+    marginTop: spacing.xl,
     paddingBottom: spacing.xl,
   },
   primaryButton: {
