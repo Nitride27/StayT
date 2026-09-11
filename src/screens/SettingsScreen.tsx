@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -23,6 +24,7 @@ import { store } from '../storage/store';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon } from '../components/icons';
+import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import appConfig from '../../app.json';
 
@@ -57,7 +59,7 @@ const sectionHeaderStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.xl,
+    marginTop: spacing.xxl,
     marginBottom: spacing.md,
   },
   glyphBox: {
@@ -200,6 +202,7 @@ export default function SettingsScreen({ navigation }: Props) {
             <View style={{ width: 50 }} />
           </View>
           <Text style={[typography.display, { color: ink, marginTop: spacing.md }]}>SETTINGS</Text>
+          <Image source={mascotSource('coffee', isDark)} style={styles.mascotImage} resizeMode="contain" />
         </Animated.View>
 
         <Animated.View style={bodyAnimStyle}>
@@ -319,6 +322,12 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.xl,
+    alignItems: 'center',
+  },
+  mascotImage: {
+    width: 110,
+    height: 110,
+    marginTop: spacing.lg,
   },
   headerRow: {
     flexDirection: 'row',
@@ -358,7 +367,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: 52,
   },
   segmentActive: {
     borderBottomWidth: 3,
