@@ -188,7 +188,6 @@ export default function HistoryScreen({ navigation }: Props) {
                   <Text style={[typography.display, { color: streakGreen }]}>DAY STREAK!</Text>
                 </View>
               </View>
-              </View>
               <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center', maxWidth: 260, alignSelf: 'center' }]}>
                 Keep going. You're building great habits.
               </Text>

@@ -16,7 +16,7 @@ import { Task, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon, FlameIcon } from '../components/icons';
+import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon, FlameIcon, ClockIcon } from '../components/icons';
 import { FREE_TASK_LIMIT } from './PaywallScreen';
 
 type Props = {
