@@ -70,6 +70,21 @@ function AppNavigator() {
       try {
         const prefs = await store.getPreferences();
 
+        // Reconcile zombie sessions left `active` by a process kill:
+        // close them so History never renders phantom 0m rows.
+        try {
+          const sessions = await store.getSessions();
+          const now = Date.now();
+          for (const s of sessions) {
+            if (s.status === 'active') {
+              const duration = Math.max(0, now - s.startedAt);
+              await store.saveSession({ ...s, status: 'completed', endedAt: now, duration });
+            }
+          }
+        } catch {
+          // Best-effort; a failed reconcile must not block boot.
+        }
+
         if (!prefs.hasOnboarded) {
           setInitialRoute('Welcome');
         } else {
