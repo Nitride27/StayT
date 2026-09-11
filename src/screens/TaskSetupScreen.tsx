@@ -189,9 +189,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backRow} accessibilityRole="button" accessibilityLabel="Back">
-            <ChevronLeftIcon size={18} color={ink} />
-            <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backIcon} accessibilityRole="button" accessibilityLabel="Back">
+            <ChevronLeftIcon size={24} color={ink} />
           </TouchableOpacity>
           <Text style={[typography.h1, { color: ink }]}>
             {existingTask ? 'Edit Task' : 'New Task'}
@@ -326,15 +325,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  backRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    width: 60,
+  backIcon: {
+    width: 44,
     minHeight: 44,
     justifyContent: 'center',
-    backgroundColor: 'transparent',
-    borderRadius: radius.md,
+    alignItems: 'center',
   },
   scroll: {
     flex: 1,

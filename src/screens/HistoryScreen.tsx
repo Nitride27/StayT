@@ -173,11 +173,8 @@ export default function HistoryScreen({ navigation }: Props) {
           <>
             <Animated.View style={[styles.header, headerAnimStyle]}>
               <View style={styles.headerRow}>
-                <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink} accessibilityRole="button" accessibilityLabel="Back">
-                  <View style={styles.backRow}>
-                    <ChevronLeftIcon size={18} color={ink} />
-                    <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
-                  </View>
+                <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backIcon} accessibilityRole="button" accessibilityLabel="Back">
+                  <ChevronLeftIcon size={24} color={ink} />
                 </TouchableOpacity>
                 <View style={{ width: 50 }} />
               </View>
@@ -185,11 +182,12 @@ export default function HistoryScreen({ navigation }: Props) {
 
             <Animated.View style={[styles.streakSection, statsAnimStyle]}>
               <View style={styles.streakRow}>
-                <FlameIcon size={64} color={streakGreen} />
+                <FlameIcon size={80} color={streakGreen} />
                 <View style={styles.streakTextCol}>
                   <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
-                  <Text style={[typography.button, { color: streakGreen }]}>DAY STREAK!</Text>
+                  <Text style={[typography.display, { color: streakGreen }]}>DAY STREAK!</Text>
                 </View>
+              </View>
               </View>
               <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center', maxWidth: 260, alignSelf: 'center' }]}>
                 Keep going. You're building great habits.
@@ -269,16 +267,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  navLink: {
+  backIcon: {
+    width: 44,
     minHeight: 44,
     justifyContent: 'center',
-    backgroundColor: 'transparent',
-    borderRadius: radius.md,
-  },
-  backRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
   },
   streakSection: {
     alignItems: 'center',

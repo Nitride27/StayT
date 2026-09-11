@@ -189,14 +189,23 @@ export default function TaskPickerScreen({ navigation }: Props) {
             activeOpacity={0.7}
             style={styles.streakPill}
             accessibilityRole="button"
-            accessibilityLabel={`${streak} day streak. View history.`}
+            accessibilityLabel="View history"
           >
-            <FlameIcon size={18} color={colors.midnight} />
-            <Text style={[styles.streakCount]}>{streak}</Text>
+            <ClockIcon size={20} color={colors.midnight} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
-            <GearIcon size={22} color={ink} />
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <View
+              style={styles.streakPill}
+              accessibilityRole="text"
+              accessibilityLabel={`${streak} day streak`}
+            >
+              <FlameIcon size={18} color={colors.midnight} />
+              <Text style={[styles.streakCount]}>{streak}</Text>
+            </View>
+            <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
+              <GearIcon size={22} color={ink} />
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={[typography.display, { color: ink, marginTop: spacing.lg }]}>
           WHAT ARE YOU DOING?
@@ -258,6 +267,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   gearButton: {
     minWidth: 44,

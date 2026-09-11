@@ -194,11 +194,8 @@ export default function SettingsScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Animated.View style={[styles.header, headerAnimStyle]}>
           <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink} accessibilityRole="button" accessibilityLabel="Back">
-              <View style={styles.backRow}>
-                <ChevronLeftIcon size={18} color={ink} />
-                <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
-              </View>
+            <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backIcon} accessibilityRole="button" accessibilityLabel="Back">
+              <ChevronLeftIcon size={24} color={ink} />
             </TouchableOpacity>
             <View style={{ width: 50 }} />
           </View>
@@ -333,10 +330,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderRadius: radius.md,
   },
-  backRow: {
-    flexDirection: 'row',
+  backIcon: {
+    width: 44,
+    minHeight: 44,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 2,
   },
   card: {
     borderWidth: 2,

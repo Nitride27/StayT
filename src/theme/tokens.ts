@@ -89,7 +89,7 @@ export const typography = {
   button: {
     fontFamily: 'SpaceGrotesk-Bold',
     fontSize: 18,
-    letterSpacing: 0.01,
+    letterSpacing: 0,
     lineHeight: 24,
   },
   label: {
