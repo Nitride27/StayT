@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   primaryButtonText: {
-    ...typography.button,
+    ...typography.cta,
     color: colors.midnight,
     textAlign: 'center',
   },

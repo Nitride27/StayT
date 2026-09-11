@@ -53,9 +53,9 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
       activeOpacity={0.85}
       onPress={onPress}
     >
-      <TaskGlyph name={task.name} size={34} color={ink} />
+      <TaskGlyph name={task.name} size={40} color={ink} />
       <View style={styles.taskInfo}>
-        <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
+        <Text style={[typography.display, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
         <Text style={[typography.caption, { color: muted }]} numberOfLines={1}>{subtitle}</Text>
       </View>
       <TouchableOpacity onPress={onEdit} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`} style={styles.editHit}>
@@ -191,7 +191,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel="View history"
           >
-            <ClockIcon size={20} color={colors.midnight} />
+            <ClockIcon size={20} color={colors.midnight} strokeWidth={3.5} />
           </TouchableOpacity>
           <View style={styles.headerRight}>
             <View
@@ -276,6 +276,7 @@ const styles = StyleSheet.create({
   gearButton: {
     minWidth: 44,
     minHeight: 44,
+    paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderWidth: 2,
     borderRadius: radius.md,
@@ -363,7 +364,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   primaryButtonText: {
-    ...typography.button,
+    ...typography.cta,
     color: colors.midnight,
     textAlign: 'center',
   },

@@ -183,11 +183,9 @@ export default function HistoryScreen({ navigation }: Props) {
             <Animated.View style={[styles.streakSection, statsAnimStyle]}>
               <View style={styles.streakRow}>
                 <FlameIcon size={80} color={streakGreen} />
-                <View style={styles.streakTextCol}>
-                  <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
-                  <Text style={[typography.display, { color: streakGreen }]}>DAY STREAK!</Text>
-                </View>
+                <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
               </View>
+              <Text style={[typography.display, { color: streakGreen, textAlign: 'center', marginTop: spacing.xs }]}>DAY STREAK!</Text>
               <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center', maxWidth: 260, alignSelf: 'center' }]}>
                 Keep going. You're building great habits.
               </Text>
@@ -236,7 +234,7 @@ export default function HistoryScreen({ navigation }: Props) {
               activeOpacity={0.85}
               onPress={() => navigation.navigate('TaskPicker')}
             >
-              <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+              <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
                 START A SESSION
               </Text>
             </TouchableOpacity>

@@ -154,7 +154,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+          <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
             BACK TO TASK
           </Text>
         </AnimatedTouchable>
@@ -164,7 +164,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
           activeOpacity={0.85}
           onPress={handleSwitchTask}
         >
-          <Text style={[typography.button, { color: outlineText, textAlign: 'center' }]}>
+          <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
             SWITCH TASK
           </Text>
         </AnimatedTouchable>
@@ -174,7 +174,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
           activeOpacity={0.85}
           onPress={handleTakeBreak}
         >
-          <Text style={[typography.button, { color: outlineText, textAlign: 'center' }]}>
+          <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
             2-MIN OVERRIDE
           </Text>
         </AnimatedTouchable>

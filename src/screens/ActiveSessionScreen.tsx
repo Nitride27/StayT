@@ -143,11 +143,11 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         >
           <View style={styles.switchRow}>
             <SwitchArrowsIcon size={18} color={colors.midnight} />
-            <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>SWITCH TASK</Text>
+            <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>SWITCH TASK</Text>
           </View>
         </AnimatedTouchable>
         <TouchableOpacity activeOpacity={0.7} onPress={handleEndSession} style={[styles.endButton, { backgroundColor: endBg }]}>
-          <Text style={[typography.button, { color: endText, textAlign: 'center' }]}>
+          <Text style={[typography.cta, { color: endText, textAlign: 'center' }]}>
             END SESSION
           </Text>
         </TouchableOpacity>

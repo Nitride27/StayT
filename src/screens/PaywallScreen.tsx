@@ -249,13 +249,13 @@ export default function PaywallScreen({ navigation }: Props) {
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+          <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
             {busy ? 'PROCESSING…' : `UNLOCK PRO — ${price}`}
           </Text>
         </AnimatedTouchable>
 
         <TouchableOpacity style={[styles.restoreButton, { borderColor: isDark ? colors.ectoGreen : colors.ectoGreenDark }]} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
-          <Text style={[typography.button, { color: isDark ? colors.ectoGreen : colors.ectoGreenDark, textAlign: 'center' }]}>
+          <Text style={[typography.cta, { color: isDark ? colors.ectoGreen : colors.ectoGreenDark, textAlign: 'center' }]}>
             RESTORE PURCHASE
           </Text>
         </TouchableOpacity>

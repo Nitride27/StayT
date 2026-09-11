@@ -92,6 +92,14 @@ export const typography = {
     letterSpacing: 0,
     lineHeight: 24,
   },
+  // CTA labels: Anton reads dramatically heavier than any grotesk weight.
+  // Primary + outline action buttons only — small labels stay `button`.
+  cta: {
+    fontFamily: 'Anton',
+    fontSize: 20,
+    letterSpacing: 0.01,
+    lineHeight: 24,
+  },
   label: {
     fontFamily: 'SpaceGrotesk-Medium',
     fontSize: 12,

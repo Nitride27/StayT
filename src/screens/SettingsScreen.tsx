@@ -272,7 +272,7 @@ export default function SettingsScreen({ navigation }: Props) {
                   onPress={() => navigation.navigate('Paywall')}
                   style={styles.upgradeButton}
                 >
-                  <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
+                    <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
                     UPGRADE
                   </Text>
                 </TouchableOpacity>
