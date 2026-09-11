@@ -179,18 +179,19 @@ export default function HistoryScreen({ navigation }: Props) {
                     <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
                   </View>
                 </TouchableOpacity>
-                <Text style={[typography.h1, { color: ink }]}>History</Text>
                 <View style={{ width: 50 }} />
               </View>
             </Animated.View>
 
             <Animated.View style={[styles.streakSection, statsAnimStyle]}>
               <View style={styles.streakRow}>
-                <FlameIcon size={48} color={streakGreen} />
-                <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
-                <Text style={[typography.button, { color: streakGreen }]}>DAY STREAK!</Text>
+                <FlameIcon size={64} color={streakGreen} />
+                <View style={styles.streakTextCol}>
+                  <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
+                  <Text style={[typography.button, { color: streakGreen }]}>DAY STREAK!</Text>
+                </View>
               </View>
-              <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center' }]}>
+              <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center', maxWidth: 260, alignSelf: 'center' }]}>
                 Keep going. You're building great habits.
               </Text>
             </Animated.View>
@@ -287,7 +288,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  streakTextCol: {
+    flexDirection: 'column',
+    alignItems: 'center',
   },
   chartSection: {
     marginBottom: spacing.xl,

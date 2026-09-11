@@ -140,7 +140,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
 
       {/* Subtitle */}
       <Animated.View style={[styles.subtitleSection, subtitleAnimStyle]}>
-        <Text style={[typography.body, { color: secondary, textAlign: 'center' }]}>
+        <Text style={[typography.bodyStrong, { color: secondary, textAlign: 'center', maxWidth: 280, alignSelf: 'center' }]}>
           {`You're trying to open ${appLabel}, but that's not part of your current task.`}
         </Text>
       </Animated.View>
@@ -205,6 +205,9 @@ const styles = StyleSheet.create({
   subtitleSection: {
     marginBottom: spacing.xxxl,
     paddingHorizontal: spacing.md,
+    maxWidth: 320,
+    alignSelf: 'center',
+    alignItems: 'center',
   },
   buttonSection: {
     width: '100%',

@@ -186,11 +186,13 @@ export default function PermissionSetupScreen({ navigation }: Props) {
           </Text>
           <Text
             style={[
-              typography.body,
+              typography.bodyStrong,
               {
                 color: secondary,
                 textAlign: 'center',
                 marginTop: spacing.md,
+                maxWidth: 300,
+                alignSelf: 'center',
               },
             ]}
           >

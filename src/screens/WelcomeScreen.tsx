@@ -112,8 +112,8 @@ export default function WelcomeScreen({ navigation }: Props) {
               <CheckIcon size={18} color={colors.midnight} />
             </View>
             <View style={styles.featureText}>
-              <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>Set your focus</Text>
-              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Pick one app to block during deep work</Text>
+              <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight }]}>Set your focus</Text>
+              <Text style={[typography.bodyStrong, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Pick one app to block during deep work</Text>
             </View>
           </Animated.View>
 
@@ -122,8 +122,8 @@ export default function WelcomeScreen({ navigation }: Props) {
               <FlameIcon size={18} color={colors.midnight} />
             </View>
             <View style={styles.featureText}>
-              <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>Build your streak</Text>
-              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Each day you resist builds your streak</Text>
+              <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight }]}>Build your streak</Text>
+              <Text style={[typography.bodyStrong, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>Each day you resist builds your streak</Text>
             </View>
           </Animated.View>
 
@@ -132,8 +132,8 @@ export default function WelcomeScreen({ navigation }: Props) {
               <BoltIcon size={18} color={colors.midnight} />
             </View>
             <View style={styles.featureText}>
-              <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>Stay in the zone</Text>
-              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>One-tap redirect keeps you on task</Text>
+              <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight }]}>Stay in the zone</Text>
+              <Text style={[typography.bodyStrong, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, marginTop: 2 }]}>One-tap redirect keeps you on task</Text>
             </View>
           </Animated.View>
         </View>

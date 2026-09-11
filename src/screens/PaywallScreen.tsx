@@ -46,8 +46,8 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
         <CheckIcon size={16} color={colors.midnight} />
       </View>
       <View style={styles.featureInfo}>
-        <Text style={[typography.bodyMedium, { color: isDark ? darkColors.ink : colors.midnight }]}>{feature.title}</Text>
-        <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
+        <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight }]}>{feature.title}</Text>
+        <Text style={[typography.bodyStrong, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
       </View>
     </Animated.View>
   );

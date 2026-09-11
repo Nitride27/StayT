@@ -186,6 +186,8 @@ export default function SettingsScreen({ navigation }: Props) {
   }));
 
   const ink = isDark ? darkColors.ink : colors.midnight;
+  const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
+  const cardBorder = isDark ? darkColors.ink : colors.ink;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.paper }]}>
@@ -206,95 +208,101 @@ export default function SettingsScreen({ navigation }: Props) {
         <Animated.View style={bodyAnimStyle}>
           {/* Appearance */}
           <SectionHeader label="APPEARANCE" color={theme.inkSecondary} glyph={<GearIcon size={16} color={colors.midnight} />} />
-          <View style={styles.segmentRow}>
-            {THEME_OPTIONS.map(opt => {
-              const active = mode === opt.key;
-              return (
-                <TouchableOpacity
-                  key={opt.key}
-                  activeOpacity={0.8}
-                  onPress={() => handleTheme(opt.key)}
-                  style={[
-                    styles.segment,
-                    { backgroundColor: active ? colors.ectoGreen : 'transparent' },
-                  ]}
-                >
-                  <Text
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={styles.segmentRow}>
+              {THEME_OPTIONS.map(opt => {
+                const active = mode === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    activeOpacity={0.8}
+                    onPress={() => handleTheme(opt.key)}
                     style={[
-                      typography.button,
-                      { color: active ? colors.midnight : theme.inkSecondary, textAlign: 'center' },
+                      styles.segment,
+                      { backgroundColor: active ? colors.ectoGreen : 'transparent' },
                     ]}
                   >
-                    {opt.label.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                    <Text
+                      style={[
+                        typography.button,
+                        { color: active ? colors.midnight : theme.inkSecondary, textAlign: 'center' },
+                      ]}
+                    >
+                      {opt.label.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
-          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
 
           {/* Feedback */}
           <SectionHeader label="FEEDBACK" color={theme.inkSecondary} glyph={<BoltIcon size={16} color={colors.midnight} />} />
-          <View style={styles.switchRow}>
-            <Text style={[typography.bodyMedium, { color: ink }]}>Notifications</Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={handleNotifications}
-              trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
-              thumbColor={theme.paperCard}
-            />
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={styles.switchRow}>
+              <Text style={[typography.bodyStrong, { color: ink }]}>Notifications</Text>
+              <Switch
+                value={notificationsEnabled}
+                onValueChange={handleNotifications}
+                trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
+                thumbColor={theme.paperCard}
+              />
+            </View>
+            <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
+            <View style={styles.switchRow}>
+              <Text style={[typography.bodyStrong, { color: ink }]}>Haptics</Text>
+              <Switch
+                value={hapticsEnabled}
+                onValueChange={handleHaptics}
+                trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
+                thumbColor={theme.paperCard}
+              />
+            </View>
           </View>
-          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
-          <View style={styles.switchRow}>
-            <Text style={[typography.bodyMedium, { color: ink }]}>Haptics</Text>
-            <Switch
-              value={hapticsEnabled}
-              onValueChange={handleHaptics}
-              trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
-              thumbColor={theme.paperCard}
-            />
-          </View>
-          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
 
           {/* Subscription */}
           <SectionHeader label="SUBSCRIPTION" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
-          {isSubscribed ? (
-            <View style={[styles.proPill, { backgroundColor: colors.ectoGreen }]}>
-              <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO — ACTIVE</Text>
-            </View>
-          ) : (
-            <View style={styles.freeRow}>
-              <Text style={[typography.bodyMedium, { color: ink }]}>Free plan</Text>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate('Paywall')}
-                style={styles.upgradeButton}
-              >
-                <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
-                  UPGRADE
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            {isSubscribed ? (
+              <View style={[styles.proPill, { backgroundColor: colors.ectoGreen }]}>
+                <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO — ACTIVE</Text>
+              </View>
+            ) : (
+              <View style={styles.freeRow}>
+                <Text style={[typography.bodyStrong, { color: ink }]}>Free plan</Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => navigation.navigate('Paywall')}
+                  style={styles.upgradeButton}
+                >
+                  <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
+                    UPGRADE
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
 
           {/* About — static text only */}
           <SectionHeader label="SUPPORT" color={theme.inkSecondary} glyph={<BookIcon size={16} color={colors.midnight} />} />
-          <Text style={[typography.bodyMedium, { color: ink }]}>StayT</Text>
-          <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
-            v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
-          </Text>
-          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Text style={[typography.bodyStrong, { color: ink }]}>StayT</Text>
+            <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
+              v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
+            </Text>
+          </View>
 
           {/* Danger zone */}
           <SectionHeader label="DANGER ZONE" color={colors.danger} glyph={<CloseIcon size={16} color="#ffffff" />} />
-          <TouchableOpacity activeOpacity={0.7} onPress={handleResetOnboarding} style={styles.dangerRow}>
-            <Text style={[typography.bodyMedium, { color: colors.danger }]}>Reset onboarding</Text>
-          </TouchableOpacity>
-          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
-          <TouchableOpacity activeOpacity={0.7} onPress={handleClearHistory} style={styles.dangerRow}>
-            <Text style={[typography.bodyMedium, { color: colors.danger }]}>Clear history</Text>
-          </TouchableOpacity>
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <TouchableOpacity activeOpacity={0.7} onPress={handleResetOnboarding} style={styles.dangerRow}>
+              <Text style={[typography.bodyStrong, { color: colors.danger }]}>Reset onboarding</Text>
+            </TouchableOpacity>
+            <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
+            <TouchableOpacity activeOpacity={0.7} onPress={handleClearHistory} style={styles.dangerRow}>
+              <Text style={[typography.bodyStrong, { color: colors.danger }]}>Clear history</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
       </ScrollView>
     </View>
@@ -329,6 +337,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+  },
+  card: {
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   segmentRow: {
     flexDirection: 'row',

@@ -88,9 +88,9 @@ export const typography = {
   },
   button: {
     fontFamily: 'SpaceGrotesk-Bold',
-    fontSize: 15,
+    fontSize: 17,
     letterSpacing: 0.02,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   label: {
     fontFamily: 'SpaceGrotesk-Medium',
@@ -126,16 +126,16 @@ export const typography = {
   },
   bodyStrong: {
     fontFamily: 'Inter-SemiBold',
-    fontSize: 16,
+    fontSize: 17,
     letterSpacing: 0,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   // Alias for screens still using bodyBold
   bodyBold: {
     fontFamily: 'Inter-SemiBold',
-    fontSize: 16,
+    fontSize: 17,
     letterSpacing: 0,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   caption: {
     fontFamily: 'Inter-Regular',

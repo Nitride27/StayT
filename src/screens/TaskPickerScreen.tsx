@@ -221,7 +221,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
         {tasks.length === 0 ? (
           <View style={styles.emptyState}>
             <Image source={mascotSource('peeking', isDark)} style={styles.emptyImage} resizeMode="contain" />
-            <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center' }]}>
+            <Text style={[typography.bodyStrong, { color: muted, textAlign: 'center', maxWidth: 280, alignSelf: 'center' }]}>
               No tasks yet. Create one to start focusing.
             </Text>
           </View>
