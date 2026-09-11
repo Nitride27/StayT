@@ -188,7 +188,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('History')}
             activeOpacity={0.7}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            style={styles.streakPill}
+            style={[styles.streakPill, styles.clockBox]}
             accessibilityRole="button"
             accessibilityLabel="View history"
           >
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   },
   gearButton: {
     minWidth: 38,
-    minHeight: 38,
+    minHeight: 46,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderWidth: 2,
@@ -302,6 +302,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: -0.02,
     color: colors.midnight,
+  },
+  clockBox: {
+    marginTop: 4,
+    minHeight: 46,
   },
   streakFlame: {
     width: 20,
