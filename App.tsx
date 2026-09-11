@@ -28,12 +28,24 @@ export type RootStackParamList = {
   TaskPicker: undefined;
   TaskSetup: { task?: Task };
   ActiveSession: { task: Task; session: Session };
-  BlockedInterstitial: { packageName: string; taskId: string };
+  BlockedInterstitial: { packageName: string; taskId: string; appLabel?: string };
   History: undefined;
   Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+// Dedup: one block event fires BOTH the JS emit and the deep-link foreground
+// rung — without this guard a single block pushes two interstitials.
+let lastBlockedNavAt = 0;
+let lastBlockedPkg = '';
+function shouldNavigateBlocked(packageName: string): boolean {
+  const now = Date.now();
+  if (packageName === lastBlockedPkg && now - lastBlockedNavAt < 2000) return false;
+  lastBlockedPkg = packageName;
+  lastBlockedNavAt = now;
+  return true;
+}
 
 function AppNavigator() {
   const { isDark } = useTheme();
@@ -84,6 +96,7 @@ function AppNavigator() {
   useEffect(() => {
     const unsub = AppBlocker.onBlockedAttempt(async (event) => {
       try {
+        if (!shouldNavigateBlocked(event.packageName)) return;
         const tasks = await store.getTasks();
         const task = tasks.find(
           t => t.packageName === event.packageName || t.blockedPackages?.includes(event.packageName),
@@ -92,6 +105,7 @@ function AppNavigator() {
           navigationRef.navigate('BlockedInterstitial', {
             packageName: event.packageName,
             taskId: task?.id ?? '',
+            appLabel: event.appLabel ?? event.packageName,
           });
         }
       } catch {
@@ -106,6 +120,7 @@ function AppNavigator() {
     const handleUrl = async (url: string) => {
       const link = AppBlocker.parseBlockedDeepLink(url);
       if (!link || !navigationRef.isReady()) return;
+      if (!shouldNavigateBlocked(link.packageName)) return;
       try {
         const tasks = await store.getTasks();
         const task = tasks.find(
@@ -114,6 +129,7 @@ function AppNavigator() {
         navigationRef.navigate('BlockedInterstitial', {
           packageName: link.packageName,
           taskId: task?.id ?? '',
+          appLabel: link.appLabel ?? link.packageName,
         });
       } catch {
         // Best-effort navigation; must never crash the app.

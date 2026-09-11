@@ -23,8 +23,8 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         private const val TAG = "StayTAppBlocker"
         private var instance: AppBlockerModule? = null
 
-        fun emitBlockedAttempt(packageName: String, timestamp: Long) {
-            instance?.emitToJS(packageName, timestamp)
+        fun emitBlockedAttempt(packageName: String, timestamp: Long, appLabel: String) {
+            instance?.emitToJS(packageName, timestamp, appLabel)
         }
     }
 
@@ -168,10 +168,11 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    private fun emitToJS(packageName: String, timestamp: Long) {
+    private fun emitToJS(packageName: String, timestamp: Long, appLabel: String) {
         val params = Arguments.createMap().apply {
             putString("packageName", packageName)
             putDouble("timestamp", timestamp.toDouble())
+            putString("appLabel", appLabel)
         }
         reactApplicationContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)

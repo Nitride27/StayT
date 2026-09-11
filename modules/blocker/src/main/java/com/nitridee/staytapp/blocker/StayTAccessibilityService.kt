@@ -104,19 +104,35 @@ class StayTAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Emit event to React Native
-        AppBlockerModule.emitBlockedAttempt(openedPackage, now)
+        // Resolve the display label once — shared by emit, notification, deep link.
+        val appLabel = try {
+            val info = packageManager.getApplicationInfo(openedPackage, 0)
+            packageManager.getApplicationLabel(info).toString()
+        } catch (_: Exception) {
+            openedPackage
+        }
+
+        // Emit event to React Native (label travels with it — no per-block
+        // app-list scan on the JS side).
+        AppBlockerModule.emitBlockedAttempt(openedPackage, now, appLabel)
 
         // Play-safe v1: plain high-priority notification whose tap deep-links
-        // back into StayT (packageName only — JS resolves taskId like App.tsx does).
+        // back into StayT (label embedded — JS resolves taskId like App.tsx does).
         // No SYSTEM_ALERT_WINDOW, no full-screen intent.
-        postBlockedNotification(openedPackage)
+        postBlockedNotification(openedPackage, appLabel)
+
+        // Best-effort auto-popup: foreground our (possibly backgrounded) task
+        // straight into the interstitial via the same blocked deep link App.tsx
+        // already handles (Linking → parseBlockedDeepLink → BlockedInterstitial).
+        // BAL restrictions vary by Android version/OEM — failure is silent,
+        // the notification above remains the fallback. No new permissions.
+        foregroundBlockedInterstitial(openedPackage, appLabel)
     }
 
-    private fun postBlockedNotification(openedPackage: String) {
+    private fun postBlockedNotification(openedPackage: String, appLabel: String) {
         try {
             val deepLink = Uri.parse(
-                "exp+stayt-app://blocked?packageName=${Uri.encode(openedPackage)}"
+                "exp+stayt-app://blocked?packageName=${Uri.encode(openedPackage)}&label=${Uri.encode(appLabel)}"
             )
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
@@ -128,12 +144,6 @@ class StayTAccessibilityService : AccessibilityService() {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val appLabel = try {
-                val info = packageManager.getApplicationInfo(openedPackage, 0)
-                packageManager.getApplicationLabel(info).toString()
-            } catch (_: Exception) {
-                openedPackage
-            }
             val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, BLOCK_CHANNEL_ID)
             } else {
@@ -150,6 +160,30 @@ class StayTAccessibilityService : AccessibilityService() {
                 ?.notify(openedPackage.hashCode(), notification)
         } catch (e: Exception) {
             Log.w(TAG, "postBlockedNotification failed for $openedPackage", e)
+        }
+    }
+
+    /**
+     * Best-effort ladder rung: foreground MainActivity (singleTask) with the
+     * blocked deep-link URI so a backgrounded StayT lands straight on the
+     * interstitial. Resolves via the existing exp+stayt-app scheme
+     * intent-filter on MainActivity — no new permissions, no overlay,
+     * no full-screen intent. Must never throw: BAL denials (Android 10+,
+     * OEM-specific) fall back to the tap notification posted above.
+     */
+    private fun foregroundBlockedInterstitial(openedPackage: String, appLabel: String) {
+        try {
+            val deepLink = Uri.parse(
+                "exp+stayt-app://blocked?packageName=${Uri.encode(openedPackage)}&label=${Uri.encode(appLabel)}"
+            )
+            val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
+                setPackage(packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            startActivity(intent)
+            Log.d(TAG, "Requested foreground interstitial for $openedPackage")
+        } catch (e: Exception) {
+            Log.w(TAG, "Background activity launch blocked for $openedPackage; notification remains the fallback", e)
         }
     }
 

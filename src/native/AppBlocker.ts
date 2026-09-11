@@ -6,6 +6,7 @@ const { AppBlocker } = NativeModules;
 export interface BlockedAttemptEvent {
   packageName: string;
   timestamp: number;
+  appLabel?: string;
 }
 
 export interface InstalledApp {
@@ -16,6 +17,7 @@ export interface InstalledApp {
 
 export interface BlockedDeepLink {
   packageName: string;
+  appLabel?: string;
 }
 
 class AppBlockerBridge {
@@ -69,18 +71,31 @@ class AppBlockerBridge {
   }
 
   /**
-   * Parse an incoming `exp+stayt-app://blocked?packageName=X` deep link
-   * (tapped from the native blocked notification). Returns the packageName
-   * so the caller can resolve taskId via the existing store lookup, or null
-   * when the URL is not a blocked link. App.tsx wires this to Linking.
+   * Parse an incoming `exp+stayt-app://blocked?packageName=X[&label=Y]` deep link
+   * (tapped from the native blocked notification or auto-popup). Validates the
+   * scheme FIRST, then the package shape — the intent-filter is exported, so any
+   * app can fire it. Returns null for anything malformed.
    */
   parseBlockedDeepLink(url: string): BlockedDeepLink | null {
+    if (!url.startsWith('exp+stayt-app://blocked')) return null;
     try {
-      const match = /(?:\?|&)packageName=([^&]+)/.exec(url);
-      if (!match) return null;
-      if (!url.startsWith('exp+stayt-app://blocked')) return null;
-      const packageName = decodeURIComponent(match[1]);
-      return packageName ? { packageName } : null;
+      const pkg = /[?&]packageName=([^&]+)/.exec(url);
+      if (!pkg) return null;
+      const packageName = decodeURIComponent(pkg[1]);
+      if (
+        !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(packageName) ||
+        packageName.length > 256
+      ) {
+        return null;
+      }
+      const lbl = /[?&]label=([^&]+)/.exec(url);
+      let appLabel: string | undefined;
+      try {
+        appLabel = lbl ? decodeURIComponent(lbl[1]).slice(0, 128) : undefined;
+      } catch {
+        appLabel = undefined;
+      }
+      return appLabel ? { packageName, appLabel } : { packageName };
     } catch {
       return null;
     }

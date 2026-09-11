@@ -194,7 +194,7 @@ export default function PermissionSetupScreen({ navigation }: Props) {
               },
             ]}
           >
-            StayT needs Accessibility permission to detect and block distracting apps while you focus.
+            StayT needs Accessibility permission to check which app is open, so it can block distractions while you work.
           </Text>
         </Animated.View>
 
@@ -265,6 +265,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   primaryButtonText: {
     ...typography.button,

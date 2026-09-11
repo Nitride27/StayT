@@ -194,6 +194,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   primaryButtonText: {
     ...typography.label,

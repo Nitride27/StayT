@@ -34,7 +34,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const [appName, setAppName] = useState(existingTask?.appName || '');
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
   const [appSearchQuery, setAppSearchQuery] = useState('');
-  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState<boolean | null>(null);
   const [selectedApps, setSelectedApps] = useState<InstalledApp[]>(() => {
     if (!existingTask) return [];
     if (existingTask.blockedPackages && existingTask.blockedPackages.length > 0) {
@@ -49,8 +49,14 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   });
 
   useEffect(() => {
-    AppBlocker.getInstalledApps().then(setInstalledApps).catch(() => setInstalledApps([]));
-    store.getPreferences().then(p => setIsSubscribed(p.isSubscribed === true)).catch(() => {});
+    let live = true;
+    AppBlocker.getInstalledApps()
+      .then(apps => { if (live) setInstalledApps(apps); })
+      .catch(() => { if (live) setInstalledApps([]); });
+    store.getPreferences()
+      .then(p => { if (live) setIsSubscribed(p.isSubscribed === true); })
+      .catch(() => {});
+    return () => { live = false; };
   }, []);
 
   const filteredApps = installedApps.filter(
@@ -60,6 +66,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   );
 
   const handlePickApp = (app: InstalledApp) => {
+    if (isSubscribed === null) return;
     const already = selectedApps.some(a => a.packageName === app.packageName);
     if (already) {
       const next = selectedApps.filter(a => a.packageName !== app.packageName);
@@ -68,9 +75,19 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       setAppName(next[0]?.appName ?? '');
       return;
     }
-    // Free users block a single app; multi-block is Pro.
+    // Free tier covers ONE app at a time: tapping another app asks whether to
+    // replace it (keeps upsell discovery) instead of silently swapping.
     if (!isSubscribed && selectedApps.length >= 1) {
-      Alert.alert('Pro feature', 'Blocking multiple apps at once needs Pro.', [
+      Alert.alert(`Block "${app.appName}" instead?`, 'Free covers one app at a time. Replace it, or go Pro to block several.', [
+        {
+          text: 'Replace',
+          onPress: () => {
+            setSelectedApps([app]);
+            setPackageName(app.packageName);
+            setAppName(app.appName);
+            setAppSearchQuery('');
+          },
+        },
         { text: 'View Pro', onPress: () => navigation.navigate('Paywall') },
         { text: 'Cancel', style: 'cancel' },
       ]);
@@ -104,27 +121,36 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const handleSave = async () => {
     if (!taskName.trim()) return;
     // Manual override wins; otherwise use the picked app(s).
-    const pkgs = selectedApps.length > 0
+    const rawPkgs = selectedApps.length > 0
       ? selectedApps.map(a => a.packageName)
       : (packageName.trim() ? [packageName.trim()] : []);
-    if (pkgs.length === 0) return;
-    const firstApp = selectedApps[0]?.appName || appName.trim() || pkgs[0];
+    if (rawPkgs.length === 0) return;
+    // Safety net: free tier can never persist more than one blocked app
+    // (e.g. legacy Pro multi-task edited after expiry).
+    const pkgs = isSubscribed ? rawPkgs : rawPkgs.slice(0, 1);
+    const firstApp = selectedApps.find(a => a.packageName === pkgs[0])?.appName
+      || appName.trim() || pkgs[0];
 
-    if (existingTask) {
-      await store.saveTask({ ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs });
-    } else {
-      await store.saveTask({
-        id: `task-${Date.now()}`,
-        name: taskName.trim(),
-        packageName: pkgs[0],
-        appName: firstApp,
-        blockedPackages: pkgs,
-        createdAt: Date.now(),
-        lastUsed: 0,
-        useCount: 0,
-        isActive: true,
-        streak: 0,
-      });
+    try {
+      if (existingTask) {
+        await store.saveTask({ ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs });
+      } else {
+        await store.saveTask({
+          id: `task-${Date.now()}`,
+          name: taskName.trim(),
+          packageName: pkgs[0],
+          appName: firstApp,
+          blockedPackages: pkgs,
+          createdAt: Date.now(),
+          lastUsed: 0,
+          useCount: 0,
+          isActive: true,
+          streak: 0,
+        });
+      }
+    } catch {
+      Alert.alert('Could not save task', 'Storage failed. Please try again.');
+      return;
     }
     navigation.goBack();
   };
@@ -163,8 +189,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backRow}>
-            <Text style={[typography.h2, { color: colors.macawBlue }]}>{'‹'}</Text>
-            <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>Back</Text>
+            <Text style={[typography.bodyMedium, { color: ink }]}>{'‹'}</Text>
+            <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
           </TouchableOpacity>
           <Text style={[typography.h1, { color: ink }]}>
             {existingTask ? 'Edit Task' : 'New Task'}
@@ -294,6 +320,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     width: 60,
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
   },
   scroll: {
     flex: 1,

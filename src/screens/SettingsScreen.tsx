@@ -131,6 +131,8 @@ export default function SettingsScreen({ navigation }: Props) {
         style: 'destructive',
         onPress: async () => {
           try {
+            // Release blocking first — wiping sessions must not orphan it ON.
+            await AppBlocker.stopBlocking().catch(() => {});
             await store.clearSessions();
             await store.clearBlockedAttempts();
           } catch {}
@@ -157,8 +159,8 @@ export default function SettingsScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Animated.View style={[styles.header, headerAnimStyle]}>
           <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
-              <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>‹ Back</Text>
+            <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink}>
+              <Text style={[typography.bodyMedium, { color: ink }]}>‹ Back</Text>
             </TouchableOpacity>
             <View style={{ width: 50 }} />
           </View>
@@ -258,7 +260,7 @@ export default function SettingsScreen({ navigation }: Props) {
               onPress={() => Linking.openURL(SUPPORT_URL).catch(() => {})}
               style={styles.supportRow}
             >
-              <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>Help & source code ›</Text>
+              <Text style={[typography.bodyMedium, { color: ink }]}>Help & source code ›</Text>
             </TouchableOpacity>
           </View>
 
@@ -297,6 +299,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  navLink: {
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
+  },
   sectionLabel: {
     ...typography.label,
     marginTop: spacing.xl,
@@ -317,6 +325,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   switchRow: {
     flexDirection: 'row',
@@ -340,6 +350,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   proPill: {
     borderRadius: radius.md,
@@ -348,11 +361,19 @@ const styles = StyleSheet.create({
   },
   supportRow: {
     marginTop: spacing.md,
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
   },
   dangerCard: {
     borderWidth: 2,
   },
   dangerRow: {
     paddingVertical: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
   },
 });

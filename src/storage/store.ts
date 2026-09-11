@@ -98,7 +98,10 @@ export const store = {
   },
 
   async savePreferences(prefs: UserPreferences): Promise<void> {
-    await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
+    // Serialized: concurrent get→spread→set cycles (toggles, grantPro) must not clobber each other.
+    return serialized(PREFERENCES_KEY, async () => {
+      await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
+    });
   },
 
   // Preset tasks for first launch

@@ -76,9 +76,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   }, []);
 
   const handleEndSession = async () => {
-    await store.saveSession({ ...session, status: 'completed', endedAt: Date.now(), duration: Date.now() - session.startedAt });
-    await AppBlocker.stopBlocking();
-    navigation.navigate('TaskPicker');
+    try {
+      await store.saveSession({ ...session, status: 'completed', endedAt: Date.now(), duration: Date.now() - session.startedAt });
+    } finally {
+      // Blocking must release even if the save failed — never trap the user.
+      await AppBlocker.stopBlocking().catch(() => {});
+      navigation.navigate('TaskPicker');
+    }
   };
 
   const headerAnimStyle = useAnimatedStyle(() => ({
@@ -107,6 +111,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+  const outlineColor = isDark ? colors.ectoGreen : colors.ectoGreenDark;
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
@@ -128,17 +133,17 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
         <AnimatedTouchable
-          style={[styles.switchButton, { borderColor: colors.ectoGreen }]}
+          style={[styles.switchButton, { borderColor: outlineColor }]}
           activeOpacity={0.85}
           onPress={handleEndSession}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={[typography.button, { color: colors.ectoGreen, textAlign: 'center' }]}>SWITCH TASK</Text>
+          <Text style={[typography.button, { color: outlineColor, textAlign: 'center' }]}>SWITCH TASK</Text>
         </AnimatedTouchable>
-        <TouchableOpacity activeOpacity={0.7} onPress={handleEndSession} style={[styles.endButton, { borderColor: colors.ectoGreen }]}>
-          <Text style={[typography.button, { color: colors.ectoGreen, textAlign: 'center' }]}>
-            End session
+        <TouchableOpacity activeOpacity={0.7} onPress={handleEndSession} style={styles.endButton}>
+          <Text style={[typography.button, { color: colors.midnight, textAlign: 'center' }]}>
+            END SESSION
           </Text>
         </TouchableOpacity>
       </Animated.View>
@@ -167,11 +172,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   endButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.eelDarkBlue,
     borderRadius: radius.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   bottomSection: {
     paddingTop: spacing.lg,
@@ -184,5 +192,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
 });

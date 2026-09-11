@@ -64,9 +64,10 @@ export default function PaywallScreen({ navigation }: Props) {
 
   const grantAndClose = async (purchase?: Purchase) => {
     try {
-      // Unfinished purchases auto-refund on Android — always finish after grant.
-      if (purchase) await finishTransaction({ purchase, isConsumable: false });
+      // Grant FIRST, then finish: a crash between the two must leave the user
+      // entitled (finish is safe to retry; an unfinished purchase refunds).
       await grantPro();
+      if (purchase) await finishTransaction({ purchase, isConsumable: false });
       navigation.goBack();
     } catch {
       setStoreError('Purchase went through but activation failed. Tap Restore Purchase.');
@@ -197,8 +198,8 @@ export default function PaywallScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.closeButton}>
-          <Text style={[typography.bodyMedium, { color: colors.inkMuted }]}>✕</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close">
+          <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkMuted }]}>✕</Text>
         </TouchableOpacity>
         <Text style={[typography.display, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
           UNLOCK FULL POWER
@@ -245,8 +246,8 @@ export default function PaywallScreen({ navigation }: Props) {
           </Text>
         </AnimatedTouchable>
 
-        <TouchableOpacity style={[styles.restoreButton, { borderColor: colors.ectoGreen }]} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
-          <Text style={[typography.label, { color: isDark ? '#f5f5f5' : colors.midnight, textAlign: 'center' }]}>
+        <TouchableOpacity style={[styles.restoreButton, { borderColor: isDark ? colors.ectoGreen : colors.ectoGreenDark }]} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
+          <Text style={[typography.label, { color: isDark ? colors.ectoGreen : colors.ectoGreenDark, textAlign: 'center' }]}>
             RESTORE PURCHASE
           </Text>
         </TouchableOpacity>
@@ -269,6 +270,13 @@ const styles = StyleSheet.create({
   closeButton: {
     alignSelf: 'flex-end',
     marginBottom: spacing.xl,
+    width: 44,
+    height: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
   },
   mascotWrap: {
     alignItems: 'center',
@@ -320,12 +328,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   restoreButton: {
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
     borderRadius: radius.md,
     borderWidth: 2,
+    backgroundColor: 'transparent',
     marginTop: spacing.md,
   },
 });

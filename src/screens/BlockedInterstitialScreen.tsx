@@ -18,7 +18,7 @@ import { store } from '../storage/store';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BlockedInterstitial'>;
-  route: { params: { packageName: string; taskId: string } };
+  route: { params: { packageName: string; taskId: string; appLabel?: string } };
 };
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -27,6 +27,8 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const { packageName, taskId } = route.params;
   const { isDark } = useTheme();
   const [taskName, setTaskName] = useState<string | null>(null);
+  // Label travels with the event/deep link — no per-block app-list scan.
+  const [appLabel] = useState(route.params.appLabel ?? packageName);
 
   useEffect(() => {
     store.getTasks()
@@ -139,7 +141,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
       {/* Subtitle */}
       <Animated.View style={[styles.subtitleSection, subtitleAnimStyle]}>
         <Text style={[typography.body, { color: secondary, textAlign: 'center' }]}>
-          You're trying to open {packageName}, which isn't part of this task.
+          {`You're trying to open ${appLabel}, but that's not part of your current task.`}
         </Text>
       </Animated.View>
 

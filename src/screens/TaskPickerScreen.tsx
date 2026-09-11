@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -12,7 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Task } from '../types';
+import { Task, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
@@ -43,6 +43,8 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
   const cardBorder = isDark ? darkColors.ink : colors.ink;
   const ink = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+  const pkgs = blockedPackagesOf(task);
+  const subtitle = pkgs.length > 1 ? `${task.appName} +${pkgs.length - 1} more` : task.appName;
 
   return (
     <AnimatedTouchable
@@ -57,8 +59,9 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
       </View>
       <View style={styles.taskInfo}>
         <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name}</Text>
+        <Text style={[typography.caption, { color: muted }]} numberOfLines={1}>{subtitle}</Text>
       </View>
-      <TouchableOpacity onPress={onEdit} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`}>
+      <TouchableOpacity onPress={onEdit} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`} style={styles.editHit}>
         <Text style={[typography.h2, { color: muted }]}>{'>'}</Text>
       </TouchableOpacity>
     </AnimatedTouchable>
@@ -133,7 +136,12 @@ export default function TaskPickerScreen({ navigation }: Props) {
       duration: null,
       status: 'active' as const,
     };
-    await store.saveSession(session);
+    try {
+      await store.saveSession(session);
+    } catch {
+      Alert.alert('Could not start session', 'Storage failed. Please try again.');
+      return;
+    }
     navigation.navigate('ActiveSession', { task, session });
   };
 
@@ -181,8 +189,8 @@ export default function TaskPickerScreen({ navigation }: Props) {
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.navigate('History')} activeOpacity={0.7}>
-            <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>History</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('History')} activeOpacity={0.7} style={styles.navLink}>
+            <Text style={[typography.bodyMedium, { color: ink }]}>History</Text>
           </TouchableOpacity>
           <View style={styles.headerRight}>
             <View style={[styles.streakPill, { backgroundColor: cardBg, borderColor: ink }]}>
@@ -191,8 +199,8 @@ export default function TaskPickerScreen({ navigation }: Props) {
                 {streak > 0 ? `${streak} day streak` : 'No streak yet'}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={styles.gearButton}>
-              <Text style={[typography.h2, { color: ink }]}>⚙</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
+              <Text style={[typography.h3, { color: ink }]}>···</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -225,7 +233,7 @@ export default function TaskPickerScreen({ navigation }: Props) {
           onPressOut={handlePressOut}
         >
           <Text style={styles.primaryButtonText}>
-            {showPaywall ? 'Add Task (Upgrade)' : '+ NEW TASK'}
+            {showPaywall ? 'ADD TASK (UPGRADE)' : '+ NEW TASK'}
           </Text>
         </AnimatedTouchable>
       </Animated.View>
@@ -254,7 +262,19 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   gearButton: {
-    padding: spacing.xs,
+    width: 44,
+    height: 44,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  navLink: {
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
   },
   streakPill: {
     flexDirection: 'row',
@@ -267,7 +287,7 @@ const styles = StyleSheet.create({
   },
   streakFlame: {
     width: 18,
-    height: 14,
+    height: 18,
   },
   list: {
     flex: 1,
@@ -292,6 +312,12 @@ const styles = StyleSheet.create({
   taskInfo: {
     flex: 1,
   },
+  editHit: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -313,6 +339,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   primaryButtonText: {
     ...typography.button,

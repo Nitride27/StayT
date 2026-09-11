@@ -163,8 +163,8 @@ export default function HistoryScreen({ navigation }: Props) {
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
-            <Text style={[typography.bodyMedium, { color: colors.macawBlue }]}>← Back</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink}>
+            <Text style={[typography.bodyMedium, { color: ink }]}>← Back</Text>
           </TouchableOpacity>
           <Text style={[typography.h1, { color: ink }]}>History</Text>
           <View style={{ width: 50 }} />
@@ -176,7 +176,7 @@ export default function HistoryScreen({ navigation }: Props) {
         <Text style={[typography.displayXL, { color: ink }]}>{streak}</Text>
         <Text style={[typography.button, { color: colors.fire, marginTop: spacing.xs }]}>DAY STREAK!</Text>
         <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
-          {streak > 0 ? 'Keep going — every focus day counts.' : 'Finish a session to start your streak.'}
+          Keep going. You're building great habits.
         </Text>
       </Animated.View>
 
@@ -196,7 +196,7 @@ export default function HistoryScreen({ navigation }: Props) {
                 />
               </View>
               <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
-                {WEEK_DAYS[i][0]}
+                {WEEK_DAYS[i]}
               </Text>
             </View>
           ))}
@@ -242,13 +242,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  navLink: {
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
+  },
   streakSection: {
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
   streakFlame: {
     width: 48,
-    height: 36,
+    height: 48,
   },
   chartSection: {
     marginBottom: spacing.xl,
@@ -262,11 +268,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   barTrack: {
-    height: 104,
+    height: 96,
     justifyContent: 'flex-end',
   },
   bar: {
-    width: 16,
+    width: 10,
     borderRadius: 4,
   },
   listSection: {
