@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   },
   gearButton: {
     minWidth: 38,
-    minHeight: 46,
+    minHeight: 42,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderWidth: 2,
