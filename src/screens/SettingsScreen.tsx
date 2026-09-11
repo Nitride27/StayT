@@ -22,7 +22,7 @@ import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors } from '../theme/tokens';
-import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
+import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 import appConfig from '../../app.json';
 
@@ -31,8 +31,6 @@ const appVersion: string = appConfig.expo.version;
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 };
-
-const SUPPORT_URL = 'https://github.com/Nitride27/StayT';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
@@ -188,7 +186,6 @@ export default function SettingsScreen({ navigation }: Props) {
   }));
 
   const ink = isDark ? '#f5f5f5' : colors.midnight;
-  const cardBg = theme.paperCard;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.paper }]}>
@@ -209,117 +206,95 @@ export default function SettingsScreen({ navigation }: Props) {
         <Animated.View style={bodyAnimStyle}>
           {/* Appearance */}
           <SectionHeader label="APPEARANCE" color={theme.inkSecondary} glyph={<GearIcon size={16} color={colors.midnight} />} />
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
-            <View style={styles.segmentRow}>
-              {THEME_OPTIONS.map(opt => {
-                const active = mode === opt.key;
-                return (
-                  <TouchableOpacity
-                    key={opt.key}
-                    activeOpacity={0.8}
-                    onPress={() => handleTheme(opt.key)}
-                      style={[
-                        styles.segment,
-                        {
-                          backgroundColor: active ? colors.ectoGreen : 'transparent',
-                          borderColor: theme.ink,
-                          ...(active
-                            ? { borderBottomWidth: 3, borderBottomColor: colors.ectoGreenDark }
-                            : null),
-                        },
-                      ]}
+          <View style={styles.segmentRow}>
+            {THEME_OPTIONS.map(opt => {
+              const active = mode === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  activeOpacity={0.8}
+                  onPress={() => handleTheme(opt.key)}
+                  style={[
+                    styles.segment,
+                    { backgroundColor: active ? colors.ectoGreen : 'transparent' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typography.button,
+                      { color: active ? colors.midnight : theme.inkSecondary, textAlign: 'center' },
+                    ]}
                   >
-                    <Text
-                      style={[
-                        typography.button,
-                        { color: active ? colors.midnight : theme.inkSecondary, textAlign: 'center' },
-                      ]}
-                    >
-                      {opt.label.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                    {opt.label.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
+          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
 
           {/* Feedback */}
           <SectionHeader label="FEEDBACK" color={theme.inkSecondary} glyph={<BoltIcon size={16} color={colors.midnight} />} />
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
-            <View style={styles.switchRow}>
-              <Text style={[typography.bodyMedium, { color: ink }]}>Notifications</Text>
-              <Switch
-                value={notificationsEnabled}
-                onValueChange={handleNotifications}
-                trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
-                thumbColor={theme.paperCard}
-              />
-            </View>
-            <View style={[styles.divider, { backgroundColor: theme.paperBorder }]} />
-            <View style={styles.switchRow}>
-              <Text style={[typography.bodyMedium, { color: ink }]}>Haptics</Text>
-              <Switch
-                value={hapticsEnabled}
-                onValueChange={handleHaptics}
-                trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
-                thumbColor={theme.paperCard}
-              />
-            </View>
+          <View style={styles.switchRow}>
+            <Text style={[typography.bodyMedium, { color: ink }]}>Notifications</Text>
+            <Switch
+              value={notificationsEnabled}
+              onValueChange={handleNotifications}
+              trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
+              thumbColor={theme.paperCard}
+            />
           </View>
+          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
+          <View style={styles.switchRow}>
+            <Text style={[typography.bodyMedium, { color: ink }]}>Haptics</Text>
+            <Switch
+              value={hapticsEnabled}
+              onValueChange={handleHaptics}
+              trackColor={{ false: theme.inkFaint, true: colors.ectoGreen }}
+              thumbColor={theme.paperCard}
+            />
+          </View>
+          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
 
           {/* Subscription */}
           <SectionHeader label="SUBSCRIPTION" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
-            {isSubscribed ? (
-              <View style={[styles.proPill, { backgroundColor: colors.ectoGreen }]}>
-                <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO — ACTIVE</Text>
-              </View>
-            ) : (
-              <View style={styles.freeRow}>
-                <Text style={[typography.bodyMedium, { color: ink }]}>Free plan</Text>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => navigation.navigate('Paywall')}
-                  style={styles.upgradeButton}
-                >
-                  <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
-                    UPGRADE
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+          {isSubscribed ? (
+            <View style={[styles.proPill, { backgroundColor: colors.ectoGreen }]}>
+              <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO — ACTIVE</Text>
+            </View>
+          ) : (
+            <View style={styles.freeRow}>
+              <Text style={[typography.bodyMedium, { color: ink }]}>Free plan</Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('Paywall')}
+                style={styles.upgradeButton}
+              >
+                <Text style={[typography.label, { color: colors.midnight, textAlign: 'center' }]}>
+                  UPGRADE
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
 
-          {/* Support */}
+          {/* About — static text only */}
           <SectionHeader label="SUPPORT" color={theme.inkSecondary} glyph={<BookIcon size={16} color={colors.midnight} />} />
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: theme.ink }]}>
-            <Text style={[typography.bodyMedium, { color: ink }]}>StayT</Text>
-            <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
-              v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
-            </Text>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => Linking.openURL(SUPPORT_URL).catch(() => {})}
-              style={styles.supportRow}
-            >
-              <View style={styles.supportRowInner}>
-                <Text style={[typography.bodyMedium, { color: ink }]}>Help & source code</Text>
-                <ChevronRightIcon size={18} color={ink} />
-              </View>
-            </TouchableOpacity>
-          </View>
+          <Text style={[typography.bodyMedium, { color: ink }]}>StayT</Text>
+          <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
+            v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
+          </Text>
+          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
 
           {/* Danger zone */}
           <SectionHeader label="DANGER ZONE" color={colors.danger} glyph={<CloseIcon size={16} color="#ffffff" />} />
-          <View style={[styles.card, styles.dangerCard, { backgroundColor: cardBg, borderColor: colors.danger }]}>
-            <TouchableOpacity activeOpacity={0.7} onPress={handleResetOnboarding} style={styles.dangerRow}>
-              <Text style={[typography.bodyMedium, { color: colors.danger }]}>Reset onboarding</Text>
-            </TouchableOpacity>
-            <View style={[styles.divider, { backgroundColor: theme.paperBorder }]} />
-            <TouchableOpacity activeOpacity={0.7} onPress={handleClearHistory} style={styles.dangerRow}>
-              <Text style={[typography.bodyMedium, { color: colors.danger }]}>Clear history</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity activeOpacity={0.7} onPress={handleResetOnboarding} style={styles.dangerRow}>
+            <Text style={[typography.bodyMedium, { color: colors.danger }]}>Reset onboarding</Text>
+          </TouchableOpacity>
+          <View style={[styles.hairline, { backgroundColor: theme.paperBorder }]} />
+          <TouchableOpacity activeOpacity={0.7} onPress={handleClearHistory} style={styles.dangerRow}>
+            <Text style={[typography.bodyMedium, { color: colors.danger }]}>Clear history</Text>
+          </TouchableOpacity>
         </Animated.View>
       </ScrollView>
     </View>
@@ -355,19 +330,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
-  card: {
-    borderWidth: 2,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-  },
   segmentRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   segment: {
     flex: 1,
-    borderWidth: 2,
-    borderRadius: radius.md,
+    borderRadius: radius.full,
     paddingVertical: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -378,8 +347,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: spacing.xs,
+    minHeight: 44,
   },
-  divider: {
+  hairline: {
     height: 1,
     marginVertical: spacing.sm,
   },
@@ -387,6 +357,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: 44,
   },
   upgradeButton: {
     backgroundColor: colors.ectoGreen,
@@ -404,21 +375,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
-  },
-  supportRow: {
-    marginTop: spacing.md,
-    minHeight: 44,
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-    borderRadius: radius.md,
-  },
-  supportRowInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  dangerCard: {
-    borderWidth: 2,
   },
   dangerRow: {
     paddingVertical: spacing.sm,

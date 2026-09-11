@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -89,6 +89,11 @@ export default function WelcomeScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.topSection}>
         <Animated.View style={[styles.heroArea, heroAnimStyle]}>
           {/* Mascot */}
@@ -149,6 +154,7 @@ export default function WelcomeScreen({ navigation }: Props) {
           Takes 30 seconds to set up
         </Text>
       </Animated.View>
+      </ScrollView>
     </View>
   );
 }
@@ -156,6 +162,13 @@ export default function WelcomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: layout.screenPaddingH,
     paddingTop: layout.headerPaddingTop,
     paddingBottom: layout.safeAreaBottom,

@@ -55,6 +55,10 @@ function AppNavigator() {
 
   const [fontsLoaded, fontError] = useFonts({
     Anton: require('./assets/fonts/Anton-Regular.ttf'),
+    'Archivo-Regular': require('./assets/fonts/Archivo-Regular.ttf'),
+    'Archivo-Medium': require('./assets/fonts/Archivo-Medium.ttf'),
+    'Archivo-SemiBold': require('./assets/fonts/Archivo-SemiBold.ttf'),
+    'Archivo-Bold': require('./assets/fonts/Archivo-Bold.ttf'),
     'SpaceGrotesk-Regular': require('./assets/fonts/SpaceGrotesk-Regular.ttf'),
     'SpaceGrotesk-Medium': require('./assets/fonts/SpaceGrotesk-Medium.ttf'),
     'SpaceGrotesk-SemiBold': require('./assets/fonts/SpaceGrotesk-SemiBold.ttf'),

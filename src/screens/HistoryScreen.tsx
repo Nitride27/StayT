@@ -15,7 +15,7 @@ import { Session, Task } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { ChevronRightIcon, ChevronLeftIcon, FlameIcon } from '../components/icons';
+import { ChevronRightIcon, ChevronLeftIcon } from '../components/icons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'History'>;
@@ -81,6 +81,8 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
     </Animated.View>
   );
 }
+
+const flamePng = require('../../assets/flame.png');
 
 export default function HistoryScreen({ navigation }: Props) {
   const { isDark } = useTheme();
@@ -159,59 +161,73 @@ export default function HistoryScreen({ navigation }: Props) {
   const ink = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
   const track = isDark ? darkColors.paperBorder : colors.paperBorder;
+  // Contrast-safe streak green: ectoGreen on dark, darker green on light.
+  const streakGreen = isDark ? colors.ectoGreen : colors.ectoGreenDark;
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
-      <Animated.View style={[styles.header, headerAnimStyle]}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink} accessibilityRole="button" accessibilityLabel="Back">
-            <View style={styles.backRow}>
-              <ChevronLeftIcon size={18} color={ink} />
-              <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
-            </View>
-          </TouchableOpacity>
-          <Text style={[typography.h1, { color: ink }]}>History</Text>
-          <View style={{ width: 50 }} />
-        </View>
-      </Animated.View>
-
-      <Animated.View style={[styles.streakSection, statsAnimStyle]}>
-        <FlameIcon size={48} color={colors.ectoGreen} />
-        <Text style={[typography.displayXL, { color: ink }]}>{streak}</Text>
-        <Text style={[typography.button, { color: colors.fire, marginTop: spacing.xs }]}>DAY STREAK!</Text>
-        <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
-          Keep going. You're building great habits.
-        </Text>
-      </Animated.View>
-
-      <Animated.View style={[styles.chartSection, statsAnimStyle]}>
-        <View style={styles.chartRow}>
-          {weekMinutes.map((mins, i) => (
-            <View key={WEEK_DAYS[i]} style={styles.chartCol}>
-              <View style={styles.barTrack}>
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: mins > 0 ? 8 + (mins / weekMax) * 88 : 4,
-                      backgroundColor: mins > 0 ? colors.ectoGreen : track,
-                    },
-                  ]}
-                />
+      <FlatList
+        data={sessions}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <>
+            <Animated.View style={[styles.header, headerAnimStyle]}>
+              <View style={styles.headerRow}>
+                <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.navLink} accessibilityRole="button" accessibilityLabel="Back">
+                  <View style={styles.backRow}>
+                    <ChevronLeftIcon size={18} color={ink} />
+                    <Text style={[typography.bodyMedium, { color: ink }]}>Back</Text>
+                  </View>
+                </TouchableOpacity>
+                <Text style={[typography.h1, { color: ink }]}>History</Text>
+                <View style={{ width: 50 }} />
               </View>
-              <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
-                {WEEK_DAYS[i]}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </Animated.View>
+            </Animated.View>
 
-      <Animated.View style={[styles.listSection, listAnimStyle]}>
-        <Text style={[typography.label, { color: muted, marginBottom: spacing.sm }]}>
-          PAST SESSIONS
-        </Text>
-        {sessions.length === 0 ? (
+            <Animated.View style={[styles.streakSection, statsAnimStyle]}>
+              <Image source={flamePng} style={styles.streakFlame} resizeMode="contain" accessibilityLabel="Streak flame" />
+              <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
+              <Text style={[typography.button, { color: streakGreen, marginTop: spacing.xs }]}>DAY STREAK!</Text>
+              <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center' }]}>
+                Keep going. You're building great habits.
+              </Text>
+            </Animated.View>
+
+            <Animated.View style={[styles.chartSection, statsAnimStyle]}>
+              <View style={styles.chartRow}>
+                {weekMinutes.map((mins, i) => (
+                  <View key={WEEK_DAYS[i]} style={styles.chartCol}>
+                    <View style={styles.barTrack}>
+                      <View
+                        style={[
+                          styles.bar,
+                          {
+                            height: mins > 0 ? 8 + (mins / weekMax) * 88 : 4,
+                            backgroundColor: mins > 0 ? colors.ectoGreen : track,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={[typography.caption, { color: muted, marginTop: spacing.xs }]}>
+                      {WEEK_DAYS[i]}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </Animated.View>
+
+            {sessions.length > 0 && (
+              <Animated.View style={[styles.listLabelWrap, listAnimStyle]}>
+                <Text style={[typography.label, { color: muted }]}>
+                  PAST SESSIONS
+                </Text>
+              </Animated.View>
+            )}
+          </>
+        }
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             <Image source={mascotSource('peeking', isDark)} style={styles.emptyImage} resizeMode="contain" />
             <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center' }]}>
@@ -227,15 +243,8 @@ export default function HistoryScreen({ navigation }: Props) {
               </Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <FlatList
-            data={sessions}
-            keyExtractor={(item) => item.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.listContent}
-          />
-        )}
-      </Animated.View>
+        }
+      />
     </View>
   );
 }
@@ -243,9 +252,13 @@ export default function HistoryScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  listContent: {
     paddingHorizontal: layout.screenPaddingH,
     paddingTop: layout.headerPaddingTop,
     paddingBottom: layout.safeAreaBottom,
+    flexGrow: 1,
+    gap: 0,
   },
   header: {
     marginBottom: spacing.lg,
@@ -293,11 +306,8 @@ const styles = StyleSheet.create({
     width: 10,
     borderRadius: 4,
   },
-  listSection: {
-    flex: 1,
-  },
-  listContent: {
-    gap: spacing.md,
+  listLabelWrap: {
+    marginBottom: spacing.sm,
   },
   sessionCard: {
     flexDirection: 'row',
@@ -306,6 +316,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 2,
     gap: spacing.md,
+    marginBottom: spacing.md,
   },
   sessionLeft: {
     flex: 1,

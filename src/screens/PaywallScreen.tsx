@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -200,6 +200,11 @@ export default function PaywallScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.paper }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
       <Animated.View style={[styles.header, headerAnimStyle]}>
         <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close">
           <CloseIcon size={20} color={isDark ? darkColors.inkMuted : colors.inkMuted} />
@@ -255,6 +260,7 @@ export default function PaywallScreen({ navigation }: Props) {
           </Text>
         </TouchableOpacity>
       </Animated.View>
+      </ScrollView>
     </View>
   );
 }
@@ -262,6 +268,12 @@ export default function PaywallScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: layout.screenPaddingH,
     paddingTop: layout.headerPaddingTop,
     paddingBottom: layout.safeAreaBottom,
@@ -324,7 +336,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   bottomSection: {
-    marginTop: 'auto',
+    marginTop: spacing.xl,
     paddingTop: spacing.lg,
   },
   primaryButton: {
