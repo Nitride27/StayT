@@ -244,7 +244,17 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                     key={app.packageName}
                     activeOpacity={0.7}
                     onPress={() => handlePickApp(app)}
-                    style={styles.appRow}
+                    style={[
+                      styles.appRow,
+                      {
+                        backgroundColor: checked
+                          ? isDark
+                            ? 'rgba(255,255,255,0.06)'
+                            : 'rgba(28,176,246,0.08)'
+                          : 'transparent',
+                        borderRadius: radius.sm,
+                      },
+                    ]}
                   >
                     <View style={[styles.checkbox, { borderColor: border }, checked && styles.checkboxChecked]}>
                       {checked && (
@@ -287,7 +297,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
         <AnimatedTouchable
-          style={[styles.primaryButton, { opacity: canSave ? 1 : 0.5 }]}
+          style={[styles.primaryButton, { opacity: canSave ? 1 : 0.5, backgroundColor: isDark ? '#ffffff' : colors.ectoGreen, borderBottomWidth: isDark ? 0 : 3 }]}
           activeOpacity={0.85}
           onPress={handleSave}
           disabled={!canSave}

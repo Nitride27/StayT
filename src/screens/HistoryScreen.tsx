@@ -71,7 +71,7 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
 
   return (
-    <Animated.View style={[styles.sessionCard, animStyle, { backgroundColor: isDark ? darkColors.paperCard : colors.paperCard, borderColor: isDark ? darkColors.ink : colors.ink }]}>
+    <Animated.View style={[styles.sessionCard, animStyle, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? darkColors.paperBorder : colors.paperBorder }]}>
       <View style={styles.sessionLeft}>
         <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>{item.taskName}</Text>
         <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>{formatRange(item)}</Text>
@@ -311,7 +311,8 @@ const styles = StyleSheet.create({
   },
   bar: {
     width: 10,
-    borderRadius: 4,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
   },
   listLabelWrap: {
     marginBottom: spacing.sm,
@@ -319,11 +320,8 @@ const styles = StyleSheet.create({
   sessionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 2,
+    paddingVertical: spacing.md,
     gap: spacing.md,
-    marginBottom: spacing.md,
   },
   sessionLeft: {
     flex: 1,

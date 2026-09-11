@@ -16,7 +16,7 @@ import { Task, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon, FlameIcon, ClockIcon } from '../components/icons';
+import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon, FlameIcon } from '../components/icons';
 import { FREE_TASK_LIMIT } from './PaywallScreen';
 
 type Props = {
@@ -186,31 +186,17 @@ export default function TaskPickerScreen({ navigation }: Props) {
         <View style={styles.headerRow}>
           <TouchableOpacity
             onPress={() => navigation.navigate('History')}
-            activeOpacity={0.85}
-            style={styles.historyButton}
+            activeOpacity={0.7}
+            style={styles.streakPill}
             accessibilityRole="button"
-            accessibilityLabel="History"
+            accessibilityLabel={`${streak} day streak. View history.`}
           >
-            <View style={styles.historyButtonRow}>
-              <ClockIcon size={16} color={colors.midnight} />
-              <Text style={[typography.button, { color: colors.midnight }]}>History</Text>
-            </View>
+            <FlameIcon size={18} color={colors.midnight} />
+            <Text style={[styles.streakCount]}>{streak}</Text>
           </TouchableOpacity>
-          <View style={styles.headerRight}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('History')}
-              activeOpacity={0.7}
-              style={styles.streakPill}
-              accessibilityRole="button"
-              accessibilityLabel={`${streak} day streak. View history.`}
-            >
-              <FlameIcon size={18} color={colors.midnight} />
-              <Text style={[styles.streakCount]}>{streak}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
-              <GearIcon size={22} color={ink} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
+            <GearIcon size={22} color={ink} />
+          </TouchableOpacity>
         </View>
         <Text style={[typography.display, { color: ink, marginTop: spacing.lg }]}>
           WHAT ARE YOU DOING?
@@ -273,35 +259,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
   gearButton: {
-    width: 44,
-    height: 44,
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
     borderWidth: 2,
     borderRadius: radius.md,
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  historyButton: {
-    backgroundColor: colors.ectoGreen,
-    borderBottomWidth: 3,
-    borderBottomColor: colors.ectoGreenDark,
-    borderRadius: radius.xl,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    minHeight: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  historyButtonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
   },
   streakPill: {
     flexDirection: 'row',
