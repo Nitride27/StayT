@@ -199,8 +199,8 @@ export default function TaskPickerScreen({ navigation }: Props) {
               accessibilityRole="text"
               accessibilityLabel={`${streak} day streak`}
             >
-              <FlameIcon size={18} color={colors.midnight} />
-              <Text style={[styles.streakCount]}>{streak}</Text>
+            <FlameIcon size={16} color={colors.midnight} />
+            <Text style={[styles.streakCount]}>{streak}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
               <GearIcon size={22} color={ink} />
@@ -288,8 +288,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   },
   streakCount: {
     fontFamily: 'Anton',
-    fontSize: 20,
+    fontSize: 18,
     letterSpacing: -0.02,
     color: colors.midnight,
   },
