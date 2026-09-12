@@ -5,6 +5,15 @@ const TASKS_KEY = '@stayt_tasks';
 const SESSIONS_KEY = '@stayt_sessions';
 const PREFERENCES_KEY = '@stayt_preferences';
 const BLOCKED_ATTEMPTS_KEY = '@stayt_blocked_attempts';
+const OVERRIDES_KEY = '@stayt_override_budget';
+
+/** Max 2-min overrides per calendar day (anti-abuse budget). */
+export const MAX_DAILY_OVERRIDES = 3;
+
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
 
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -168,6 +177,22 @@ export const store = {
   async clearBlockedAttempts(): Promise<void> {
     return serialized(BLOCKED_ATTEMPTS_KEY, async () => {
       await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify([]));
+    });
+  },
+
+  async getOverridesUsedToday(): Promise<number> {
+    const raw = await AsyncStorage.getItem(OVERRIDES_KEY);
+    const rec = safeParse<{ date: string; used: number } | null>(raw, null);
+    if (!rec || rec.date !== todayKey() || typeof rec.used !== 'number') return 0;
+    return Math.max(0, rec.used);
+  },
+
+  async recordOverride(): Promise<number> {
+    return serialized(OVERRIDES_KEY, async () => {
+      const used = await this.getOverridesUsedToday();
+      const next = used + 1;
+      await AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify({ date: todayKey(), used: next }));
+      return next;
     });
   },
 

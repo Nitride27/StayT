@@ -14,7 +14,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
-import { store } from '../storage/store';
+import { store, MAX_DAILY_OVERRIDES } from '../storage/store';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BlockedInterstitial'>;
@@ -29,10 +29,14 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const [taskName, setTaskName] = useState<string | null>(null);
   // Label travels with the event/deep link — no per-block app-list scan.
   const [appLabel] = useState(route.params.appLabel ?? packageName);
+  const [overridesLeft, setOverridesLeft] = useState(MAX_DAILY_OVERRIDES);
 
   useEffect(() => {
     store.getTasks()
       .then(ts => setTaskName(ts.find(t => t.id === taskId)?.name ?? null))
+      .catch(() => {});
+    store.getOverridesUsedToday()
+      .then(used => setOverridesLeft(Math.max(0, MAX_DAILY_OVERRIDES - used)))
       .catch(() => {});
   }, [taskId]);
 
@@ -92,10 +96,16 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   };
 
   const handleTakeBreak = async () => {
+    if (overridesLeft <= 0) return;
     try {
       await AppBlocker.pauseBlocking(120);
     } catch {
       // Best-effort; the break still counts locally below.
+    }
+    try {
+      await store.recordOverride();
+    } catch {
+      // Best-effort counting must never trap the user on this screen.
     }
     try {
       await store.saveBlockedAttempt({
@@ -170,12 +180,13 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
         </AnimatedTouchable>
 
         <AnimatedTouchable
-          style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText }]}
+          style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText, opacity: overridesLeft > 0 ? 1 : 0.5 }]}
           activeOpacity={0.85}
           onPress={handleTakeBreak}
+          disabled={overridesLeft <= 0}
         >
           <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
-            2-MIN OVERRIDE
+            {overridesLeft > 0 ? `2-MIN OVERRIDE (${overridesLeft} LEFT)` : 'OVERRIDES USED UP'}
           </Text>
         </AnimatedTouchable>
       </View>
