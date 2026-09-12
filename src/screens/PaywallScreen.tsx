@@ -229,13 +229,18 @@ export default function PaywallScreen({ navigation }: Props) {
         </View>
       </Animated.View>
 
-      <Animated.View style={[styles.features, featuresAnimStyle]}>
+      <Animated.View style={[styles.features, featuresAnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
         {features.map((f, i) => (
           <AnimatedFeatureItem key={f.title} feature={f} index={i} isDark={isDark} />
         ))}
       </Animated.View>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+        {!connected && (
+          <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginBottom: spacing.md }]}>
+            Connecting to Google Play for live pricing…
+          </Text>
+        )}
         {storeError && (
           <Text style={[typography.caption, { color: colors.danger, textAlign: 'center', marginBottom: spacing.md }]}>
             {storeError}
@@ -316,6 +321,9 @@ const styles = StyleSheet.create({
   features: {
     gap: spacing.lg,
     marginBottom: spacing.xxl,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.lg,
   },
   featureRow: {
     flexDirection: 'row',

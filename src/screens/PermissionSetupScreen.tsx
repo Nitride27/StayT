@@ -32,25 +32,39 @@ type Props = {
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
-function getOEMWarning(): string | null {
+function getOEMTip(): string | null {
   if (Platform.OS !== 'android') return null;
   const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
   const manufacturer =
     (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
-  if (manufacturer.includes('xiaomi') || model.includes('xiaomi'))
-    return 'Xiaomi: Settings > Apps > Manage apps > StayT > Autostart';
-  if (manufacturer.includes('samsung') || model.includes('samsung'))
+  const hay = `${manufacturer} ${model}`;
+  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
+    return 'Xiaomi: Settings > Apps > Manage apps > StayT > Autostart ON';
+  if (hay.includes('samsung'))
     return 'Samsung: Settings > Battery > StayT > Allow background activity';
-  if (manufacturer.includes('huawei') || model.includes('huawei'))
+  if (hay.includes('huawei') || hay.includes('honor'))
     return 'Huawei: Settings > Battery > App launch > StayT > Manage manually';
+  if (hay.includes('oppo') || hay.includes('realme') || hay.includes('oneplus'))
+    return 'OPPO/OnePlus: Settings > Battery > App battery management > StayT > Allow background activity';
+  if (hay.includes('vivo') || hay.includes('iqoo'))
+    return 'Vivo: Settings > Battery > Background power consumption > StayT > Allow';
+  if (hay.includes('motorola') || hay.includes('moto'))
+    return 'Motorola: Settings > Battery > Adaptive Battery > exclude StayT';
+  if (hay.includes('nothing'))
+    return 'Nothing: Settings > Battery > StayT > Unrestricted';
   return null;
 }
+
+// Shown on EVERY Android device — OEM killers break blocking silently,
+// so the generic path is always visible, with an OEM-specific line on top.
+const GENERIC_BATTERY_TIP =
+  'Keep StayT running: Settings > Apps > StayT > Battery > Unrestricted.';
 
 export default function PermissionSetupScreen({ navigation }: Props) {
   const { isDark } = useTheme();
   const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const appState = useRef(AppState.currentState);
-  const oemWarning = getOEMWarning();
+  const oemTip = getOEMTip();
 
   // --- Animations ---
   const headerOpacity = useSharedValue(0);
@@ -200,16 +214,26 @@ export default function PermissionSetupScreen({ navigation }: Props) {
           </Text>
         </Animated.View>
 
-        {/* OEM warning */}
-        {oemWarning && (
-          <Animated.View style={[styles.oemLine, oemAnimStyle]}>
+        {/* Battery guidance: OEM-specific on top, generic path always */}
+        {Platform.OS === 'android' && (
+          <Animated.View style={[styles.oemCard, oemAnimStyle, { backgroundColor: bg, borderColor: ink }]}>
+            {oemTip && (
+              <Text
+                style={[
+                  typography.bodyStrong,
+                  { color: ink, textAlign: 'center' },
+                ]}
+              >
+                {oemTip}
+              </Text>
+            )}
             <Text
               style={[
                 typography.caption,
-                { color: muted, textAlign: 'center' },
+                { color: muted, textAlign: 'center', marginTop: oemTip ? spacing.xs : 0 },
               ]}
             >
-              {oemWarning}
+              {GENERIC_BATTERY_TIP}
             </Text>
           </Animated.View>
         )}
@@ -254,8 +278,11 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
   },
-  oemLine: {
-    paddingHorizontal: spacing.lg,
+  oemCard: {
+    padding: spacing.lg,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    marginTop: spacing.xl,
   },
   bottomSection: {
     paddingBottom: spacing.xl,

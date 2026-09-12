@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Image, Alert, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -9,6 +9,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task, FocusSchedule, blockedPackagesOf } from '../types';
@@ -113,6 +114,16 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       .catch(() => {});
     return () => { live = false; };
   }, [existingTask?.id]);
+
+  // Re-read subscription on focus: the user may flip Pro in Settings or
+  // Paywall and return here with a stale mount-time value.
+  useFocusEffect(
+    useCallback(() => {
+      store.getPreferences()
+        .then(p => setIsSubscribed(p.isSubscribed === true))
+        .catch(() => {});
+    }, []),
+  );
 
   const filteredApps = installedApps.filter(
     (a) =>

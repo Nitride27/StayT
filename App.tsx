@@ -42,8 +42,9 @@ function AppNavigator() {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
   // Dedup: one block event arrives via BOTH the JS emit and the deep-link
-  // foreground rung (seconds apart when the overlay is read first). If this
-  // package's interstitial is already on top, never push a duplicate.
+  // foreground rung. The route check alone races (both handlers can pass it
+  // before either navigation commits across an await), so claim synchronously
+  // first AND verify the route: either signal alone suppresses a duplicate.
   const isShowingBlocked = (packageName: string): boolean => {
     if (!navigationRef.isReady()) return false;
     const r = navigationRef.getCurrentRoute();
@@ -51,6 +52,16 @@ function AppNavigator() {
       r?.name === 'BlockedInterstitial' &&
       (r.params as { packageName?: string } | undefined)?.packageName === packageName
     );
+  };
+  let lastClaimPkg = '';
+  let lastClaimAt = 0;
+  const claimBlockedNav = (packageName: string): boolean => {
+    const now = Date.now();
+    if (packageName === lastClaimPkg && now - lastClaimAt < 1500) return false;
+    if (isShowingBlocked(packageName)) return false;
+    lastClaimPkg = packageName;
+    lastClaimAt = now;
+    return true;
   };
 
   const [fontsLoaded, fontError] = useFonts({
@@ -111,7 +122,7 @@ function AppNavigator() {
   useEffect(() => {
     const unsub = AppBlocker.onBlockedAttempt(async (event) => {
       try {
-        if (isShowingBlocked(event.packageName)) return;
+        if (!claimBlockedNav(event.packageName)) return;
         const tasks = await store.getTasks();
         const task = tasks.find(
           t => t.packageName === event.packageName || t.blockedPackages?.includes(event.packageName),
@@ -141,7 +152,7 @@ function AppNavigator() {
       }
       const link = AppBlocker.parseBlockedDeepLink(url);
       if (!link || !navigationRef.isReady()) return;
-      if (isShowingBlocked(link.packageName)) return;
+      if (!claimBlockedNav(link.packageName)) return;
       try {
         const tasks = await store.getTasks();
         const task = tasks.find(
