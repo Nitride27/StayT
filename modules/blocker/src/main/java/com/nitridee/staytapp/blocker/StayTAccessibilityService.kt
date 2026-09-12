@@ -25,6 +25,7 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.nitridee.staytapp.R
 import java.util.concurrent.ConcurrentHashMap
 
 class StayTAccessibilityService : AccessibilityService() {
