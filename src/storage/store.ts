@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Task, Session, BlockedAttempt, UserPreferences } from '../types';
+import { Task, Session, BlockedAttempt, FocusSchedule, UserPreferences } from '../types';
 
 const TASKS_KEY = '@stayt_tasks';
 const SESSIONS_KEY = '@stayt_sessions';
 const PREFERENCES_KEY = '@stayt_preferences';
 const BLOCKED_ATTEMPTS_KEY = '@stayt_blocked_attempts';
+const SCHEDULES_KEY = '@stayt_schedules';
 const OVERRIDES_KEY = '@stayt_override_budget';
 
 /** Max 2-min overrides per calendar day (anti-abuse budget). */
@@ -178,6 +179,40 @@ export const store = {
     return serialized(BLOCKED_ATTEMPTS_KEY, async () => {
       await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify([]));
     });
+  },
+
+  // Focus schedules (Pro)
+  async getSchedules(): Promise<FocusSchedule[]> {
+    const data = await AsyncStorage.getItem(SCHEDULES_KEY);
+    return safeParse<FocusSchedule[]>(data, []);
+  },
+
+  async saveSchedule(schedule: FocusSchedule): Promise<void> {
+    return serialized(SCHEDULES_KEY, async () => {
+      const all = await this.getSchedules();
+      const index = all.findIndex(s => s.id === schedule.id);
+      if (index >= 0) {
+        all[index] = schedule;
+      } else {
+        all.push(schedule);
+      }
+      await AsyncStorage.setItem(SCHEDULES_KEY, JSON.stringify(all));
+    });
+  },
+
+  async deleteSchedule(scheduleId: string): Promise<void> {
+    return serialized(SCHEDULES_KEY, async () => {
+      const all = await this.getSchedules();
+      await AsyncStorage.setItem(
+        SCHEDULES_KEY,
+        JSON.stringify(all.filter(s => s.id !== scheduleId)),
+      );
+    });
+  },
+
+  async getSchedulesForTask(taskId: string): Promise<FocusSchedule[]> {
+    const all = await this.getSchedules();
+    return all.filter(s => s.taskId === taskId);
   },
 
   async getOverridesUsedToday(): Promise<number> {

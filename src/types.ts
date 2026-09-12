@@ -14,6 +14,19 @@ export interface Task {
   streak: number;
 }
 
+/**
+ * Recurring auto-block window for a task (Pro). Times are minutes since
+ * midnight local; days use JS getDay() convention (0 = Sunday).
+ */
+export interface FocusSchedule {
+  id: string;
+  taskId: string;
+  days: number[];
+  startMinutes: number;
+  endMinutes: number;
+  enabled: boolean;
+}
+
 /** Effective block list for a task: paid multi-list, else the single app. */
 export function blockedPackagesOf(task: Task): string[] {
   return task.blockedPackages && task.blockedPackages.length > 0

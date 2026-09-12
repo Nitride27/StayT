@@ -11,7 +11,7 @@ import Animated, {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Task } from '../types';
+import { Task, FocusSchedule, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
@@ -26,6 +26,38 @@ type Props = {
 };
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Mon-first chip order; days use JS getDay() convention (0 = Sunday).
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const MINUTE_STEPS = [0, 15, 30, 45];
+
+function formatScheduleTime(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// Re-push the store's schedules to native after every schedule edit.
+// Source of truth stays in the store; native persists nothing.
+async function syncSchedulesToNative(): Promise<void> {
+  try {
+    const [schedules, tasks] = await Promise.all([store.getSchedules(), store.getTasks()]);
+    const byId = new Map(tasks.map(t => [t.id, t] as const));
+    const payload = schedules
+      .filter(s => byId.has(s.taskId))
+      .map(s => ({
+        days: s.days,
+        startMinutes: s.startMinutes,
+        endMinutes: s.endMinutes,
+        enabled: s.enabled,
+        blockedPackages: blockedPackagesOf(byId.get(s.taskId)!),
+      }));
+    await AppBlocker.setSchedules(payload).catch(() => {});
+  } catch {
+    // Best-effort; a failed push must never block the save flow.
+  }
+}
 
 export default function TaskSetupScreen({ navigation, route }: Props) {
   const { isDark } = useTheme();
@@ -48,6 +80,11 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       ? [{ packageName: existingTask.packageName, appName: existingTask.appName }]
       : [];
   });
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleDays, setScheduleDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [startMinutes, setStartMinutes] = useState(9 * 60);
+  const [endMinutes, setEndMinutes] = useState(17 * 60);
+  const [existingScheduleId, setExistingScheduleId] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -59,6 +96,23 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       .catch(() => {});
     return () => { live = false; };
   }, []);
+
+  useEffect(() => {
+    if (!existingTask) return;
+    let live = true;
+    store.getSchedulesForTask(existingTask.id)
+      .then(list => {
+        if (!live || list.length === 0) return;
+        const s: FocusSchedule = list[0];
+        setExistingScheduleId(s.id);
+        setScheduleEnabled(s.enabled);
+        setScheduleDays(s.days);
+        setStartMinutes(s.startMinutes);
+        setEndMinutes(s.endMinutes);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [existingTask?.id]);
 
   const filteredApps = installedApps.filter(
     (a) =>
@@ -101,6 +155,66 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     setAppSearchQuery('');
   };
 
+  const isPro = isSubscribed === true;
+
+  const showScheduleProGate = () => {
+    Alert.alert('Pro feature', 'Schedules are a Pro feature. Upgrade to auto-block during focus hours.', [
+      { text: 'View Pro', onPress: () => navigation.navigate('Paywall') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleToggleSchedule = () => {
+    if (!isPro) { showScheduleProGate(); return; }
+    setScheduleEnabled(v => !v);
+  };
+
+  const handleToggleDay = (day: number) => {
+    if (!isPro) { showScheduleProGate(); return; }
+    setScheduleDays(prev => (prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]));
+  };
+
+  const adjustHour = (which: 'start' | 'end', delta: number) => {
+    if (!isPro) { showScheduleProGate(); return; }
+    if (which === 'start') {
+      setStartMinutes(prev => {
+        const h = Math.floor(prev / 60);
+        return ((h + delta + 24) % 24) * 60 + (prev % 60);
+      });
+    } else {
+      setEndMinutes(prev => {
+        const h = Math.floor(prev / 60);
+        return ((h + delta + 24) % 24) * 60 + (prev % 60);
+      });
+    }
+  };
+
+  const cycleMinute = (which: 'start' | 'end') => {
+    if (!isPro) { showScheduleProGate(); return; }
+    if (which === 'start') {
+      setStartMinutes(prev => {
+        const h = Math.floor(prev / 60);
+        const idx = MINUTE_STEPS.indexOf(prev % 60);
+        return h * 60 + MINUTE_STEPS[(idx + 1) % MINUTE_STEPS.length];
+      });
+    } else {
+      setEndMinutes(prev => {
+        const h = Math.floor(prev / 60);
+        const idx = MINUTE_STEPS.indexOf(prev % 60);
+        return h * 60 + MINUTE_STEPS[(idx + 1) % MINUTE_STEPS.length];
+      });
+    }
+  };
+
+  const scheduleValid = scheduleDays.length >= 1 && startMinutes !== endMinutes;
+  const scheduleHint = !scheduleEnabled
+    ? null
+    : scheduleDays.length === 0
+      ? 'Pick at least one day.'
+      : startMinutes === endMinutes
+        ? "Start and end can't be the same."
+        : null;
+
   // Entry animations
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(20);
@@ -126,18 +240,22 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       ? selectedApps.map(a => a.packageName)
       : (packageName.trim() ? [packageName.trim()] : []);
     if (rawPkgs.length === 0) return;
+    if (scheduleEnabled && isPro && !scheduleValid) return;
     // Safety net: free tier can never persist more than one blocked app
     // (e.g. legacy Pro multi-task edited after expiry).
     const pkgs = isSubscribed ? rawPkgs : rawPkgs.slice(0, 1);
     const firstApp = selectedApps.find(a => a.packageName === pkgs[0])?.appName
       || appName.trim() || pkgs[0];
+    const taskId = existingTask ? existingTask.id : `task-${Date.now()}`;
+    // Free tier forces the schedule off at save.
+    const effectiveScheduleEnabled = isPro && scheduleEnabled;
 
     try {
       if (existingTask) {
         await store.saveTask({ ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs });
       } else {
         await store.saveTask({
-          id: `task-${Date.now()}`,
+          id: taskId,
           name: taskName.trim(),
           packageName: pkgs[0],
           appName: firstApp,
@@ -153,6 +271,30 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       Alert.alert('Could not save task', 'Storage failed. Please try again.');
       return;
     }
+    try {
+      if (existingScheduleId) {
+        await store.saveSchedule({
+          id: existingScheduleId,
+          taskId,
+          days: scheduleDays,
+          startMinutes,
+          endMinutes,
+          enabled: effectiveScheduleEnabled,
+        });
+      } else if (effectiveScheduleEnabled) {
+        await store.saveSchedule({
+          id: `sched-${Date.now()}`,
+          taskId,
+          days: scheduleDays,
+          startMinutes,
+          endMinutes,
+          enabled: true,
+        });
+      }
+    } catch {
+      // Best-effort; the task itself already saved.
+    }
+    await syncSchedulesToNative();
     navigation.goBack();
   };
 
@@ -183,7 +325,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const ink = isDark ? darkColors.ink : colors.ink;
   const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
   const border = isDark ? darkColors.ink : colors.ink;
-  const canSave = taskName.trim() && (selectedApps.length > 0 || packageName.trim());
+  const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+  const canSave = taskName.trim() && (selectedApps.length > 0 || packageName.trim()) && (!scheduleEnabled || !isPro || scheduleValid);
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
@@ -291,6 +434,90 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             value={packageName}
             onChangeText={(text) => { setPackageName(text); setAppName(''); setSelectedApps([]); }}
           />
+          <Text style={[typography.h3, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+            SCHEDULE{!isPro ? ' · PRO' : ''}
+          </Text>
+          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleToggleSchedule}
+              style={styles.scheduleToggleRow}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: scheduleEnabled }}
+              accessibilityLabel="Enable schedule"
+            >
+              <View style={styles.scheduleToggleText}>
+                <Text style={[{ fontFamily: 'SpaceGrotesk-SemiBold', fontSize: 16, lineHeight: 22 }, { color: ink }]}>
+                  Enable schedule
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Auto-block during focus hours
+                </Text>
+              </View>
+              <View style={[styles.toggleTrack, { borderColor: border }, scheduleEnabled && styles.toggleTrackOn]}>
+                <View style={[styles.toggleKnob, scheduleEnabled && styles.toggleKnobOn]} />
+              </View>
+            </TouchableOpacity>
+            {scheduleEnabled && (
+              <>
+                <View style={styles.dayRow}>
+                  {DAY_ORDER.map((day, i) => {
+                    const on = scheduleDays.includes(day);
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        activeOpacity={0.7}
+                        onPress={() => handleToggleDay(day)}
+                        style={[styles.dayChip, { borderColor: border }, on && styles.dayChipOn]}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: on }}
+                        accessibilityLabel={`Day ${day}`}
+                      >
+                        <Text style={[styles.dayChipText, { color: on ? colors.midnight : ink }]}>
+                          {DAY_LABELS[i]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={styles.timeRow}>
+                  <Text style={[typography.label, { color: ink }]}>START</Text>
+                  <View style={styles.stepperGroup}>
+                    <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('start', -1)} accessibilityRole="button" accessibilityLabel="Decrease start hour">
+                      <Text style={[styles.stepperText, { color: ink }]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.timeText, { color: ink }]}>{formatScheduleTime(startMinutes)}</Text>
+                    <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('start', 1)} accessibilityRole="button" accessibilityLabel="Increase start hour">
+                      <Text style={[styles.stepperText, { color: ink }]}>+</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.minuteBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => cycleMinute('start')} accessibilityRole="button" accessibilityLabel="Cycle start minutes">
+                      <Text style={[styles.minuteText, { color: ink }]}>:{String(startMinutes % 60).padStart(2, '0')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={styles.timeRow}>
+                  <Text style={[typography.label, { color: ink }]}>END</Text>
+                  <View style={styles.stepperGroup}>
+                    <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('end', -1)} accessibilityRole="button" accessibilityLabel="Decrease end hour">
+                      <Text style={[styles.stepperText, { color: ink }]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.timeText, { color: ink }]}>{formatScheduleTime(endMinutes)}</Text>
+                    <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('end', 1)} accessibilityRole="button" accessibilityLabel="Increase end hour">
+                      <Text style={[styles.stepperText, { color: ink }]}>+</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.minuteBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => cycleMinute('end')} accessibilityRole="button" accessibilityLabel="Cycle end minutes">
+                      <Text style={[styles.minuteText, { color: ink }]}>:{String(endMinutes % 60).padStart(2, '0')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {scheduleHint && (
+                  <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
+                    {scheduleHint}
+                  </Text>
+                )}
+              </>
+            )}
+          </View>
         </Animated.View>
       </ScrollView>
 
@@ -408,6 +635,111 @@ const styles = StyleSheet.create({
   noAppsImage: {
     width: 130,
     height: 130,
+  },
+  scheduleCard: {
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+  },
+  scheduleToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 44,
+  },
+  scheduleToggleText: {
+    flex: 1,
+  },
+  toggleTrack: {
+    width: 52,
+    height: 30,
+    borderRadius: radius.full,
+    borderWidth: 2,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  toggleTrackOn: {
+    backgroundColor: colors.ectoGreen,
+    borderColor: colors.ectoGreen,
+  },
+  toggleKnob: {
+    width: 20,
+    height: 20,
+    borderRadius: radius.full,
+    backgroundColor: '#999',
+    alignSelf: 'flex-start',
+  },
+  toggleKnobOn: {
+    backgroundColor: colors.midnight,
+    alignSelf: 'flex-end',
+  },
+  dayRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  dayChip: {
+    flex: 1,
+    minHeight: 44,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dayChipOn: {
+    backgroundColor: colors.ectoGreen,
+    borderColor: colors.ectoGreen,
+  },
+  dayChipText: {
+    fontFamily: 'SpaceGrotesk-Bold',
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.md,
+    minHeight: 44,
+  },
+  stepperGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  stepperBtn: {
+    width: 44,
+    height: 44,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperText: {
+    fontFamily: 'SpaceGrotesk-Bold',
+    fontSize: 20,
+    lineHeight: 24,
+  },
+  timeText: {
+    fontFamily: 'SpaceGrotesk-Bold',
+    fontSize: 18,
+    lineHeight: 22,
+    minWidth: 58,
+    textAlign: 'center',
+  },
+  minuteBtn: {
+    height: 44,
+    minWidth: 52,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  minuteText: {
+    fontFamily: 'SpaceGrotesk-Bold',
+    fontSize: 16,
+    lineHeight: 22,
   },
   bottomSection: {
     paddingTop: spacing.lg,

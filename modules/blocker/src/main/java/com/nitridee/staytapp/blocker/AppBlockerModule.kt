@@ -128,6 +128,32 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Program native focus-schedule alarms. Persists a mirror of the last pushed
+     * list (source of truth stays the JS store; JS re-pushes after every edit),
+     * cancels all previous alarms and programs the next START/STOP firings.
+     * Skips malformed items; rejects only on total failure; never throws.
+     */
+    @ReactMethod
+    fun setSchedules(schedules: ReadableArray, promise: Promise) {
+        try {
+            try {
+                val parsed = ScheduleAlarmScheduler.parseArray(schedules)
+                ScheduleAlarmScheduler.saveAndProgram(reactApplicationContext, parsed)
+                Log.d(TAG, "setSchedules ok: ${parsed.size} valid items")
+                promise.resolve(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "setSchedules failed", e)
+                try {
+                    promise.reject("SET_SCHEDULES_FAILED", e.message, e)
+                } catch (_: Exception) {
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "setSchedules outer failed", e)
+        }
+    }
+
     @ReactMethod
     fun addListener(eventName: String) {
         // Required for NativeEventEmitter

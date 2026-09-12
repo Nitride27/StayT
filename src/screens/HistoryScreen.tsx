@@ -11,7 +11,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Session, Task } from '../types';
+import { Session, Task, BlockedAttempt } from '../types';
+import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
@@ -86,6 +87,8 @@ export default function HistoryScreen({ navigation }: Props) {
   const { isDark } = useTheme();
   const [sessions, setSessions] = useState<HistoryItem[]>([]);
   const [streak, setStreak] = useState(0);
+  const [attempts, setAttempts] = useState<BlockedAttempt[]>([]);
+  const [appLabels, setAppLabels] = useState<Record<string, string>>({});
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -126,6 +129,19 @@ export default function HistoryScreen({ navigation }: Props) {
     } catch {
       setSessions([]);
     }
+    try {
+      setAttempts(await store.getBlockedAttempts());
+    } catch {
+      setAttempts([]);
+    }
+    try {
+      const apps = await AppBlocker.getInstalledApps();
+      const map: Record<string, string> = {};
+      for (const a of apps) map[a.packageName] = a.appName;
+      setAppLabels(map);
+    } catch {
+      setAppLabels({});
+    }
   };
 
   // Mon–Sun minutes, computed inline from sessions.
@@ -135,6 +151,24 @@ export default function HistoryScreen({ navigation }: Props) {
     weekMinutes[(new Date(s.startedAt).getDay() + 6) % 7] += s.duration / 60000;
   }
   const weekMax = Math.max(1, ...weekMinutes);
+
+  // Advanced stats (all users, read-only, computed inline).
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const nowTs = Date.now();
+  const recentSessions = sessions.filter(s => s.startedAt >= nowTs - SEVEN_DAYS_MS && (s.duration || 0) > 0);
+  const weeklyTotalMin = Math.floor(recentSessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000);
+  const recentDayMinutes = [0, 0, 0, 0, 0, 0, 0];
+  for (const s of recentSessions) {
+    recentDayMinutes[(new Date(s.startedAt).getDay() + 6) % 7] += (s.duration || 0) / 60000;
+  }
+  const bestDayIdx = recentDayMinutes.indexOf(Math.max(...recentDayMinutes));
+  const attemptCounts = new Map<string, number>();
+  for (const a of attempts) attemptCounts.set(a.packageName, (attemptCounts.get(a.packageName) ?? 0) + 1);
+  const ranking = [...attemptCounts.entries()]
+    .map(([packageName, count]) => ({ packageName, label: appLabels[packageName] ?? packageName, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  const rankMax = Math.max(1, ...ranking.map(r => r.count));
 
   const headerAnimStyle = useAnimatedStyle(() => ({
     opacity: headerOpacity.value,
@@ -159,6 +193,8 @@ export default function HistoryScreen({ navigation }: Props) {
   const ink = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
   const track = isDark ? darkColors.paperBorder : colors.paperBorder;
+  const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
+  const border = isDark ? darkColors.ink : colors.ink;
   // Contrast-safe streak green: ectoGreen on dark, darker green on light.
   const streakGreen = isDark ? colors.ectoGreen : colors.ectoGreenDark;
 
@@ -212,6 +248,45 @@ export default function HistoryScreen({ navigation }: Props) {
                   </View>
                 ))}
               </View>
+            </Animated.View>
+
+            <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
+              <Text style={[typography.displayXL, { color: ink, textAlign: 'center' }]}>{weeklyTotalMin}</Text>
+              <Text style={[typography.label, { color: muted, textAlign: 'center', marginTop: spacing.xs }]}>
+                MINUTES THIS WEEK
+              </Text>
+              <View style={styles.bestDayRow}>
+                <Text style={[typography.label, { color: muted }]}>BEST DAY</Text>
+                <Text style={[typography.bodyMedium, { color: ink }]}>
+                  {weeklyTotalMin > 0 ? WEEK_DAYS[bestDayIdx].toUpperCase() : '—'}
+                </Text>
+              </View>
+            </Animated.View>
+
+            <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
+              <Text style={[typography.h3, { color: ink }]}>MOST BLOCKING YOU</Text>
+              {ranking.length === 0 ? (
+                <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
+                  No blocked attempts yet — stay focused!
+                </Text>
+              ) : (
+                ranking.map((r, i) => (
+                  <View key={r.packageName} style={styles.rankRow}>
+                    <Text style={[typography.bodyMedium, { color: ink, width: 20 }]}>{i + 1}</Text>
+                    <View style={styles.rankMain}>
+                      <View style={styles.rankTopRow}>
+                        <Text style={[typography.bodyMedium, { color: ink, flex: 1 }]} numberOfLines={1}>
+                          {r.label}
+                        </Text>
+                        <Text style={[typography.caption, { color: muted }]}>{r.count}×</Text>
+                      </View>
+                      <View style={[styles.rankTrack, { backgroundColor: track }]}>
+                        <View style={[styles.rankFill, { width: `${(r.count / rankMax) * 100}%` }]} />
+                      </View>
+                    </View>
+                  </View>
+                ))
+              )}
             </Animated.View>
 
             {sessions.length > 0 && (
@@ -286,8 +361,7 @@ const styles = StyleSheet.create({
   },
   chartSection: {
     marginBottom: spacing.xl,
-  },
-  chartRow: {
+  },  chartRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
@@ -303,6 +377,44 @@ const styles = StyleSheet.create({
     width: 10,
     borderTopLeftRadius: 6,
     borderTopRightRadius: 6,
+  },
+  statCard: {
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  bestDayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  rankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  rankMain: {
+    flex: 1,
+  },
+  rankTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rankTrack: {
+    height: 6,
+    borderRadius: 3,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  rankFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.ectoGreen,
   },
   listLabelWrap: {
     marginBottom: spacing.sm,

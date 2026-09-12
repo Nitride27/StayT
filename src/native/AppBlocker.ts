@@ -15,6 +15,15 @@ export interface InstalledApp {
   iconBase64?: string;
 }
 
+/** Schedule payload mirrored by the native AlarmManager programmer. */
+export interface NativeSchedule {
+  days: number[];
+  startMinutes: number;
+  endMinutes: number;
+  enabled: boolean;
+  blockedPackages: string[];
+}
+
 export interface BlockedDeepLink {
   packageName: string;
   appLabel?: string;
@@ -68,6 +77,18 @@ class AppBlockerBridge {
       return false;
     }
     return AppBlocker.pauseBlocking(seconds);
+  }
+
+  /**
+   * Program native alarms for focus schedules. The native side (re)computes
+   * the next start/stop firings and mirrors the pushed list for boot restore
+   * (source of truth stays the store — re-push after every schedule edit).
+   */
+  async setSchedules(schedules: NativeSchedule[]): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker) {
+      return false;
+    }
+    return AppBlocker.setSchedules(schedules);
   }
 
   async getInstalledApps(): Promise<InstalledApp[]> {

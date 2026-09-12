@@ -148,6 +148,49 @@ function withBlocker(config) {
     return cfg;
   });
 
+  // 1b. Focus-schedule alarms: RECEIVE_BOOT_COMPLETED (normal permission,
+  // no Play declaration needed) + boot/alarm receivers. Idempotent.
+  config = withAndroidManifest(config, (cfg) => {
+    const manifest = cfg.modResults.manifest;
+    if (!manifest["uses-permission"]) manifest["uses-permission"] = [];
+    if (
+      !manifest["uses-permission"].some(
+        (p) => p.$?.["android:name"] === "android.permission.RECEIVE_BOOT_COMPLETED"
+      )
+    ) {
+      manifest["uses-permission"].push({
+        $: { "android:name": "android.permission.RECEIVE_BOOT_COMPLETED" },
+      });
+    }
+    const app = cfg.modResults.manifest.application?.[0];
+    if (app) {
+      if (!app.receiver) app.receiver = [];
+      const ensureReceiver = (name, actions) => {
+        const already = app.receiver.some((r) =>
+          r.$?.["android:name"]?.includes(name)
+        );
+        if (already) return;
+        const entry = {
+          $: {
+            "android:name": `com.nitridee.staytapp.blocker.${name}`,
+            "android:exported": "false",
+          },
+        };
+        if (actions.length) {
+          entry["intent-filter"] = [
+            { action: actions.map((a) => ({ $: { "android:name": a } })) },
+          ];
+        }
+        app.receiver.push(entry);
+      };
+      ensureReceiver("ScheduleBootReceiver", [
+        "android.intent.action.BOOT_COMPLETED",
+      ]);
+      ensureReceiver("ScheduleAlarmReceiver", []);
+    }
+    return cfg;
+  });
+
   // 2. Add AppBlockerPackage import + registration to MainApplication.kt
   config = withMainApplication(config, (cfg) => {
     let contents = cfg.modResults.contents;
