@@ -35,9 +35,22 @@ class StayTAccessibilityService : AccessibilityService() {
         private const val BLOCK_CHANNEL_ID = "stayt_blocked"
         private const val BLOCK_CHANNEL_NAME = "Blocked apps"
         private const val OVERLAY_TIMEOUT_MS = 30_000L
-        private const val OVERRIDE_SECONDS = 120L
         private const val GREEN_ACCENT = "#58CC02"
-        private const val TASKS_DEEP_LINK = "exp+stayt-app://tasks"
+        // BlockedContract mirror (src/native/blockedContract.ts): single
+        // source for deep-link shape on the native side. Change both together.
+        private const val BLOCKED_SCHEME = "exp+stayt-app"
+        private const val BLOCKED_HOST = "blocked"
+        private const val TASKS_PATH = "tasks"
+        private const val KEY_PACKAGE = "packageName"
+        private const val KEY_LABEL = "label"
+        private const val TASKS_DEEP_LINK = "$BLOCKED_SCHEME://$TASKS_PATH"
+
+        private fun blockedDeepLink(openedPackage: String, appLabel: String) =
+            Uri.parse(
+                "$BLOCKED_SCHEME://$BLOCKED_HOST" +
+                    "?$KEY_PACKAGE=${Uri.encode(openedPackage)}" +
+                    "&$KEY_LABEL=${Uri.encode(appLabel)}"
+            )
 
         var instance: StayTAccessibilityService? = null
             private set
@@ -202,9 +215,7 @@ class StayTAccessibilityService : AccessibilityService() {
 
     private fun postBlockedNotification(openedPackage: String, appLabel: String) {
         try {
-            val deepLink = Uri.parse(
-                "exp+stayt-app://blocked?packageName=${Uri.encode(openedPackage)}&label=${Uri.encode(appLabel)}"
-            )
+            val deepLink = blockedDeepLink(openedPackage, appLabel)
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -247,9 +258,7 @@ class StayTAccessibilityService : AccessibilityService() {
      */
     private fun foregroundBlockedInterstitial(openedPackage: String, appLabel: String) {
         try {
-            val deepLink = Uri.parse(
-                "exp+stayt-app://blocked?packageName=${Uri.encode(openedPackage)}&label=${Uri.encode(appLabel)}"
-            )
+            val deepLink = blockedDeepLink(openedPackage, appLabel)
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -484,18 +493,9 @@ class StayTAccessibilityService : AccessibilityService() {
         }
         root.addView(switchBtn, buttonParams())
 
-        // OVERRIDE → dismiss first, then pause natively (no app needed).
-        val overrideBtn = outlineButton("2-MIN OVERRIDE")
-        overrideBtn.setOnClickListener {
-            try {
-                dismissBlockedOverlay()
-                pauseBlocking(OVERRIDE_SECONDS)
-            } catch (e: Exception) {
-                Log.w(TAG, "2-MIN OVERRIDE action failed", e)
-            }
-        }
-        root.addView(overrideBtn, buttonParams())
-
+        // No OVERRIDE here by design: overrides are budget-gated and the
+        // budget lives behind the OverrideBudget seam (JS). BACK/SWITCH
+        // foreground the app, where the single consume path runs.
         return root
     }
 

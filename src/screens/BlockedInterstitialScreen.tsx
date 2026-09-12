@@ -27,8 +27,9 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const { packageName, taskId } = route.params;
   const { isDark } = useTheme();
   const [taskName, setTaskName] = useState<string | null>(null);
-  // Label travels with the event/deep link — no per-block app-list scan.
-  const [appLabel] = useState(route.params.appLabel ?? packageName);
+  // Label travels with the event/deep link — read live from params (not
+  // useState) so a param merge into this mounted instance never goes stale.
+  const appLabel = route.params.appLabel ?? packageName;
   const [overridesLeft, setOverridesLeft] = useState(MAX_DAILY_OVERRIDES);
 
   useEffect(() => {
@@ -96,16 +97,24 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   };
 
   const handleTakeBreak = async () => {
-    if (overridesLeft <= 0) return;
+    // Single consume path: atomic check-and-increment. A double-tap (or a
+    // concurrent overlay tap) can never burn two units or exceed the cap.
+    let left = overridesLeft;
+    try {
+      const consumed = await store.tryConsumeOverride();
+      if (consumed.result === 'exhausted') {
+        setOverridesLeft(0);
+        return;
+      }
+      left = consumed.left;
+    } catch {
+      // Best-effort counting must never trap the user on this screen.
+    }
+    setOverridesLeft(left);
     try {
       await AppBlocker.pauseBlocking(120);
     } catch {
       // Best-effort; the break still counts locally below.
-    }
-    try {
-      await store.recordOverride();
-    } catch {
-      // Best-effort counting must never trap the user on this screen.
     }
     try {
       await store.saveBlockedAttempt({

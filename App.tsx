@@ -17,6 +17,7 @@ import PaywallScreen from './src/screens/PaywallScreen';
 import { store } from './src/storage/store';
 import { Task, Session } from './src/types';
 import AppBlocker from './src/native/AppBlocker';
+import { decideEntry } from './src/navigation/blockedEntry';
 import { colors } from './src/theme/tokens';
 
 SplashScreen.preventAutoHideAsync();
@@ -41,27 +42,20 @@ function AppNavigator() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Welcome');
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
-  // Dedup: one block event arrives via BOTH the JS emit and the deep-link
-  // foreground rung. The route check alone races (both handlers can pass it
-  // before either navigation commits across an await), so claim synchronously
-  // first AND verify the route: either signal alone suppresses a duplicate.
-  const isShowingBlocked = (packageName: string): boolean => {
+  // Blocked entry runs through the BlockedEntryCoordinator seam
+  // (src/navigation/blockedEntry.ts): sync claim + route check combined,
+  // so near-simultaneous emit + deep-link fires for one block can never
+  // double-push, while genuinely new blocks always pass.
+  const claimBlockedNav = (packageName: string): boolean => {
     if (!navigationRef.isReady()) return false;
     const r = navigationRef.getCurrentRoute();
     return (
-      r?.name === 'BlockedInterstitial' &&
-      (r.params as { packageName?: string } | undefined)?.packageName === packageName
+      decideEntry(packageName, {
+        ready: true,
+        routeName: r?.name,
+        routePkg: (r?.params as { packageName?: string } | undefined)?.packageName,
+      }) === 'shown'
     );
-  };
-  let lastClaimPkg = '';
-  let lastClaimAt = 0;
-  const claimBlockedNav = (packageName: string): boolean => {
-    const now = Date.now();
-    if (packageName === lastClaimPkg && now - lastClaimAt < 1500) return false;
-    if (isShowingBlocked(packageName)) return false;
-    lastClaimPkg = packageName;
-    lastClaimAt = now;
-    return true;
   };
 
   const [fontsLoaded, fontError] = useFonts({

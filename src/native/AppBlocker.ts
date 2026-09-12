@@ -1,5 +1,14 @@
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import {
+  parseBlockedDeepLink as parseLink,
+  isTasksDeepLink as isTasksLink,
+  TASKS_DEEP_LINK,
+  type BlockedDeepLink,
+} from './blockedContract';
+
+export type { BlockedDeepLink };
+export { TASKS_DEEP_LINK };
 
 const { AppBlocker } = NativeModules;
 
@@ -24,17 +33,9 @@ export interface NativeSchedule {
   blockedPackages: string[];
 }
 
-export interface BlockedDeepLink {
+export interface BlockedDeepLinkCompat {
   packageName: string;
-  appLabel?: string;
 }
-
-/**
- * Exact deep link fired natively by the service-owned block overlay's
- * SWITCH TASK button (StayTAccessibilityService.foregroundTaskPicker).
- * App.tsx routes it to TaskPicker.
- */
-export const TASKS_DEEP_LINK = 'exp+stayt-app://tasks';
 
 class AppBlockerBridge {
   private eventEmitter: NativeEventEmitter | null = null;
@@ -99,34 +100,11 @@ class AppBlockerBridge {
   }
 
   /**
-   * Parse an incoming `exp+stayt-app://blocked?packageName=X[&label=Y]` deep link
-   * (tapped from the native blocked notification or auto-popup). Validates the
-   * scheme FIRST, then the package shape — the intent-filter is exported, so any
-   * app can fire it. Returns null for anything malformed.
+   * Thin adapter over the BlockedContract seam (src/native/blockedContract.ts).
+   * All URI shape/regex/length rules live there; this only delegates.
    */
   parseBlockedDeepLink(url: string): BlockedDeepLink | null {
-    if (!url.startsWith('exp+stayt-app://blocked')) return null;
-    try {
-      const pkg = /[?&]packageName=([^&]+)/.exec(url);
-      if (!pkg) return null;
-      const packageName = decodeURIComponent(pkg[1]);
-      if (
-        !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(packageName) ||
-        packageName.length > 256
-      ) {
-        return null;
-      }
-      const lbl = /[?&]label=([^&]+)/.exec(url);
-      let appLabel: string | undefined;
-      try {
-        appLabel = lbl ? decodeURIComponent(lbl[1]).slice(0, 128) : undefined;
-      } catch {
-        appLabel = undefined;
-      }
-      return appLabel ? { packageName, appLabel } : { packageName };
-    } catch {
-      return null;
-    }
+    return parseLink(url);
   }
 
   async requestNotificationPermission(): Promise<boolean> {
@@ -140,12 +118,10 @@ class AppBlockerBridge {
   }
 
   /**
-   * Match the overlay's SWITCH TASK deep link (`exp+stayt-app://tasks`,
-   * optionally with query params). Returns true only for the exact tasks
-   * path — same strict-scheme-first validation as parseBlockedDeepLink.
+   * Thin adapter over the BlockedContract seam — see blockedContract.ts.
    */
   isTasksDeepLink(url: string): boolean {
-    return url === TASKS_DEEP_LINK || url.startsWith('exp+stayt-app://tasks?');
+    return isTasksLink(url);
   }
 
   onBlockedAttempt(callback: (event: BlockedAttemptEvent) => void): () => void {

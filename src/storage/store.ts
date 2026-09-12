@@ -222,12 +222,27 @@ export const store = {
     return Math.max(0, rec.used);
   },
 
-  async recordOverride(): Promise<number> {
+  /**
+   * OverrideBudget seam: atomic check-and-consume. The whole read,
+   * cap-check, increment, and persist happens inside ONE serialized block,
+   * so concurrent double-taps can never both pass or exceed the cap.
+   * Returns 'ok' (and the remaining count) or 'exhausted'.
+   * This is the ONLY write path for the budget — no other method may
+   * increment the count, so JS button and any future caller share one rule.
+   */
+  async tryConsumeOverride(): Promise<{ result: 'ok' | 'exhausted'; left: number }> {
     return serialized(OVERRIDES_KEY, async () => {
-      const used = await this.getOverridesUsedToday();
+      const raw = await AsyncStorage.getItem(OVERRIDES_KEY);
+      const rec = safeParse<{ date: string; used: number } | null>(raw, null);
+      const used = rec && rec.date === todayKey() && typeof rec.used === 'number'
+        ? Math.max(0, rec.used)
+        : 0;
+      if (used >= MAX_DAILY_OVERRIDES) {
+        return { result: 'exhausted' as const, left: 0 };
+      }
       const next = used + 1;
       await AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify({ date: todayKey(), used: next }));
-      return next;
+      return { result: 'ok' as const, left: Math.max(0, MAX_DAILY_OVERRIDES - next) };
     });
   },
 
