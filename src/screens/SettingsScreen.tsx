@@ -83,6 +83,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [versionTaps, setVersionTaps] = useState(0);
 
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(20);
@@ -281,9 +282,33 @@ export default function SettingsScreen({ navigation }: Props) {
           <SectionHeader label="SUPPORT" color={theme.inkSecondary} glyph={<BookIcon size={16} color={colors.midnight} />} />
           <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
             <Text style={[typography.bodyStrong, { color: ink }]}>StayT</Text>
-            <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
-              v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
-            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={async () => {
+                // DEV ONLY: 5 taps on the version toggles Pro for testing.
+                // __DEV__ is false in production builds, so this can't ship.
+                if (!__DEV__) return;
+                const next = versionTaps + 1;
+                setVersionTaps(next);
+                if (next >= 5) {
+                  setVersionTaps(0);
+                  try {
+                    const prefs = await store.getPreferences();
+                    const flipped = !prefs.isSubscribed;
+                    await store.savePreferences({ ...prefs, isSubscribed: flipped });
+                    setIsSubscribed(flipped);
+                    Alert.alert(
+                      'Dev Pro toggle',
+                      flipped ? 'Pro ON (testing only).' : 'Pro OFF (testing only).',
+                    );
+                  } catch {}
+                }
+              }}
+            >
+              <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
+                v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Danger zone */}
