@@ -22,6 +22,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.concurrent.ConcurrentHashMap
@@ -51,6 +52,11 @@ class StayTAccessibilityService : AccessibilityService() {
             isBlocking = blocking
             blockedPackages.clear()
             blockedPackages.addAll(blocked)
+            // A (re)start or stop invalidates a scheduled pause-resume —
+            // otherwise ending a session mid-override re-enables blocking
+            // later with no session (phantom blocks).
+            pauseRunnable?.let { handler.removeCallbacks(it) }
+            pauseRunnable = null
             // A (re)start or stop invalidates any overlay from a previous session.
             try {
                 instance?.dismissBlockedOverlay()
@@ -382,6 +388,20 @@ class StayTAccessibilityService : AccessibilityService() {
             setTypeface(typeface, Typeface.BOLD)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
             gravity = Gravity.CENTER
+        }
+        try {
+            val owl = ImageView(this).apply {
+                setImageResource(R.drawable.stayt_owl_blocked)
+            }
+            root.addView(
+                owl,
+                LinearLayout.LayoutParams(dp(180), dp(180)).apply {
+                    gravity = Gravity.CENTER
+                    bottomMargin = dp(24)
+                }
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "overlay mascot missing, continuing without it", e)
         }
         root.addView(
             headline,

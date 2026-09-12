@@ -33,6 +33,18 @@ function copyResFiles(projectRoot) {
   fs.mkdirSync(path.dirname(xmlDest), { recursive: true });
   fs.copyFileSync(path.join(RES_SRC, "xml/accessibility_service_config.xml"), xmlDest);
 
+  // drawable-nodpi/overlay art (e.g. stayt_owl_blocked.png for the overlay)
+  const drawableSrc = path.join(RES_SRC, "drawable-nodpi");
+  if (fs.existsSync(drawableSrc)) {
+    const drawableDest = path.join(destRes, "drawable-nodpi");
+    fs.mkdirSync(drawableDest, { recursive: true });
+    for (const f of fs.readdirSync(drawableSrc)) {
+      if (f.endsWith(".png")) {
+        fs.copyFileSync(path.join(drawableSrc, f), path.join(drawableDest, f));
+      }
+    }
+  }
+
   // values/strings.xml — merge service description into existing
   const stringsDest = path.join(destRes, "values/strings.xml");
   const serviceDesc =
