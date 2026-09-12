@@ -35,23 +35,23 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Dedup: one block event fires BOTH the JS emit and the deep-link foreground
-// rung — without this guard a single block pushes two interstitials.
-let lastBlockedNavAt = 0;
-let lastBlockedPkg = '';
-function shouldNavigateBlocked(packageName: string): boolean {
-  const now = Date.now();
-  if (packageName === lastBlockedPkg && now - lastBlockedNavAt < 2000) return false;
-  lastBlockedPkg = packageName;
-  lastBlockedNavAt = now;
-  return true;
-}
-
 function AppNavigator() {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Welcome');
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
+
+  // Dedup: one block event arrives via BOTH the JS emit and the deep-link
+  // foreground rung (seconds apart when the overlay is read first). If this
+  // package's interstitial is already on top, never push a duplicate.
+  const isShowingBlocked = (packageName: string): boolean => {
+    if (!navigationRef.isReady()) return false;
+    const r = navigationRef.getCurrentRoute();
+    return (
+      r?.name === 'BlockedInterstitial' &&
+      (r.params as { packageName?: string } | undefined)?.packageName === packageName
+    );
+  };
 
   const [fontsLoaded, fontError] = useFonts({
     Anton: require('./assets/fonts/Anton-Regular.ttf'),
@@ -111,7 +111,7 @@ function AppNavigator() {
   useEffect(() => {
     const unsub = AppBlocker.onBlockedAttempt(async (event) => {
       try {
-        if (!shouldNavigateBlocked(event.packageName)) return;
+        if (isShowingBlocked(event.packageName)) return;
         const tasks = await store.getTasks();
         const task = tasks.find(
           t => t.packageName === event.packageName || t.blockedPackages?.includes(event.packageName),
@@ -141,7 +141,7 @@ function AppNavigator() {
       }
       const link = AppBlocker.parseBlockedDeepLink(url);
       if (!link || !navigationRef.isReady()) return;
-      if (!shouldNavigateBlocked(link.packageName)) return;
+      if (isShowingBlocked(link.packageName)) return;
       try {
         const tasks = await store.getTasks();
         const task = tasks.find(
