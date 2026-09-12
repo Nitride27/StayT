@@ -158,12 +158,13 @@ class StayTAccessibilityService : AccessibilityService() {
         if (now - last < BLOCK_COOLDOWN_MS) return
         lastBlockedAt[openedPackage] = now
 
-        // Package is blocked - perform global action to go HOME
+        // Package is blocked - bounce to HOME. If the bounce is denied or
+        // throttled, do NOT silently return: the overlay below swallows
+        // touches and becomes the enforcement surface instead.
         Log.d(TAG, "Blocked app: $openedPackage")
         if (!performGlobalAction(GLOBAL_ACTION_HOME)) {
-            Log.w(TAG, "performGlobalAction denied/throttled for $openedPackage")
+            Log.w(TAG, "performGlobalAction denied/throttled for $openedPackage - overlay will enforce")
             lastBlockedAt.remove(openedPackage)
-            return
         }
 
         // Resolve the display label once — shared by emit, notification, deep link.
