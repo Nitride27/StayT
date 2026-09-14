@@ -27,8 +27,12 @@ import java.util.Calendar
  *   setSchedules call reprograms from scratch (edits/disables take effect immediately).
  * - Alarms use AlarmManager.setAndAllowWhileIdle (INEXACT — deliberately avoids
  *   SCHEDULE_EXACT_ALARM permission friction; minute-level precision is fine for
- *   focus hours). One START + one STOP PendingIntent per enabled schedule
- *   (capped at MAX_SCHEDULES), recomputed on every push / alarm fire / boot.
+ *   focus hours). L5 Doze ceiling: in deep Doze, inexact alarms batch into
+ *   maintenance windows (~9 min apart), so a START/STOP can fire up to ~9 min
+ *   late — accepted for focus-hour boundaries, which is why exact alarms were
+ *   deliberately not requested. One START + one STOP PendingIntent per enabled
+ *   schedule (capped at MAX_SCHEDULES), recomputed on every push / alarm fire
+ *   / boot.
  * - Overnight windows (end <= start) mean "until end next day". end == start is
  *   treated as a full 24h window.
  * - No SYSTEM_ALERT_WINDOW, no exact alarms, no new dangerous permissions.

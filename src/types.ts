@@ -7,11 +7,15 @@ export interface Task {
   blockedPackages?: string[];
   /** True for first-launch seeds; presets never count toward the free task limit. */
   isPreset?: boolean;
+  /** P0-3 demo tasks are temp: deleted when their session completes. */
+  isDemo?: boolean;
   createdAt: number;
   lastUsed: number;
   useCount: number;
   isActive: boolean;
   streak: number;
+  /** Hardcore strict mode (Pro): no override or break escape on the interstitial. */
+  strict?: boolean;
 }
 
 /**
@@ -48,7 +52,11 @@ export interface BlockedAttempt {
   packageName: string;
   taskId: string;
   timestamp: number;
-  action: 'give_in' | 'override';
+  action: 'give_in' | 'override' | 'break';
+  /** Intention-break text (action 'break' only). */
+  intention?: string;
+  /** Intention-break length in minutes (action 'break' only). */
+  breakMinutes?: number;
 }
 
 export interface UserPreferences {

@@ -24,6 +24,8 @@ import { typography, spacing, radius, layout, colors, darkColors } from '../them
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { store } from '../storage/store';
+import { ensureDailyReminder } from '../notifications/reminders';
+import { useBlockSelfTest, resolveSelfTestApp } from '../blocktest/useBlockSelfTest';
 import { Platform } from 'react-native';
 
 type Props = {
@@ -65,6 +67,10 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const appState = useRef(AppState.currentState);
   const oemTip = getOEMTip();
+  // P0-2 self-test + N-2 inline notification prompt (each fires once).
+  const selfTest = useBlockSelfTest();
+  const [testApp, setTestApp] = useState({ packageName: '', appName: '' });
+  const notifAsked = useRef(false);
 
   // --- Animations ---
   const headerOpacity = useSharedValue(0);
@@ -112,15 +118,35 @@ export default function PermissionSetupScreen({ navigation }: Props) {
     return () => sub.remove();
   }, []);
 
-  // --- Auto-advance when accessibility is granted ---
+  // --- Auto-advance when accessibility is granted (paused for self-test) ---
   useEffect(() => {
-    if (accessibilityEnabled) {
-      const timer = setTimeout(() => {
-        markOnboarded().finally(() => navigation.navigate('TaskPicker'));
-      }, 1200);
-      return () => clearTimeout(timer);
+    if (!accessibilityEnabled) return;
+    // N-2: one inline notification ask on the way through onboarding.
+    // Default ON after grant (Settings holds the one-tap off).
+    if (!notifAsked.current) {
+      notifAsked.current = true;
+      AppBlocker.requestNotificationPermission()
+        .then(async granted => {
+          try {
+            const prefs = await store.getPreferences();
+            await store.savePreferences({ ...prefs, notificationsEnabled: granted });
+            if (granted) await ensureDailyReminder().catch(() => {});
+          } catch {
+            // Best-effort.
+          }
+        })
+        .catch(() => {});
     }
-  }, [accessibilityEnabled, navigation]);
+    // P0-2: a running test owns the screen; success advances, timeout/error
+    // wait for the manual continue so nobody is trapped or skipped.
+    if (selfTest.state === 'waiting') return;
+    if (selfTest.state === 'timeout' || selfTest.state === 'error') return;
+    const delay = selfTest.state === 'success' ? 800 : 1200;
+    const timer = setTimeout(() => {
+      markOnboarded().finally(() => navigation.navigate('TaskPicker'));
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [accessibilityEnabled, navigation, selfTest.state]);
 
   // --- Animated styles ---
   const headerAnimStyle = useAnimatedStyle(() => ({
@@ -161,6 +187,21 @@ export default function PermissionSetupScreen({ navigation }: Props) {
     } catch {
       Alert.alert('Error', 'Could not open accessibility settings.');
     }
+  };
+
+  // P0-2: block the first task's app, prove detection end-to-end.
+  // B2: refuses while a session is active — the test would hijack its blocks.
+  const handleStartSelfTest = async () => {
+    const app = await resolveSelfTestApp();
+    setTestApp(app);
+    const result = await selfTest.start(app.packageName);
+    if (result === 'session-active') {
+      Alert.alert('End your session first', 'Stop your current focus session before testing blocks.');
+    }
+  };
+
+  const handleSelfTestContinue = () => {
+    markOnboarded().finally(() => navigation.navigate('TaskPicker'));
   };
 
   const handlePressIn = () => {
@@ -241,15 +282,93 @@ export default function PermissionSetupScreen({ navigation }: Props) {
 
       {/* Bottom section */}
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
-        <AnimatedTouchable
-          style={styles.primaryButton}
-          activeOpacity={0.85}
-          onPress={handleGrantAccessibility}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-        >
-          <Text style={styles.primaryButtonText}>OPEN SETTINGS</Text>
-        </AnimatedTouchable>
+        {!accessibilityEnabled ? (
+          <AnimatedTouchable
+            style={styles.primaryButton}
+            activeOpacity={0.85}
+            onPress={handleGrantAccessibility}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+          >
+            <Text style={styles.primaryButtonText}>OPEN SETTINGS</Text>
+          </AnimatedTouchable>
+        ) : (
+          <View style={[styles.testCard, { borderColor: ink }]}>
+            <Text style={[typography.bodyStrong, { color: ink, textAlign: 'center' }]}>
+              Permission granted
+            </Text>
+            {selfTest.state === 'idle' && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleStartSelfTest}
+                style={styles.primaryButton}
+              >
+                <Text style={styles.primaryButtonText}>TEST MY BLOCKS</Text>
+              </TouchableOpacity>
+            )}
+            {selfTest.state === 'waiting' && (
+              <>
+                <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
+                  {`Now open ${testApp.appName || 'the app'} — StayT should block it (${selfTest.remaining}s)`}
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={selfTest.cancel}
+                  style={styles.ghostButton}
+                >
+                  <Text style={[typography.button, { color: muted, textAlign: 'center' }]}>CANCEL TEST</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {selfTest.state === 'success' && (
+              <Text style={[typography.bodyStrong, { color: ink, textAlign: 'center', marginTop: spacing.sm }]}>
+                Blocks are working. Continuing…
+              </Text>
+            )}
+            {selfTest.state === 'timeout' && (
+              <>
+                <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
+                  No block detected in 60s. Open the app while a session is blocking it, then retry.
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={handleStartSelfTest}
+                  style={[styles.primaryButton, { marginTop: spacing.sm }]}
+                >
+                  <Text style={styles.primaryButtonText}>RETRY TEST</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleSelfTestContinue}
+                  style={styles.ghostButton}
+                >
+                  <Text style={[typography.button, { color: muted, textAlign: 'center' }]}>CONTINUE ANYWAY</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {selfTest.state === 'error' && (
+              <>
+                <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
+                  Could not start blocking. Check the permission and retry.
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={handleStartSelfTest}
+                  style={[styles.primaryButton, { marginTop: spacing.sm }]}
+                >
+                  <Text style={styles.primaryButtonText}>RETRY TEST</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleSelfTestContinue}
+                  style={styles.ghostButton}
+                >
+                  <Text style={[typography.button, { color: muted, textAlign: 'center' }]}>CONTINUE ANYWAY</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
       </Animated.View>
     </View>
   );
@@ -302,5 +421,17 @@ const styles = StyleSheet.create({
     ...typography.cta,
     color: colors.midnight,
     textAlign: 'center',
+  },
+  testCard: {
+    padding: spacing.lg,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    gap: spacing.sm,
+  },
+  ghostButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
 });

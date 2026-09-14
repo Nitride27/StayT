@@ -28,10 +28,42 @@ function copyKotlinFiles(projectRoot) {
 function copyResFiles(projectRoot) {
   const destRes = path.join(projectRoot, "android/app/src/main/res");
 
-  // xml/accessibility_service_config.xml
-  const xmlDest = path.join(destRes, "xml/accessibility_service_config.xml");
-  fs.mkdirSync(path.dirname(xmlDest), { recursive: true });
-  fs.copyFileSync(path.join(RES_SRC, "xml/accessibility_service_config.xml"), xmlDest);
+  // xml/*.xml — accessibility config + P2-1 widget provider info.
+  // Copied as a set so new xml resources need no per-file wiring.
+  const xmlSrc = path.join(RES_SRC, "xml");
+  const xmlDest = path.join(destRes, "xml");
+  fs.mkdirSync(xmlDest, { recursive: true });
+  if (fs.existsSync(xmlSrc)) {
+    for (const f of fs.readdirSync(xmlSrc)) {
+      if (f.endsWith(".xml")) {
+        fs.copyFileSync(path.join(xmlSrc, f), path.join(xmlDest, f));
+      }
+    }
+  }
+
+  // layout/*.xml — P2-1 widget layout.
+  const layoutSrc = path.join(RES_SRC, "layout");
+  if (fs.existsSync(layoutSrc)) {
+    const layoutDest = path.join(destRes, "layout");
+    fs.mkdirSync(layoutDest, { recursive: true });
+    for (const f of fs.readdirSync(layoutSrc)) {
+      if (f.endsWith(".xml")) {
+        fs.copyFileSync(path.join(layoutSrc, f), path.join(layoutDest, f));
+      }
+    }
+  }
+
+  // drawable/*.xml — vector icons (P2-2 tile icon). PNG overlay art below.
+  const drawableXmlSrc = path.join(RES_SRC, "drawable");
+  if (fs.existsSync(drawableXmlSrc)) {
+    const drawableDest = path.join(destRes, "drawable");
+    fs.mkdirSync(drawableDest, { recursive: true });
+    for (const f of fs.readdirSync(drawableXmlSrc)) {
+      if (f.endsWith(".xml")) {
+        fs.copyFileSync(path.join(drawableXmlSrc, f), path.join(drawableDest, f));
+      }
+    }
+  }
 
   // drawable-nodpi/overlay art (e.g. stayt_owl_blocked.png for the overlay)
   const drawableSrc = path.join(RES_SRC, "drawable-nodpi");
@@ -185,8 +217,69 @@ function withBlocker(config) {
       };
       ensureReceiver("ScheduleBootReceiver", [
         "android.intent.action.BOOT_COMPLETED",
+        // L4: app updates kill alarms like reboots do — re-arm there too.
+        "android.intent.action.MY_PACKAGE_REPLACED",
       ]);
       ensureReceiver("ScheduleAlarmReceiver", []);
+      // P2-1 widget: update receiver (APPWIDGET_UPDATE + provider info) and
+      // the dateless midnight rollover receiver (explicit alarms only).
+      ensureReceiver("WidgetMidnightReceiver", []);
+      const widgetAlready = app.receiver.some((r) =>
+        r.$?.["android:name"]?.includes("StayTWidgetProvider")
+      );
+      if (!widgetAlready) {
+        app.receiver.push({
+          $: {
+            "android:name": "com.nitridee.staytapp.blocker.StayTWidgetProvider",
+            "android:exported": "false",
+          },
+          "intent-filter": [
+            { action: [{ $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } }] },
+          ],
+          "meta-data": [
+            {
+              $: {
+                "android:name": "android.appwidget.provider",
+                "android:resource": "@xml/stayt_widget_info",
+              },
+            },
+          ],
+        });
+      }
+    }
+    return cfg;
+  });
+
+  // P2-2 QS tile (PRO): TileService declaration. Idempotent.
+  config = withAndroidManifest(config, (cfg) => {
+    const app = cfg.modResults.manifest.application?.[0];
+    if (app) {
+      if (!app.service) app.service = [];
+      const already = app.service.some((s) =>
+        s.$?.["android:name"]?.includes("StayTTileService")
+      );
+      if (!already) {
+        app.service.push({
+          $: {
+            "android:name": "com.nitridee.staytapp.blocker.StayTTileService",
+            "android:permission": "android.permission.BIND_QUICK_SETTINGS_TILE",
+            "android:exported": "true",
+            "android:icon": "@drawable/ic_stayt_tile",
+            "android:label": "StayT",
+          },
+          "intent-filter": [
+            {
+              action: [
+                {
+                  $: {
+                    "android:name": "android.service.quicksettings.action.QS_TILE",
+                  },
+                },
+              ],
+            },
+          ],
+        });
+      }
     }
     return cfg;
   });

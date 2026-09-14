@@ -17,6 +17,8 @@ import { typography, spacing, radius, layout, colors, darkColors } from '../them
 import { mascotSource } from '../theme/mascot';
 import { SwitchArrowsIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
+import { syncWidgetNow } from '../widget/widgetSync';
+import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveSession'>;
@@ -71,6 +73,11 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   // so a gesture-back can't leave blocking on with no session.
   useEffect(() => {
     AppBlocker.startBlocking(blockedPackagesOf(task)).catch(() => {});
+    // P2-1: push today's totals + last-task packages to the widget mirror.
+    syncWidgetNow(task).catch(() => {});
+    // A daily nudge scheduled while the app was killed could fire mid-session
+    // — cancel it on mount; handleEndSession re-pairs it on the way out.
+    cancelDailyReminder().catch(() => {});
     return () => {
       AppBlocker.stopBlocking().catch(() => {});
     };
@@ -79,9 +86,16 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const handleEndSession = async () => {
     try {
       await store.saveSession({ ...session, status: 'completed', endedAt: Date.now(), duration: Date.now() - session.startedAt });
+      // P0-3 demo tasks are temp: remove when their session completes.
+      if (task.isDemo === true) {
+        await store.deleteTask(task.id).catch(() => {});
+      }
     } finally {
       // Blocking must release even if the save failed — never trap the user.
       await AppBlocker.stopBlocking().catch(() => {});
+      // P2-1 totals changed; N-2 copy may now be stale — refresh both.
+      await syncWidgetNow(task).catch(() => {});
+      await ensureDailyReminder().catch(() => {});
       navigation.navigate('TaskPicker');
     }
   };
@@ -122,6 +136,11 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         <Text style={[typography.display, { color: ink, textAlign: 'center', marginTop: spacing.lg }]}>
           {task.name.toUpperCase()}
         </Text>
+        {task.strict === true && (
+          <View style={styles.strictBadge} accessibilityRole="text" accessibilityLabel="Strict mode on">
+            <Text style={[typography.label, { color: colors.midnight }]}>STRICT</Text>
+          </View>
+        )}
       </Animated.View>
 
       <Animated.View style={[styles.timerArea, timerAnimStyle]}>
@@ -170,6 +189,15 @@ const styles = StyleSheet.create({
   mascotImage: {
     width: 220,
     height: 220,
+  },
+  strictBadge: {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ectoGreenDark,
   },
   timerArea: {
     flex: 1,

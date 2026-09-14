@@ -3,7 +3,6 @@ package com.nitridee.staytapp.blocker
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import java.io.ByteArrayOutputStream
@@ -21,6 +20,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
 
     companion object {
         private const val TAG = "StayTAppBlocker"
+        @Volatile
         private var instance: AppBlockerModule? = null
 
         fun emitBlockedAttempt(packageName: String, timestamp: Long, appLabel: String) {
@@ -37,13 +37,8 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun isAccessibilityServiceEnabled(promise: Promise) {
         try {
-            val enabledServices = Settings.Secure.getString(
-                reactApplicationContext.contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: ""
-
-            val componentName = "${reactApplicationContext.packageName}/com.nitridee.staytapp.blocker.StayTAccessibilityService"
-            promise.resolve(enabledServices.contains(componentName))
+            // M4: shared seam — same Settings.Secure logic the tile uses.
+            promise.resolve(StayTAccessibilityService.isServiceEnabled(reactApplicationContext))
         } catch (e: Exception) {
             Log.e(TAG, "isAccessibilityServiceEnabled failed", e)
             promise.reject("ACCESSIBILITY_CHECK_FAILED", e.message, e)
@@ -154,11 +149,66 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * P2-1 widget prefs mirror push (JS: syncWidgetNow on session start/end,
+     * override consume, and Pro grant). Persists the snapshot the widget/tile
+     * read with the app dead, (re)programs the midnight rollover, and
+     * refreshes the widget. Skips malformed items; rejects only on total
+     * failure; never throws.
+     */
+    @ReactMethod
+    fun syncWidgetData(
+        todayFocusMin: Double,
+        streak: Double,
+        subscribed: Boolean,
+        lastPackages: ReadableArray?,
+        sessionActive: Boolean,
+        strictActive: Boolean,
+        promise: Promise
+    ) {
+        try {
+            val pkgs = mutableListOf<String>()
+            try {
+                if (lastPackages != null) {
+                    for (i in 0 until lastPackages.size()) {
+                        try {
+                            val p = lastPackages.getString(i)
+                            if (!p.isNullOrBlank()) pkgs.add(p)
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            WidgetData.save(
+                reactApplicationContext,
+                todayFocusMin.toInt(),
+                streak.toInt(),
+                subscribed,
+                pkgs,
+                sessionActive,
+                strictActive
+            )
+            WidgetData.programMidnightAlarm(reactApplicationContext)
+            try {
+                StayTWidgetProvider.refreshAll(reactApplicationContext)
+            } catch (e: Exception) {
+                Log.w(TAG, "widget refresh failed", e)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "syncWidgetData failed", e)
+            try {
+                promise.reject("SYNC_WIDGET_FAILED", e.message, e)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     @ReactMethod
     fun addListener(eventName: String) {
         // Required for NativeEventEmitter
     }
-
     @ReactMethod
     fun removeListeners(count: Int) {
         // Required for NativeEventEmitter

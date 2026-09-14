@@ -18,6 +18,12 @@ export const KEY_LABEL = 'label';
 
 export const TASKS_DEEP_LINK = `${BLOCKED_SCHEME}://${TASKS_PATH}`;
 
+/** Paywall route for the QS-tile locked state (P2-2): exp+stayt-app://paywall.
+ * Kotlin single source: StayTAccessibilityService.PAYWALL_DEEP_LINK — the tile
+ * references that const; keep the two strings identical. */
+export const PAYWALL_PATH = 'paywall';
+export const PAYWALL_DEEP_LINK = `${BLOCKED_SCHEME}://${PAYWALL_PATH}`;
+
 /** Android package names: dot-separated identifiers, capped for sanity. */
 export const PACKAGE_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/;
 export const MAX_PACKAGE_LEN = 256;
@@ -58,4 +64,8 @@ export function parseBlockedDeepLink(url: string): BlockedDeepLink | null {
 
 export function isTasksDeepLink(url: string): boolean {
   return url === TASKS_DEEP_LINK || url.startsWith(`${BLOCKED_SCHEME}://${TASKS_PATH}?`);
+}
+
+export function isPaywallDeepLink(url: string): boolean {
+  return url === PAYWALL_DEEP_LINK || url.startsWith(`${BLOCKED_SCHEME}://${PAYWALL_PATH}?`);
 }

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- P2-1 home-screen widget layout (FREE). Static black card: today's focus
+     total (Anton-scale headline) + streak line. Filled from WidgetData. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#000000"
+    android:padding="12dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="STAYT"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:textColor="#58CC02" />
+
+    <TextView
+        android:id="@+id/widget_focus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="0m"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF" />
+
+    <TextView
+        android:id="@+id/widget_streak"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Start your streak"
+        android:textSize="12sp"
+        android:textColor="#58CC02" />
+</LinearLayout>

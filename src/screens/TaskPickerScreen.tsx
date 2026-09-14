@@ -103,7 +103,8 @@ export default function TaskPickerScreen({ navigation }: Props) {
       const currentStreak = await store.getStreak();
       setStreak(currentStreak);
       const prefs = await store.getPreferences();
-      const userTasks = allTasks.filter(t => !t.isPreset).length;
+      // M6: presets never counted; demo tasks are temp and never counted either.
+      const userTasks = allTasks.filter(t => !t.isPreset && !t.isDemo).length;
       setShowPaywall(prefs.isSubscribed !== true && userTasks >= FREE_TASK_LIMIT);
     } catch {
       setTasks([]);

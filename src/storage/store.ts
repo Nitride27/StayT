@@ -181,6 +181,25 @@ export const store = {
     });
   },
 
+  /**
+   * M1 stats fix: each block must yield exactly one record. The entry path
+   * logs a 'give_in'; an override/break for the same package replaces it —
+   * delete the most recent unmatched 'give_in' for that package so resists
+   * (action != 'override') stay exact. Best-effort; never throws.
+   */
+  async deleteLatestGiveIn(packageName: string): Promise<void> {
+    return serialized(BLOCKED_ATTEMPTS_KEY, async () => {
+      const attempts = await this.getBlockedAttempts();
+      for (let i = attempts.length - 1; i >= 0; i--) {
+        if (attempts[i].packageName === packageName && attempts[i].action === 'give_in') {
+          attempts.splice(i, 1);
+          break;
+        }
+      }
+      await AsyncStorage.setItem(BLOCKED_ATTEMPTS_KEY, JSON.stringify(attempts.slice(-1000)));
+    });
+  },
+
   // Focus schedules (Pro)
   async getSchedules(): Promise<FocusSchedule[]> {
     const data = await AsyncStorage.getItem(SCHEDULES_KEY);
@@ -276,5 +295,91 @@ export const store = {
     }
     
     return streak;
+  },
+
+  /**
+   * P0-1 time-reclaimed stats. Focus = completed session durations inside the
+   * window. Resists = BlockedAttempts with action != 'override' (returning to
+   * task, including intention breaks) inside the window, each credited with a
+   * labelled 7-minute estimate. Callers must surface the estimate as such.
+   */
+  async getTimeReclaimed(days: number): Promise<{
+    focusMs: number;
+    resistCount: number;
+    estimatedMs: number;
+    totalMs: number;
+  }> {
+    const windowStart = Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1000;
+    const [sessions, attempts] = await Promise.all([
+      this.getSessions(),
+      this.getBlockedAttempts(),
+    ]);
+    let focusMs = 0;
+    for (const s of sessions) {
+      if (s.status === 'completed' && s.startedAt >= windowStart && (s.duration || 0) > 0) {
+        focusMs += s.duration as number;
+      }
+    }
+    const resistCount = attempts.filter(
+      a => a.timestamp >= windowStart && a.action !== 'override',
+    ).length;
+    const estimatedMs = resistCount * 7 * 60 * 1000;
+    return { focusMs, resistCount, estimatedMs, totalMs: focusMs + estimatedMs };
+  },
+
+  /**
+   * P1-2 escalating friction. Override wait grows with today's consumption:
+   * 0 used -> instant, 1 used -> 30s, 2 used -> 90s. Exhausted (3) is handled
+   * by the existing tryConsumeOverride cap; this returns 0 there.
+   */
+  async getOverrideWaitSeconds(): Promise<number> {
+    const used = await this.getOverridesUsedToday();
+    if (used <= 0) return 0;
+    if (used === 1) return 30;
+    if (used === 2) return 90;
+    return 0;
+  },
+
+  /** Count of resisted attempts ever (action != 'override'). */
+  async getResistCount(): Promise<number> {
+    const attempts = await this.getBlockedAttempts();
+    return attempts.filter(a => a.action !== 'override').length;
+  },
+
+  /** Total completed focus time ever, in milliseconds. */
+  async getTotalFocusMs(): Promise<number> {
+    const sessions = await this.getSessions();
+    return sessions.reduce(
+      (sum, s) => sum + (s.status === 'completed' && (s.duration || 0) > 0 ? (s.duration as number) : 0),
+      0,
+    );
+  },
+
+  /**
+   * P1-4 milestone share cards. Progress/earned derive from store totals only:
+   * focus hours (completed sessions), day streak (existing getStreak rule),
+   * resists (action != 'override'). No new deps; image cards are a follow-up
+   * (needs react-native-view-shot — intentionally NOT installed).
+   */
+  async getMilestones(): Promise<
+    { id: string; label: string; progress: number; target: number; earned: boolean }[]
+  > {
+    const [focusMs, streak, resists] = await Promise.all([
+      this.getTotalFocusMs(),
+      this.getStreak(),
+      this.getResistCount(),
+    ]);
+    const focusHours = focusMs / 3_600_000;
+    const defs = [
+      { id: 'focus-10', label: '10 focus hours', progress: focusHours, target: 10 },
+      { id: 'focus-100', label: '100 focus hours', progress: focusHours, target: 100 },
+      { id: 'focus-500', label: '500 focus hours', progress: focusHours, target: 500 },
+      { id: 'streak-7', label: '7-day streak', progress: streak, target: 7 },
+      { id: 'streak-30', label: '30-day streak', progress: streak, target: 30 },
+      { id: 'streak-100', label: '100-day streak', progress: streak, target: 100 },
+      { id: 'resist-100', label: '100 resists', progress: resists, target: 100 },
+      { id: 'resist-1000', label: '1000 resists', progress: resists, target: 1000 },
+    ];
+    return defs.map(d => ({ ...d, earned: d.progress >= d.target }));
   },
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, FlatList, ScrollView, Share } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -32,6 +32,12 @@ function formatMs(ms: number): string {
   const mins = totalMin % 60;
   if (hrs > 0) return `${hrs}h ${mins}m`;
   return `${mins}m`;
+}
+
+/** P0-1 hero format: "Xh Ym" reclaimed. */
+function formatReclaimed(totalMs: number): string {
+  const totalMin = Math.floor(totalMs / 60000);
+  return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
 }
 
 function formatDate(ts: number): string {
@@ -89,6 +95,10 @@ export default function HistoryScreen({ navigation }: Props) {
   const [streak, setStreak] = useState(0);
   const [attempts, setAttempts] = useState<BlockedAttempt[]>([]);
   const [appLabels, setAppLabels] = useState<Record<string, string>>({});
+  const [reclaimed, setReclaimed] = useState({ focusMs: 0, resistCount: 0, estimatedMs: 0, totalMs: 0 });
+  const [milestones, setMilestones] = useState<
+    { id: string; label: string; progress: number; target: number; earned: boolean }[]
+  >([]);
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -135,6 +145,16 @@ export default function HistoryScreen({ navigation }: Props) {
       setAttempts([]);
     }
     try {
+      setReclaimed(await store.getTimeReclaimed(7));
+    } catch {
+      setReclaimed({ focusMs: 0, resistCount: 0, estimatedMs: 0, totalMs: 0 });
+    }
+    try {
+      setMilestones(await store.getMilestones());
+    } catch {
+      setMilestones([]);
+    }
+    try {
       const apps = await AppBlocker.getInstalledApps();
       const map: Record<string, string> = {};
       for (const a of apps) map[a.packageName] = a.appName;
@@ -155,8 +175,7 @@ export default function HistoryScreen({ navigation }: Props) {
   // Advanced stats (all users, read-only, computed inline).
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
   const nowTs = Date.now();
-  const recentSessions = sessions.filter(s => s.startedAt >= nowTs - SEVEN_DAYS_MS && (s.duration || 0) > 0);
-  const weeklyTotalMin = Math.floor(recentSessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000);
+  const recentSessions = sessions.filter(s => s.startedAt >= nowTs - SEVEN_DAYS_MS && (s.duration || 0) > 0);  const weeklyTotalMin = Math.floor(recentSessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000);
   const recentDayMinutes = [0, 0, 0, 0, 0, 0, 0];
   for (const s of recentSessions) {
     recentDayMinutes[(new Date(s.startedAt).getDay() + 6) % 7] += (s.duration || 0) / 60000;
@@ -169,6 +188,34 @@ export default function HistoryScreen({ navigation }: Props) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
   const rankMax = Math.max(1, ...ranking.map(r => r.count));
+
+  // P1-3: intention breaks render distinctly from plain attempts.
+  const breaks = attempts
+    .filter(a => a.action === 'break')
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 10);
+
+  // P0-1 text share (built-in Share only, no new deps).
+  const handleShareReclaimed = async () => {
+    try {
+      await Share.share({
+        message: `I reclaimed ${formatReclaimed(reclaimed.totalMs)} this week with StayT — ${reclaimed.resistCount} distractions resisted (est.). Small steps build big progress.`,
+      });
+    } catch {
+      // Share sheet is best-effort.
+    }
+  };
+
+  // P1-4 earned milestone -> built-in text share.
+  const handleShareMilestone = async (label: string, progress: number) => {
+    try {
+      await Share.share({
+        message: `I earned "${label}" on StayT. Small steps build big progress.`,
+      });
+    } catch {
+      // Share sheet is best-effort.
+    }
+  };
 
   const headerAnimStyle = useAnimatedStyle(() => ({
     opacity: headerOpacity.value,
@@ -263,6 +310,59 @@ export default function HistoryScreen({ navigation }: Props) {
               </View>
             </Animated.View>
 
+            {/* P0-1 time-reclaimed hero: focus + labelled resist estimates. */}
+            <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
+              <Text style={[typography.display, { color: streakGreen, textAlign: 'center' }]}>
+                {formatReclaimed(reclaimed.totalMs).toUpperCase()}
+              </Text>
+              <Text style={[typography.label, { color: muted, textAlign: 'center', marginTop: spacing.xs }]}>
+                RECLAIMED THIS WEEK
+              </Text>
+              <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
+                {`${formatMs(reclaimed.focusMs)} in focus + ${reclaimed.resistCount} resists (est. 7 min each)`}
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleShareReclaimed}
+                style={styles.shareButton}
+              >
+                <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+                  SHARE
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* P1-4 milestone row: earned taps share, locked show progress. */}
+            {milestones.length > 0 && (
+              <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
+                <Text style={[typography.h3, { color: ink }]}>MILESTONES</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mileRow}>
+                  {milestones.map(m => (
+                    <TouchableOpacity
+                      key={m.id}
+                      activeOpacity={m.earned ? 0.7 : 1}
+                      disabled={!m.earned}
+                      onPress={() => handleShareMilestone(m.label, m.progress)}
+                      style={[
+                        styles.mileChip,
+                        { borderColor: border },
+                        m.earned && styles.mileChipEarned,
+                      ]}
+                      accessibilityRole={m.earned ? 'button' : 'text'}
+                      accessibilityLabel={m.earned ? `${m.label} earned. Share.` : `${m.label}, ${Math.floor(m.progress)} of ${m.target}`}
+                    >
+                      <Text style={[typography.bodyMedium, { color: m.earned ? colors.midnight : ink, textAlign: 'center' }]} numberOfLines={2}>
+                        {m.label.toUpperCase()}
+                      </Text>
+                      <Text style={[typography.caption, { color: m.earned ? colors.midnight : muted, textAlign: 'center', marginTop: 2 }]}>
+                        {m.earned ? 'EARNED — TAP TO SHARE' : `${Math.floor(m.progress)}/${m.target}`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </Animated.View>
+            )}
+
             <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
               <Text style={[typography.h3, { color: ink }]}>MOST BLOCKING YOU</Text>
               {ranking.length === 0 ? (
@@ -294,6 +394,25 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.label, { color: muted }]}>
                   PAST SESSIONS
                 </Text>
+              </Animated.View>
+            )}
+
+            {/* P1-3 intention breaks: distinct section, latest first. */}
+            {breaks.length > 0 && (
+              <Animated.View style={[styles.statCard, listAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
+                <Text style={[typography.h3, { color: ink }]}>INTENTION BREAKS</Text>
+                {breaks.map(b => (
+                  <View key={b.id} style={styles.breakRow}>
+                    <View style={styles.breakMain}>
+                      <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={2}>
+                        {b.intention ? `“${b.intention}”` : 'Intention break'}
+                      </Text>
+                      <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                        {`${appLabels[b.packageName] ?? b.packageName} · ${b.breakMinutes ?? 5} min · ${formatDate(b.timestamp)}`}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
               </Animated.View>
             )}
           </>
@@ -415,6 +534,41 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.ectoGreen,
+  },
+  shareButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 14,
+    marginTop: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  mileRow: {
+    gap: spacing.md,
+    paddingTop: spacing.md,
+  },
+  mileChip: {
+    width: 148,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    justifyContent: 'center',
+    minHeight: 88,
+  },
+  mileChipEarned: {
+    backgroundColor: colors.ectoGreen,
+    borderColor: colors.ectoGreenDark,
+  },
+  breakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  breakMain: {
+    flex: 1,
   },
   listLabelWrap: {
     marginBottom: spacing.sm,

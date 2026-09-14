@@ -3,12 +3,14 @@ import * as Notifications from 'expo-notifications';
 import {
   parseBlockedDeepLink as parseLink,
   isTasksDeepLink as isTasksLink,
+  isPaywallDeepLink as isPaywallLink,
   TASKS_DEEP_LINK,
+  PAYWALL_DEEP_LINK,
   type BlockedDeepLink,
 } from './blockedContract';
 
 export type { BlockedDeepLink };
-export { TASKS_DEEP_LINK };
+export { TASKS_DEEP_LINK, PAYWALL_DEEP_LINK };
 
 const { AppBlocker } = NativeModules;
 
@@ -122,6 +124,43 @@ class AppBlockerBridge {
    */
   isTasksDeepLink(url: string): boolean {
     return isTasksLink(url);
+  }
+
+  /** P2-2: QS-tile locked state routes here (App.tsx navigates to Paywall). */
+  isPaywallDeepLink(url: string): boolean {
+    return isPaywallLink(url);
+  }
+
+  /**
+   * P2-1 widget prefs mirror. Writes {date, todayFocusMin, streak,
+   * subscribed, lastPackages, sessionActive, strictActive} to the
+   * SharedPreferences file the home-screen widget reads directly (widgets
+   * must work with the app dead). Best-effort: resolves false when native
+   * is absent; never throws.
+   */
+  async syncWidgetData(data: {
+    todayFocusMin: number;
+    streak: number;
+    subscribed: boolean;
+    lastPackages: string[];
+    sessionActive: boolean;
+    strictActive: boolean;
+  }): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker) {
+      return false;
+    }
+    try {
+      return await AppBlocker.syncWidgetData(
+        data.todayFocusMin,
+        data.streak,
+        data.subscribed,
+        data.lastPackages,
+        data.sessionActive,
+        data.strictActive,
+      );
+    } catch {
+      return false;
+    }
   }
 
   onBlockedAttempt(callback: (event: BlockedAttemptEvent) => void): () => void {

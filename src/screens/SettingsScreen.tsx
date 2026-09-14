@@ -26,6 +26,8 @@ import { typography, spacing, radius, layout, colors, darkColors } from '../them
 import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon } from '../components/icons';
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
+import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
+import { useBlockSelfTest, resolveSelfTestApp } from '../blocktest/useBlockSelfTest';
 import appConfig from '../../app.json';
 
 const appVersion: string = appConfig.expo.version;
@@ -84,6 +86,11 @@ export default function SettingsScreen({ navigation }: Props) {
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [versionTaps, setVersionTaps] = useState(0);
+  // N-1: actual OS permission state (may disagree with the pref toggle).
+  const [osNotifGranted, setOsNotifGranted] = useState(true);
+  // P0-2 self-test state machine (blocking auto-releases on every path).
+  const selfTest = useBlockSelfTest();
+  const [testApp, setTestApp] = useState({ packageName: '', appName: '' });
 
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(20);
@@ -105,6 +112,12 @@ export default function SettingsScreen({ navigation }: Props) {
       setIsSubscribed(prefs.isSubscribed === true);
     } catch {
       // Keep defaults; settings must never trap on a storage error.
+    }
+    // N-1: surface the real OS state alongside the pref toggle.
+    try {
+      setOsNotifGranted(await AppBlocker.isNotificationPermissionGranted());
+    } catch {
+      // Keep previous value on error.
     }
   };
 
@@ -134,13 +147,33 @@ export default function SettingsScreen({ navigation }: Props) {
     if (value) {
       // Android never re-prompts once denied — send the user to system settings.
       const granted = await AppBlocker.isNotificationPermissionGranted().catch(() => false);
-      if (!granted) Linking.openSettings().catch(() => {});
+      setOsNotifGranted(granted);
+      if (!granted) {
+        Linking.openSettings().catch(() => {});
+      } else {
+        // N-2: toggle ON (re)pairs the single daily nudge.
+        await ensureDailyReminder().catch(() => {});
+      }
+    } else {
+      // N-2: one-tap off cancels the scheduled nudge.
+      await cancelDailyReminder().catch(() => {});
     }
   };
 
   const handleHaptics = async (value: boolean) => {
     setHapticsEnabled(value);
     await savePrefs({ hapticFeedback: value });
+  };
+
+  // P0-2 self-test: block the first task's app, prove detection end-to-end.
+  // B2: refuses while a session is active — the test would hijack its blocks.
+  const handleStartSelfTest = async () => {
+    const app = await resolveSelfTestApp();
+    setTestApp(app);
+    const result = await selfTest.start(app.packageName);
+    if (result === 'session-active') {
+      Alert.alert('End your session first', 'Stop your current focus session before testing blocks.');
+    }
   };
 
   const handleResetOnboarding = () => {
@@ -239,7 +272,15 @@ export default function SettingsScreen({ navigation }: Props) {
           {/* Feedback */}
           <SectionHeader label="FEEDBACK" color={theme.inkSecondary} glyph={<BoltIcon size={16} color={colors.midnight} />} />
           <View style={[styles.rowBox, styles.rowSplit, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <Text style={[typography.bodyStrong, { color: ink }]}>Notifications</Text>
+            <View style={styles.rowText}>
+              <Text style={[typography.bodyStrong, { color: ink }]}>Notifications</Text>
+              {/* N-1: say plainly when the OS disagrees with the toggle. */}
+              {notificationsEnabled && !osNotifGranted && (
+                <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.xs }]}>
+                  System notifications are off — turn the toggle on again to open system settings.
+                </Text>
+              )}
+            </View>
             <Switch
               value={notificationsEnabled}
               onValueChange={handleNotifications}
@@ -280,6 +321,60 @@ export default function SettingsScreen({ navigation }: Props) {
 
           {/* About — static text only */}
           <SectionHeader label="SUPPORT" color={theme.inkSecondary} glyph={<BookIcon size={16} color={colors.midnight} />} />
+          {/* P0-2 self-test lives here so it is reachable after onboarding too. */}
+          <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Text style={[typography.bodyStrong, { color: ink }]}>Test my blocks</Text>
+            <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+              Blocks your first task app for 60 seconds to prove detection works.
+            </Text>
+            {selfTest.state === 'idle' && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleStartSelfTest}
+                style={styles.upgradeButton}
+              >
+                <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+                  START TEST
+                </Text>
+              </TouchableOpacity>
+            )}
+            {selfTest.state === 'waiting' && (
+              <>
+                <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                  {`Now open ${testApp.appName || 'the app'} — StayT should block it (${selfTest.remaining}s)`}
+                </Text>
+                <TouchableOpacity activeOpacity={0.7} onPress={selfTest.cancel} style={styles.ghostButton}>
+                  <Text style={[typography.button, { color: theme.inkSecondary, textAlign: 'center' }]}>CANCEL TEST</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {selfTest.state === 'success' && (
+              <>
+                <Text style={[typography.bodyStrong, { color: ink }]}>Blocks are working.</Text>
+                <TouchableOpacity activeOpacity={0.7} onPress={selfTest.cancel} style={styles.ghostButton}>
+                  <Text style={[typography.button, { color: theme.inkSecondary, textAlign: 'center' }]}>DISMISS</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {(selfTest.state === 'timeout' || selfTest.state === 'error') && (
+              <>
+                <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                  {selfTest.state === 'timeout'
+                    ? 'No block detected in 60s. Open the app while it is blocked, then retry.'
+                    : 'Could not start blocking. Check the permission and retry.'}
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={handleStartSelfTest}
+                  style={styles.upgradeButton}
+                >
+                  <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+                    RETRY TEST
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
           <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
             <Text style={[typography.bodyStrong, { color: ink }]}>StayT</Text>
             <TouchableOpacity
@@ -367,6 +462,16 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
     marginBottom: spacing.md,
+  },
+  rowText: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  ghostButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   dangerBox: {
     borderColor: colors.danger,

@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 
@@ -99,16 +98,8 @@ class ScheduleAlarmReceiver : BroadcastReceiver() {
                     return
                 }
             }
-            if (Build.VERSION.SDK_INT >= 33) {
-                try {
-                    if (context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") !=
-                        PackageManager.PERMISSION_GRANTED
-                    ) return
-                } catch (e: Exception) {
-                    Log.w(TAG, "permission check failed", e)
-                    return
-                }
-            }
+            // Native-M3: one seam with the blocked notification below.
+            if (!StayTAccessibilityService.canPostNotifications(context)) return
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(context, BLOCK_CHANNEL_ID)
             } else {

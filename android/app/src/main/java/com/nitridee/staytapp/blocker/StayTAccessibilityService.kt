@@ -6,7 +6,9 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -15,6 +17,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -44,6 +47,10 @@ class StayTAccessibilityService : AccessibilityService() {
         private const val KEY_PACKAGE = "packageName"
         private const val KEY_LABEL = "label"
         private const val TASKS_DEEP_LINK = "$BLOCKED_SCHEME://$TASKS_PATH"
+        // Single Kotlin source for the paywall deep link (JS mirror:
+        // src/native/blockedContract.ts PAYWALL_DEEP_LINK — keep in lockstep).
+        // The QS tile references this const; do not hardcode the URI elsewhere.
+        const val PAYWALL_DEEP_LINK = "$BLOCKED_SCHEME://paywall"
 
         private fun blockedDeepLink(openedPackage: String, appLabel: String) =
             Uri.parse(
@@ -59,18 +66,80 @@ class StayTAccessibilityService : AccessibilityService() {
         private var isBlocking = false
         private val blockedPackages: MutableSet<String> = ConcurrentHashMap.newKeySet()
         private val lastBlockedAt: MutableMap<String, Long> = ConcurrentHashMap()
+        // N-1: posted block-notification IDs so stop/pause/destroy can cancel
+        // them — no duplicates (same-package re-notify reuses its ID) and no
+        // orphans lingering after blocking ends.
+        private val postedNotificationIds: MutableSet<Int> = ConcurrentHashMap.newKeySet()
         private val handler = Handler(Looper.getMainLooper())
+        @Volatile
         private var pauseRunnable: Runnable? = null
+
+        // Native-M1 durable blocking intent: statics die with the process, so
+        // the desired state survives in prefs and is re-armed on connect.
+        private const val STATE_PREFS = "stayt_blocking_state"
+        private const val STATE_KEY_BLOCKING = "blocking"
+        private const val STATE_KEY_PKGS = "pkgs"
+        private const val STATE_KEY_AT = "at"
+
+        /** M4: shared Settings.Secure check — bridge + tile use this one seam. */
+        fun isServiceEnabled(context: Context): Boolean {
+            try {
+                val enabled = Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ) ?: ""
+                val component =
+                    "${context.packageName}/com.nitridee.staytapp.blocker.StayTAccessibilityService"
+                return enabled.contains(component)
+            } catch (e: Exception) {
+                Log.w(TAG, "isServiceEnabled failed", e)
+                return false
+            }
+        }
+
+        /** Native-M3: single POST_NOTIFICATIONS seam for every block-channel post. */
+        fun canPostNotifications(context: Context): Boolean {
+            try {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    return context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") ==
+                        PackageManager.PERMISSION_GRANTED
+                }
+                return true
+            } catch (e: Exception) {
+                Log.w(TAG, "canPostNotifications failed", e)
+                return false
+            }
+        }
+
+        /** P2-2 tile reads blocking state with the app dead. */
+        fun isBlockingNow(): Boolean = isBlocking
+
+        private fun persistDesiredState(context: Context?, blocking: Boolean, blocked: List<String>) {
+            try {
+                if (context == null) return
+                val clean = blocked.filter { it.isNotBlank() }.distinct()
+                context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(STATE_KEY_BLOCKING, blocking && clean.isNotEmpty())
+                    .putStringSet(STATE_KEY_PKGS, clean.toSet())
+                    .putLong(STATE_KEY_AT, System.currentTimeMillis())
+                    .apply()
+            } catch (e: Exception) {
+                Log.w(TAG, "persistDesiredState failed", e)
+            }
+        }
 
         fun setBlocking(blocking: Boolean, blocked: List<String> = emptyList()) {
             isBlocking = blocking
             blockedPackages.clear()
             blockedPackages.addAll(blocked)
+            persistDesiredState(instance, blocking, blocked)
             // A (re)start or stop invalidates a scheduled pause-resume —
             // otherwise ending a session mid-override re-enables blocking
             // later with no session (phantom blocks).
             pauseRunnable?.let { handler.removeCallbacks(it) }
             pauseRunnable = null
+            if (!blocking) cancelBlockNotifications()
             // A (re)start or stop invalidates any overlay from a previous session.
             try {
                 instance?.dismissBlockedOverlay()
@@ -82,6 +151,11 @@ class StayTAccessibilityService : AccessibilityService() {
         fun pauseBlocking(seconds: Long) {
             Log.d(TAG, "Pausing blocking for $seconds seconds")
             isBlocking = false
+            // Fail-closed: the durable intent keeps the last setBlocking(true),
+            // so a process death mid-break re-arms blocking on reconnect.
+            // The break/override tray note would lie ("tap to return") while
+            // the user is legitimately inside the app — drop it.
+            cancelBlockNotifications()
 
             // An override (native overlay button or JS interstitial) ends the
             // blocked context the overlay represents — drop it if still up.
@@ -100,6 +174,15 @@ class StayTAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Blocking resumed after pause")
             }
             handler.postDelayed(pauseRunnable!!, seconds * 1000)
+        }
+
+        /** N-1: cancel every posted block note we know about. Never throws. */
+        fun cancelBlockNotifications() {
+            try {
+                instance?.cancelAllBlockNotes()
+            } catch (e: Exception) {
+                Log.w(TAG, "cancelBlockNotifications failed", e)
+            }
         }
     }
 
@@ -121,6 +204,45 @@ class StayTAccessibilityService : AccessibilityService() {
                 NotificationManager.IMPORTANCE_HIGH
             )
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+        }
+
+        // N-1: a process death between post and cancel leaves a stale tray
+        // note; a fresh connect means no block is in flight, so clear it.
+        // Native-M2: tracked IDs are statics (lost on death), so also sweep
+        // the whole block channel for orphans the tracker no longer knows.
+        try {
+            cancelAllBlockNotes()
+        } catch (e: Exception) {
+            Log.w(TAG, "stale notification cleanup failed", e)
+        }
+        try {
+            cancelOrphanChannelNotes()
+        } catch (e: Exception) {
+            Log.w(TAG, "orphan channel sweep failed", e)
+        }
+
+        // Native-M1: statics reset on process death — re-arm the persisted
+        // desired-blocking so schedules/sessions survive reboot/restart, the
+        // way users expect. Leave off + log when nothing was persisted.
+        try {
+            val prefs = getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+            val wantBlocking = prefs.getBoolean(STATE_KEY_BLOCKING, false)
+            val pkgs = try {
+                prefs.getStringSet(STATE_KEY_PKGS, emptySet())?.filter { it.isNotBlank() }
+                    ?: emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (wantBlocking && pkgs.isNotEmpty()) {
+                isBlocking = true
+                blockedPackages.clear()
+                blockedPackages.addAll(pkgs)
+                Log.d(TAG, "re-armed blocking for ${pkgs.size} pkgs from durable intent")
+            } else {
+                Log.d(TAG, "no durable blocking intent; leaving blocking off")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "durable intent re-arm failed", e)
         }
 
         serviceInfo = serviceInfo.apply {
@@ -216,6 +338,9 @@ class StayTAccessibilityService : AccessibilityService() {
 
     private fun postBlockedNotification(openedPackage: String, appLabel: String) {
         try {
+            // Native-M3: one seam — silently skip when POST_NOTIFICATIONS
+            // (API 33+) is not granted; the overlay + HOME bounce remain.
+            if (!canPostNotifications(this)) return
             val deepLink = blockedDeepLink(openedPackage, appLabel)
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
@@ -241,8 +366,54 @@ class StayTAccessibilityService : AccessibilityService() {
                 .build()
             getSystemService(NotificationManager::class.java)
                 ?.notify(openedPackage.hashCode(), notification)
+            // N-1: track the ID so stop/pause/destroy/connect can cancel it.
+            postedNotificationIds.add(openedPackage.hashCode())
         } catch (e: Exception) {
             Log.w(TAG, "postBlockedNotification failed for $openedPackage", e)
+        }
+    }
+
+    /** Instance side of cancelBlockNotifications: cancel + forget. Idempotent. */
+    private fun cancelAllBlockNotes() {
+        try {
+            val nm = getSystemService(NotificationManager::class.java) ?: return
+            val ids = postedNotificationIds.toList()
+            postedNotificationIds.clear()
+            for (id in ids) {
+                try {
+                    nm.cancel(id)
+                } catch (_: Exception) {
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "cancelAllBlockNotes failed", e)
+        }
+    }
+
+    /**
+     * Native-M2: sweep tray notes on our block channel that the tracked-ID
+     * set no longer knows (statics are lost on process death). Active-
+     * notification reads need no permission; never throws.
+     */
+    private fun cancelOrphanChannelNotes() {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+            val nm = getSystemService(NotificationManager::class.java) ?: return
+            val active = try {
+                nm.activeNotifications
+            } catch (_: Exception) {
+                null
+            } ?: return
+            for (sb in active) {
+                try {
+                    if (sb.notification?.channelId == BLOCK_CHANNEL_ID) {
+                        nm.cancel(sb.id)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "cancelOrphanChannelNotes failed", e)
         }
     }
 
@@ -352,6 +523,9 @@ class StayTAccessibilityService : AccessibilityService() {
     /**
      * Remove the overlay if present and cancel its 30s timeout. Idempotent —
      * safe to call when no overlay is showing.
+     *
+     * L1: removeView is posted to [overlayHandler] (main looper) — callers on
+     * bridge/tile binder threads would otherwise risk CalledFromWrongThread.
      */
     private fun dismissBlockedOverlay() {
         try {
@@ -361,11 +535,18 @@ class StayTAccessibilityService : AccessibilityService() {
             overlayView = null
             overlayBlockedPackage = null
             if (view != null) {
-                try {
-                    (getSystemService(WINDOW_SERVICE) as? WindowManager)?.removeView(view)
-                    Log.d(TAG, "Overlay dismissed")
-                } catch (e: Exception) {
-                    Log.w(TAG, "removeView failed", e)
+                val remove = Runnable {
+                    try {
+                        (getSystemService(WINDOW_SERVICE) as? WindowManager)?.removeView(view)
+                        Log.d(TAG, "Overlay dismissed")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "removeView failed", e)
+                    }
+                }
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    remove.run()
+                } else {
+                    overlayHandler.post(remove)
                 }
             }
         } catch (e: Exception) {
@@ -509,6 +690,12 @@ class StayTAccessibilityService : AccessibilityService() {
             dismissBlockedOverlay()
         } catch (e: Exception) {
             Log.w(TAG, "overlay dismiss on destroy failed", e)
+        }
+        // N-1: never leave tray notes behind a dead service.
+        try {
+            cancelAllBlockNotes()
+        } catch (e: Exception) {
+            Log.w(TAG, "notification cancel on destroy failed", e)
         }
         instance = null
         isBlocking = false

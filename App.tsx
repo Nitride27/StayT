@@ -18,6 +18,11 @@ import { store } from './src/storage/store';
 import { Task, Session } from './src/types';
 import AppBlocker from './src/native/AppBlocker';
 import { decideEntry } from './src/navigation/blockedEntry';
+import {
+  ensureReminderHandler,
+  setupReminderGuard,
+  ensureDailyReminder,
+} from './src/notifications/reminders';
 import { colors } from './src/theme/tokens';
 
 SplashScreen.preventAutoHideAsync();
@@ -35,6 +40,24 @@ export type RootStackParamList = {
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+// M7: BAL-delayed re-entries (>1500ms late) would otherwise double-log one
+// block as two give_ins. Skip the log when the same package logged <5s ago;
+// the interstitial still shows.
+const lastLoggedAt = new Map<string, number>();
+function shouldLogGiveIn(packageName: string): boolean {
+  const now = Date.now();
+  const last = lastLoggedAt.get(packageName) ?? 0;
+  if (now - last < 5000) return false;
+  lastLoggedAt.set(packageName, now);
+  return true;
+}
+
+// M1: collision-proof record IDs — two blocks in the same millisecond must
+// never share an ID.
+function newBlockedId(): string {
+  return `blocked-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function AppNavigator() {
   const { isDark } = useTheme();
@@ -77,6 +100,8 @@ function AppNavigator() {
 
         // Reconcile zombie sessions left `active` by a process kill:
         // close them so History never renders phantom 0m rows.
+        // M6: a killed demo leaves an orphan isDemo task — with no session to
+        // own it after the reconcile, delete it so it never counts or lingers.
         try {
           const sessions = await store.getSessions();
           const now = Date.now();
@@ -84,6 +109,15 @@ function AppNavigator() {
             if (s.status === 'active') {
               const duration = Math.max(0, now - s.startedAt);
               await store.saveSession({ ...s, status: 'completed', endedAt: now, duration });
+            }
+          }
+          const settled = await store.getSessions();
+          if (!settled.some(s => s.status === 'active')) {
+            const tasks = await store.getTasks();
+            for (const t of tasks) {
+              if (t.isDemo === true) {
+                await store.deleteTask(t.id).catch(() => {});
+              }
             }
           }
         } catch {
@@ -121,6 +155,24 @@ function AppNavigator() {
         const task = tasks.find(
           t => t.packageName === event.packageName || t.blockedPackages?.includes(event.packageName),
         );
+        // P0-1/P1-4 stats need every block recorded: the attempt itself is a
+        // 'give_in'; a later override adds a separate 'override' record, so
+        // resists (action != 'override') stay exact. Best-effort, never crash.
+        // M1: the override/break path deletes this give_in, so each block
+        // yields exactly one record. M7: late re-entries skip the log.
+        try {
+          if (shouldLogGiveIn(event.packageName)) {
+            await store.saveBlockedAttempt({
+              id: newBlockedId(),
+              packageName: event.packageName,
+              taskId: task?.id ?? '',
+              timestamp: event.timestamp ?? Date.now(),
+              action: 'give_in',
+            });
+          }
+        } catch {
+          // Logging must never block the interstitial.
+        }
         if (navigationRef.isReady()) {
           navigationRef.navigate('BlockedInterstitial', {
             packageName: event.packageName,
@@ -144,6 +196,11 @@ function AppNavigator() {
         if (navigationRef.isReady()) navigationRef.navigate('TaskPicker');
         return;
       }
+      // P2-2: QS-tile locked state routes to the paywall.
+      if (AppBlocker.isPaywallDeepLink(url)) {
+        if (navigationRef.isReady()) navigationRef.navigate('Paywall');
+        return;
+      }
       const link = AppBlocker.parseBlockedDeepLink(url);
       if (!link || !navigationRef.isReady()) return;
       if (!claimBlockedNav(link.packageName)) return;
@@ -152,6 +209,19 @@ function AppNavigator() {
         const task = tasks.find(
           t => t.packageName === link.packageName || t.blockedPackages?.includes(link.packageName),
         );
+        try {
+          if (shouldLogGiveIn(link.packageName)) {
+            await store.saveBlockedAttempt({
+              id: newBlockedId(),
+              packageName: link.packageName,
+              taskId: task?.id ?? '',
+              timestamp: Date.now(),
+              action: 'give_in',
+            });
+          }
+        } catch {
+          // Logging must never block the interstitial.
+        }
         navigationRef.navigate('BlockedInterstitial', {
           packageName: link.packageName,
           taskId: task?.id ?? '',
@@ -179,6 +249,17 @@ function AppNavigator() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError, loading]);
+
+  // N-2 reminders boot: foreground handler + never-during-session guard once,
+  // then (re)pair the single daily nudge. Expo-notifications also restores
+  // scheduled reminders from its own boot receiver, so this doubles as the
+  // boot-path repair.
+  useEffect(() => {
+    ensureReminderHandler();
+    const unsubGuard = setupReminderGuard();
+    ensureDailyReminder().catch(() => {});
+    return unsubGuard;
+  }, []);
 
   if (loading) {
     return (

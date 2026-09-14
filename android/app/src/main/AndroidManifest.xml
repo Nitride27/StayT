@@ -1,10 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.INTERNET"/>
-  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
-  <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+  <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
+  <uses-permission android:name="com.android.vending.BILLING"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
@@ -21,18 +22,17 @@
     <meta-data android:name="expo.modules.updates.ENABLE_BSDIFF_PATCH_SUPPORT" android:value="true"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
+    <service android:name="com.nitridee.staytapp.blocker.StayTTileService" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE" android:exported="true" android:icon="@drawable/ic_stayt_tile" android:label="StayT">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE"/>
+      </intent-filter>
+    </service>
     <service android:name="com.nitridee.staytapp.blocker.StayTAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="false">
       <intent-filter>
         <action android:name="android.accessibilityservice.AccessibilityService"/>
       </intent-filter>
       <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config"/>
     </service>
-    <receiver android:name="com.nitridee.staytapp.blocker.ScheduleBootReceiver" android:exported="false">
-      <intent-filter>
-        <action android:name="android.intent.action.BOOT_COMPLETED"/>
-      </intent-filter>
-    </receiver>
-    <receiver android:name="com.nitridee.staytapp.blocker.ScheduleAlarmReceiver" android:exported="false"/>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize|assetsPaths" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
@@ -42,8 +42,22 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="exp+stayt-app"/>
+        <data android:scheme="exp+stayt"/>
       </intent-filter>
     </activity>
+    <receiver android:name="com.nitridee.staytapp.blocker.ScheduleBootReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.nitridee.staytapp.blocker.ScheduleAlarmReceiver" android:exported="false"/>
+    <receiver android:name="com.nitridee.staytapp.blocker.WidgetMidnightReceiver" android:exported="false"/>
+    <receiver android:name="com.nitridee.staytapp.blocker.StayTWidgetProvider" android:exported="false">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/stayt_widget_info"/>
+    </receiver>
   </application>
 </manifest>

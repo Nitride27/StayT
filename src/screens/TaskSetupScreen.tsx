@@ -18,6 +18,7 @@ import { typography, spacing, radius, layout, colors, darkColors } from '../them
 import { mascotSource } from '../theme/mascot';
 import { TaskGlyph, CheckIcon, ChevronLeftIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
+import { syncWidgetNow } from '../widget/widgetSync';
 
 type InstalledApp = { packageName: string; appName: string; iconBase64?: string };
 
@@ -86,6 +87,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const [startMinutes, setStartMinutes] = useState(9 * 60);
   const [endMinutes, setEndMinutes] = useState(17 * 60);
   const [existingScheduleId, setExistingScheduleId] = useState<string | null>(null);
+  // P1-1 hardcore strict mode (Pro): no override or break escape.
+  const [strict, setStrict] = useState(existingTask?.strict === true);
 
   useEffect(() => {
     let live = true;
@@ -175,6 +178,18 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     ]);
   };
 
+  // P1-1: strict mode reuses the same Pro-gate pattern as schedules.
+  const handleToggleStrict = () => {
+    if (!isPro) {
+      Alert.alert('Pro feature', 'Strict mode is a Pro feature. Locked-in tasks hide every override.', [
+        { text: 'View Pro', onPress: () => navigation.navigate('Paywall') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    setStrict(v => !v);
+  };
+
   const handleToggleSchedule = () => {
     if (!isPro) { showScheduleProGate(); return; }
     setScheduleEnabled(v => !v);
@@ -262,22 +277,29 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     const effectiveScheduleEnabled = isPro && scheduleEnabled;
 
     try {
+      let saved: Task;
       if (existingTask) {
-        await store.saveTask({ ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs });
+        saved = { ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs, strict: isPro ? strict : false };
+        await store.saveTask(saved);
       } else {
-        await store.saveTask({
+        saved = {
           id: taskId,
           name: taskName.trim(),
           packageName: pkgs[0],
           appName: firstApp,
           blockedPackages: pkgs,
+          strict: isPro ? strict : false,
           createdAt: Date.now(),
           lastUsed: 0,
           useCount: 0,
           isActive: true,
           streak: 0,
-        });
+        };
+        await store.saveTask(saved);
       }
+      // Tile staleness: the tile's toggle target is the mirror's lastPackages —
+      // re-push on every edit/save so renames and app-list changes land.
+      await syncWidgetNow(saved).catch(() => {});
     } catch {
       Alert.alert('Could not save task', 'Storage failed. Please try again.');
       return;
@@ -445,6 +467,31 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             value={packageName}
             onChangeText={(text) => { setPackageName(text); setAppName(''); setSelectedApps([]); }}
           />
+          <Text style={[typography.h3, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+            STRICT MODE{!isPro ? ' · PRO' : ''}
+          </Text>
+          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleToggleStrict}
+              style={styles.scheduleToggleRow}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: strict }}
+              accessibilityLabel="Enable strict mode"
+            >
+              <View style={styles.scheduleToggleText}>
+                <Text style={[{ fontFamily: 'SpaceGrotesk-SemiBold', fontSize: 16, lineHeight: 22 }, { color: ink }]}>
+                  Lock this task in
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Hides every override — no escape hatch
+                </Text>
+              </View>
+              <View style={[styles.toggleTrack, { borderColor: border }, strict && styles.toggleTrackOn]}>
+                <View style={[styles.toggleKnob, strict && styles.toggleKnobOn]} />
+              </View>
+            </TouchableOpacity>
+          </View>
           <Text style={[typography.h3, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
             SCHEDULE{!isPro ? ' · PRO' : ''}
           </Text>
