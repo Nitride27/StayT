@@ -195,13 +195,20 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     }
 
     private fun emitToJS(packageName: String, timestamp: Long, appLabel: String) {
-        val params = Arguments.createMap().apply {
-            putString("packageName", packageName)
-            putDouble("timestamp", timestamp.toDouble())
-            putString("appLabel", appLabel)
+        // The service outlives the JS runtime (app swiped away / process
+        // restart): emitting into a dead catalyst instance throws and would
+        // kill the whole app process from onAccessibilityEvent. Never throw.
+        try {
+            val params = Arguments.createMap().apply {
+                putString("packageName", packageName)
+                putDouble("timestamp", timestamp.toDouble())
+                putString("appLabel", appLabel)
+            }
+            reactApplicationContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("onBlockedAttempt", params)
+        } catch (e: Exception) {
+            Log.w(TAG, "emitToJS failed (JS runtime gone?) for $packageName", e)
         }
-        reactApplicationContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("onBlockedAttempt", params)
     }
 }

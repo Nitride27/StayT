@@ -96,7 +96,7 @@ export default function PaywallScreen({ navigation }: Props) {
   });
 
   useEffect(() => {
-    if (connected) fetchProducts({ skus: [PRO_SKU] }).catch(() => {});
+    if (connected) fetchProducts({ skus: [PRO_SKU], type: 'in-app' }).catch(() => {});
   }, [connected]);
 
   // Restore resolves via availablePurchases state after getAvailablePurchases().

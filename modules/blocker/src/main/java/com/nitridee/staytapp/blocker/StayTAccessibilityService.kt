@@ -197,12 +197,13 @@ class StayTAccessibilityService : AccessibilityService() {
         // No SYSTEM_ALERT_WINDOW, no full-screen intent.
         postBlockedNotification(openedPackage, appLabel)
 
-        // Best-effort auto-popup: foreground our (possibly backgrounded) task
-        // straight into the interstitial via the same blocked deep link App.tsx
-        // already handles (Linking → parseBlockedDeepLink → BlockedInterstitial).
-        // BAL restrictions vary by Android version/OEM — failure is silent,
-        // the notification above remains the fallback. No new permissions.
-        foregroundBlockedInterstitial(openedPackage, appLabel)
+        // Single-surface rule: the overlay below is the ONLY thing shown on
+        // top of the blocked app. Do NOT auto-foreground StayT here — on
+        // Samsung/OEMs the background start is BAL-denied (or lands late),
+        // which stacked the overlay over a pushed interstitial: the same
+        // block screen twice, once per app. The interstitial is still
+        // reached via the overlay buttons (user tap = BAL-safe) or the
+        // notification tap above. No new permissions.
 
         // Service-owned overlay (primary surface): a fullscreen window drawn
         // on top of whatever is foreground via TYPE_ACCESSIBILITY_OVERLAY —
