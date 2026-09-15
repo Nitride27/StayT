@@ -3,6 +3,7 @@ package com.nitridee.staytapp.blocker
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import java.io.ByteArrayOutputStream
