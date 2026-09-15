@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task, blockedPackagesOf } from '../types';
+import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
@@ -21,6 +22,7 @@ import { FREE_TASK_LIMIT } from './PaywallScreen';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TaskPicker'>;
+  route: { params?: { autoStartTaskId?: string } };
 };
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -65,11 +67,13 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
   );
 }
 
-export default function TaskPickerScreen({ navigation }: Props) {
+export default function TaskPickerScreen({ navigation, route }: Props) {
   const { isDark } = useTheme();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [streak, setStreak] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
+  // Guards the gated-tap resume below against double-fire on re-focus.
+  const autoStarting = React.useRef(false);
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -84,6 +88,33 @@ export default function TaskPickerScreen({ navigation }: Props) {
     useCallback(() => {
       loadData().catch(() => {});
     }, []),
+  );
+
+  // Resume a permission-gated tap: handleSelectTask sends the user to
+  // PermissionSetup with pendingTaskId, which comes back here as
+  // autoStartTaskId. Param is consumed first so a re-focus can't double-start.
+  useFocusEffect(
+    useCallback(() => {
+      const pendingId = route.params?.autoStartTaskId;
+      if (!pendingId || autoStarting.current) return;
+      autoStarting.current = true;
+      navigation.setParams({ autoStartTaskId: undefined });
+      (async () => {
+        try {
+          const granted = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
+          // Backed out or revoked — drop the intent rather than looping
+          // back into the permission flow.
+          if (!granted) return;
+          const all = await store.getTasks();
+          const task = all.find(t => t.id === pendingId);
+          if (task) await startSessionForTask(task);
+        } finally {
+          autoStarting.current = false;
+        }
+      })().catch(() => {
+        autoStarting.current = false;
+      });
+    }, [route.params?.autoStartTaskId]),
   );
 
   useEffect(() => {
@@ -112,6 +143,18 @@ export default function TaskPickerScreen({ navigation }: Props) {
   };
 
   const handleSelectTask = async (task: Task) => {
+    // No service = no blocking and no blocked screen. Route to the
+    // permission flow instead of starting a silently unprotected session —
+    // the task id rides along so granting resumes this exact tap.
+    const granted = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
+    if (!granted) {
+      navigation.navigate('PermissionSetup', { pendingTaskId: task.id });
+      return;
+    }
+    await startSessionForTask(task);
+  };
+
+  const startSessionForTask = async (task: Task) => {
     // Supersede any zombie active session (e.g. process kill) before starting new.
     try {
       const existing = await store.getActiveSession();

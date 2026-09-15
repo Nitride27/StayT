@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, AppState, Alert } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, AppState, Alert, useWindowDimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -32,6 +32,9 @@ export default function WelcomeScreen({ navigation }: Props) {
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoNeedsPermission, setDemoNeedsPermission] = useState(false);
   const pendingDemo = useRef<InstalledApp | null>(null);
+  // Dynamic to screen size: fixed 220px mascots overflow small screens.
+  const { height: winH } = useWindowDimensions();
+  const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.24)));
 
   // Entry animations
   const heroOpacity = useSharedValue(0);
@@ -97,17 +100,23 @@ export default function WelcomeScreen({ navigation }: Props) {
   };
 
   // P0-3 demo: existing installed-app row pattern; fallback to
-  // YouTube/Instagram entries when the installed list is unavailable.
+  // YouTube/Instagram entries when the installed list is unavailable
+  // OR empty (empty list rendered zero rows — demo looked dead).
   const openDemoPicker = async () => {
     setDemoOpen(true);
     setDemoNeedsPermission(false);
+    setDemoApps([]);
     try {
       const apps = await AppBlocker.getInstalledApps();
       const preferred = apps.filter(a =>
         a.packageName === 'com.google.android.youtube' ||
         a.packageName === 'com.instagram.android',
       );
-      setDemoApps(preferred.length > 0 ? preferred : apps.slice(0, 8));
+      const list = preferred.length > 0 ? preferred : apps.slice(0, 8);
+      setDemoApps(list.length > 0 ? list : [
+        { packageName: 'com.google.android.youtube', appName: 'YouTube' },
+        { packageName: 'com.instagram.android', appName: 'Instagram' },
+      ]);
     } catch {
       setDemoApps([
         { packageName: 'com.google.android.youtube', appName: 'YouTube' },
@@ -183,9 +192,12 @@ export default function WelcomeScreen({ navigation }: Props) {
   useEffect(() => {
     const sub = AppState.addEventListener('change', async next => {
       if (next !== 'active' || !pendingDemo.current) return;
+      // Consume first: a denied grant must not linger and ambush some
+      // unrelated future foreground with a surprise demo session.
+      const app = pendingDemo.current;
+      pendingDemo.current = null;
       const granted = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
-      if (granted && pendingDemo.current) {
-        const app = pendingDemo.current;
+      if (granted) {
         await startDemoSession(app);
       }
     });
@@ -202,7 +214,7 @@ export default function WelcomeScreen({ navigation }: Props) {
       <View style={styles.topSection}>
         <Animated.View style={[styles.heroArea, heroAnimStyle]}>
           {/* Mascot */}
-          <Image source={mascotSource('waving', isDark)} style={styles.mascotImage} resizeMode="contain" />
+          <Image source={mascotSource('waving', isDark)} style={[styles.mascotImage, { width: mascotSize, height: mascotSize }]} resizeMode="contain" />
           <Text style={[typography.display, { color: isDark ? darkColors.ink : colors.midnight, textAlign: 'center', marginTop: spacing.xl }]}>
             STAY FOCUSED.
           </Text>
@@ -255,10 +267,6 @@ export default function WelcomeScreen({ navigation }: Props) {
           <Text style={styles.primaryButtonText}>GET STARTED</Text>
         </AnimatedTouchable>
 
-        <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.md }]}>
-          Takes 30 seconds to set up
-        </Text>
-
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={openDemoPicker}
@@ -269,11 +277,20 @@ export default function WelcomeScreen({ navigation }: Props) {
           </Text>
         </TouchableOpacity>
 
+        <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.md }]}>
+          Takes 30 seconds to set up
+        </Text>
+
         {demoOpen && (
           <View style={[styles.demoCard, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
             <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight, textAlign: 'center' }]}>
               Pick one app to block for 5 minutes
             </Text>
+            {demoApps.length === 0 && (
+              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', paddingVertical: spacing.md }]}>
+                Loading apps…
+              </Text>
+            )}
             {demoApps.map(app => (
               <TouchableOpacity
                 key={app.packageName}

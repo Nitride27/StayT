@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -40,6 +40,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const { task, session } = route.params;
   const { isDark } = useTheme();
   const [elapsed, setElapsed] = useState(session.startedAt ? Date.now() - session.startedAt : 0);
+  // False when the service is off or startBlocking fails — blocking silently
+  // doing nothing is the worst outcome, so the banner below says so loudly.
+  const [blockingOk, setBlockingOk] = useState(true);
+  const blockingOkRef = React.useRef(true);
+  // Dynamic to screen size: fixed 220px mascots push the buttons off small screens.
+  const { height: winH } = useWindowDimensions();
+  const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.24)));
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -71,14 +78,48 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 
   // Start blocking when session begins; always release on unmount
   // so a gesture-back can't leave blocking on with no session.
+  // Verifies the service is actually up: without it there is no blocking
+  // and no blocked screen, so show the banner instead of failing silently.
+  // Polls every 5s — the OS/OEM can kill the service mid-session.
   useEffect(() => {
-    AppBlocker.startBlocking(blockedPackagesOf(task)).catch(() => {});
+    let live = true;
+    const mark = (ok: boolean) => {
+      blockingOkRef.current = ok;
+      if (live) setBlockingOk(ok);
+    };
+    (async () => {
+      const enabled = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
+      if (!live) return;
+      if (!enabled) {
+        mark(false);
+        return;
+      }
+      const ok = await AppBlocker.startBlocking(blockedPackagesOf(task)).catch(() => false);
+      mark(ok !== false);
+    })();
     // P2-1: push today's totals + last-task packages to the widget mirror.
     syncWidgetNow(task).catch(() => {});
     // A daily nudge scheduled while the app was killed could fire mid-session
     // — cancel it on mount; handleEndSession re-pairs it on the way out.
     cancelDailyReminder().catch(() => {});
+    const poll = setInterval(async () => {
+      const enabled = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
+      if (!live) return;
+      if (!enabled) {
+        mark(false);
+        return;
+      }
+      // Service (back) on: (re-)apply the allow-list — the native list is
+      // in-memory so a kill/re-enable loses it. Only call when we were
+      // previously down to avoid re-pushing every 5s.
+      if (!blockingOkRef.current) {
+        const ok = await AppBlocker.startBlocking(blockedPackagesOf(task)).catch(() => false);
+        mark(ok !== false);
+      }
+    }, 5000);
     return () => {
+      live = false;
+      clearInterval(poll);
       AppBlocker.stopBlocking().catch(() => {});
     };
   }, []);
@@ -131,8 +172,32 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
+      {!blockingOk && (
+        <View style={[styles.blockWarn, { borderColor: ink }]} accessibilityRole="alert">
+          <Text style={[typography.bodyStrong, { color: ink, textAlign: 'center' }]}>
+            Blocking isn't active
+          </Text>
+          <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: 4 }]}>
+            StayT needs the Accessibility permission or your apps won't be blocked.
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => AppBlocker.openAccessibilitySettings()}
+            style={styles.blockWarnBtn}
+          >
+            <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+              RE-ENABLE SERVICE
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
       <Animated.View style={[styles.header, headerAnimStyle]}>
-        <Image source={mascotSource('working', isDark)} style={styles.mascotImage} resizeMode="contain" />
+        <Image source={mascotSource('working', isDark)} style={[styles.mascotImage, { width: mascotSize, height: mascotSize }]} resizeMode="contain" />
         <Text style={[typography.display, { color: ink, textAlign: 'center', marginTop: spacing.lg }]}>
           {task.name.toUpperCase()}
         </Text>
@@ -151,6 +216,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
           Small steps build big progress.
         </Text>
       </Animated.View>
+      </ScrollView>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
         <AnimatedTouchable
@@ -185,6 +251,31 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginTop: spacing.xl,
+  },
+  blockWarn: {
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  blockWarnBtn: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: spacing.sm,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   mascotImage: {
     width: 220,

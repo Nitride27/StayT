@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, TextInput } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, TextInput, ScrollView, useWindowDimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -230,12 +230,19 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const ink = isDark ? darkColors.ink : colors.ink;
   const secondary = isDark ? darkColors.inkSecondary : colors.inkSecondary;
   const outlineText = isDark ? colors.ectoGreen : colors.ectoGreenDark;
+  // Dynamic to screen size: fixed 220px mascots overflow small screens.
+  const { height: winH } = useWindowDimensions();
+  const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.22)));
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: bg }}
+      contentContainerStyle={[styles.container, { backgroundColor: bg, flexGrow: 1 }]}
+      showsVerticalScrollIndicator={false}
+    >
       {/* Mascot */}
       <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
-        <Image source={mascotSource('blocked', isDark)} style={styles.mascotImage} resizeMode="contain" />
+        <Image source={mascotSource('blocked', isDark)} style={[styles.mascotImage, { width: mascotSize, height: mascotSize }]} resizeMode="contain" />
       </Animated.View>
 
       {/* Title */}
@@ -360,7 +367,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
           </>
         )}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 

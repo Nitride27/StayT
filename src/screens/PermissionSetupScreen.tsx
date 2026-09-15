@@ -8,6 +8,8 @@ import {
   Alert,
   AppState,
   AppStateStatus,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -30,6 +32,7 @@ import { Platform } from 'react-native';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PermissionSetup'>;
+  route: { params?: { pendingTaskId?: string } };
 };
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -62,7 +65,7 @@ function getOEMTip(): string | null {
 const GENERIC_BATTERY_TIP =
   'Keep StayT running: Settings > Apps > StayT > Battery > Unrestricted.';
 
-export default function PermissionSetupScreen({ navigation }: Props) {
+export default function PermissionSetupScreen({ navigation, route }: Props) {
   const { isDark } = useTheme();
   const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const appState = useRef(AppState.currentState);
@@ -143,10 +146,14 @@ export default function PermissionSetupScreen({ navigation }: Props) {
     if (selfTest.state === 'timeout' || selfTest.state === 'error') return;
     const delay = selfTest.state === 'success' ? 800 : 1200;
     const timer = setTimeout(() => {
-      markOnboarded().finally(() => navigation.navigate('TaskPicker'));
+      // A gated TaskPicker tap carries its task id through: granting resumes
+      // that exact tap instead of dropping the user on the list.
+      const pendingTaskId = route.params?.pendingTaskId;
+      const next = pendingTaskId ? { autoStartTaskId: pendingTaskId } : undefined;
+      markOnboarded().finally(() => navigation.navigate('TaskPicker', next));
     }, delay);
     return () => clearTimeout(timer);
-  }, [accessibilityEnabled, navigation, selfTest.state]);
+  }, [accessibilityEnabled, navigation, selfTest.state, route.params?.pendingTaskId]);
 
   // --- Animated styles ---
   const headerAnimStyle = useAnimatedStyle(() => ({
@@ -201,7 +208,9 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   };
 
   const handleSelfTestContinue = () => {
-    markOnboarded().finally(() => navigation.navigate('TaskPicker'));
+    const pendingTaskId = route.params?.pendingTaskId;
+    const next = pendingTaskId ? { autoStartTaskId: pendingTaskId } : undefined;
+    markOnboarded().finally(() => navigation.navigate('TaskPicker', next));
   };
 
   const handlePressIn = () => {
@@ -216,15 +225,23 @@ export default function PermissionSetupScreen({ navigation }: Props) {
   const ink = isDark ? darkColors.ink : colors.ink;
   const secondary = isDark ? darkColors.inkSecondary : colors.inkSecondary;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+  // Dynamic to screen size: fixed 220px mascots overflow small screens.
+  const { height: winH } = useWindowDimensions();
+  const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.22)));
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.topSection}>
         {/* Mascot */}
         <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
           <Image
             source={mascotSource('phone', isDark)}
-            style={styles.mascotImage}
+            style={[styles.mascotImage, { width: mascotSize, height: mascotSize }]}
             resizeMode="contain"
           />
         </Animated.View>
@@ -279,6 +296,7 @@ export default function PermissionSetupScreen({ navigation }: Props) {
           </Animated.View>
         )}
       </View>
+      </ScrollView>
 
       {/* Bottom section */}
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
@@ -383,6 +401,13 @@ const styles = StyleSheet.create({
   },
   topSection: {
     flex: 1,
+    justifyContent: 'center',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
   },
   header: {

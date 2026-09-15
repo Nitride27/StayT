@@ -29,9 +29,9 @@ SplashScreen.preventAutoHideAsync();
 
 export type RootStackParamList = {
   Welcome: undefined;
-  PermissionSetup: undefined;
+  PermissionSetup: { pendingTaskId?: string } | undefined;
   Paywall: undefined;
-  TaskPicker: undefined;
+  TaskPicker: { autoStartTaskId?: string } | undefined;
   TaskSetup: { task?: Task };
   ActiveSession: { task: Task; session: Session };
   BlockedInterstitial: { packageName: string; taskId: string; appLabel?: string };
