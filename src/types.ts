@@ -7,8 +7,6 @@ export interface Task {
   blockedPackages?: string[];
   /** True for first-launch seeds; presets never count toward the free task limit. */
   isPreset?: boolean;
-  /** P0-3 demo tasks are temp: deleted when their session completes. */
-  isDemo?: boolean;
   createdAt: number;
   lastUsed: number;
   useCount: number;

@@ -77,6 +77,21 @@ function copyResFiles(projectRoot) {
     }
   }
 
+  // android assets/fonts — overlay type (Anton/SpaceGrotesk/Inter).
+  // Source is the project's Expo font dir; listed explicitly so only the
+  // overlay faces ship natively. Survives prebuild (android/ is generated).
+  const fontsSrc = path.join(projectRoot, "assets/fonts");
+  const fontsDest = path.join(projectRoot, "android/app/src/main/assets/fonts");
+  for (const f of ["Anton-Regular.ttf", "SpaceGrotesk-Bold.ttf", "Inter-Regular.ttf"]) {
+    try {
+      const src = path.join(fontsSrc, f);
+      if (fs.existsSync(src)) {
+        fs.mkdirSync(fontsDest, { recursive: true });
+        fs.copyFileSync(src, path.join(fontsDest, f));
+      }
+    } catch (_) {}
+  }
+
   // values/strings.xml — merge service description into existing
   const stringsDest = path.join(destRes, "values/strings.xml");
   const serviceDesc =
@@ -278,6 +293,36 @@ function withBlocker(config) {
               ],
             },
           ],
+        });
+      }
+    }
+    return cfg;
+  });
+
+  // 1c. Blocked-flow deep-link scheme (exp+stayt-app://...): the overlay,
+  // notification, tile, and JS contract all route back into StayT through
+  // it (single source: src/native/blockedContract.ts BLOCKED_SCHEME).
+  // Prebuild only generates exp+<slug>, so this filter is owned here.
+  // Idempotent: skipped when a matching data scheme already exists.
+  config = withAndroidManifest(config, (cfg) => {
+    const app = cfg.modResults.manifest.application?.[0];
+    const activity = app?.activity?.find(
+      (a) => a.$?.["android:name"] === ".MainActivity"
+    );
+    if (activity) {
+      if (!activity["intent-filter"]) activity["intent-filter"] = [];
+      const SCHEME = "exp+stayt-app";
+      const hasScheme = activity["intent-filter"].some((f) =>
+        f.data?.some((d) => d.$?.["android:scheme"] === SCHEME)
+      );
+      if (!hasScheme) {
+        activity["intent-filter"].push({
+          action: [{ $: { "android:name": "android.intent.action.VIEW" } }],
+          category: [
+            { $: { "android:name": "android.intent.category.DEFAULT" } },
+            { $: { "android:name": "android.intent.category.BROWSABLE" } },
+          ],
+          data: [{ $: { "android:scheme": SCHEME } }],
         });
       }
     }

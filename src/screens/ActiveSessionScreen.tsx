@@ -19,6 +19,7 @@ import { SwitchArrowsIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 import { syncWidgetNow } from '../widget/widgetSync';
 import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
+import { tap } from '../haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveSession'>;
@@ -94,7 +95,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         mark(false);
         return;
       }
-      const ok = await AppBlocker.startBlocking(blockedPackagesOf(task)).catch(() => false);
+      const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name).catch(() => false);
       mark(ok !== false);
     })();
     // P2-1: push today's totals + last-task packages to the widget mirror.
@@ -113,7 +114,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       // in-memory so a kill/re-enable loses it. Only call when we were
       // previously down to avoid re-pushing every 5s.
       if (!blockingOkRef.current) {
-        const ok = await AppBlocker.startBlocking(blockedPackagesOf(task)).catch(() => false);
+        const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name).catch(() => false);
         mark(ok !== false);
       }
     }, 5000);
@@ -124,21 +125,34 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     };
   }, []);
 
-  const handleEndSession = async () => {
+  const finishSession = async () => {
     try {
       await store.saveSession({ ...session, status: 'completed', endedAt: Date.now(), duration: Date.now() - session.startedAt });
-      // P0-3 demo tasks are temp: remove when their session completes.
-      if (task.isDemo === true) {
-        await store.deleteTask(task.id).catch(() => {});
-      }
     } finally {
       // Blocking must release even if the save failed — never trap the user.
       await AppBlocker.stopBlocking().catch(() => {});
-      // P2-1 totals changed; N-2 copy may now be stale — refresh both.
-      await syncWidgetNow(task).catch(() => {});
-      await ensureDailyReminder().catch(() => {});
-      navigation.navigate('TaskPicker');
     }
+    // Slow cosmetics refresh in the background: neither TaskPicker nor
+    // History reads them on mount, so never hold the transition for them.
+    // (P2-1 widget mirror + N-2 daily nudge re-pair.)
+    syncWidgetNow(task).catch(() => {});
+    ensureDailyReminder().catch(() => {});
+  };
+
+  // SWITCH TASK ends this session and returns to the picker to start another.
+  const handleSwitchTask = async () => {
+    tap();
+    await finishSession();
+    navigation.navigate('TaskPicker');
+  };
+
+  // END SESSION ends this session and shows it logged in History.
+  // replace (not navigate): History's back button must land on TaskPicker,
+  // not back on this now-dead session screen.
+  const handleEndSession = async () => {
+    tap('medium');
+    await finishSession();
+    navigation.replace('History');
   };
 
   const headerAnimStyle = useAnimatedStyle(() => ({
@@ -222,7 +236,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         <AnimatedTouchable
           style={styles.switchButton}
           activeOpacity={0.85}
-          onPress={handleEndSession}
+          onPress={handleSwitchTask}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >

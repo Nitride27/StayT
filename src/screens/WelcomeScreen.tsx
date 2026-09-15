@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, AppState, Alert, useWindowDimensions } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -14,9 +14,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import { CheckIcon, BoltIcon, FlameIcon } from '../components/icons';
-import AppBlocker, { InstalledApp } from '../native/AppBlocker';
-import { store } from '../storage/store';
-import { Task } from '../types';
+import { tap } from '../haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
@@ -26,12 +24,6 @@ const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 export default function WelcomeScreen({ navigation }: Props) {
   const { isDark } = useTheme();
-  // P0-3 five-minute demo: pick 1 app -> temp task -> straight to session.
-  const [demoOpen, setDemoOpen] = useState(false);
-  const [demoApps, setDemoApps] = useState<InstalledApp[]>([]);
-  const [demoBusy, setDemoBusy] = useState(false);
-  const [demoNeedsPermission, setDemoNeedsPermission] = useState(false);
-  const pendingDemo = useRef<InstalledApp | null>(null);
   // Dynamic to screen size: fixed 220px mascots overflow small screens.
   const { height: winH } = useWindowDimensions();
   const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.24)));
@@ -99,111 +91,6 @@ export default function WelcomeScreen({ navigation }: Props) {
     buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
   };
 
-  // P0-3 demo: existing installed-app row pattern; fallback to
-  // YouTube/Instagram entries when the installed list is unavailable
-  // OR empty (empty list rendered zero rows — demo looked dead).
-  const openDemoPicker = async () => {
-    setDemoOpen(true);
-    setDemoNeedsPermission(false);
-    setDemoApps([]);
-    try {
-      const apps = await AppBlocker.getInstalledApps();
-      const preferred = apps.filter(a =>
-        a.packageName === 'com.google.android.youtube' ||
-        a.packageName === 'com.instagram.android',
-      );
-      const list = preferred.length > 0 ? preferred : apps.slice(0, 8);
-      setDemoApps(list.length > 0 ? list : [
-        { packageName: 'com.google.android.youtube', appName: 'YouTube' },
-        { packageName: 'com.instagram.android', appName: 'Instagram' },
-      ]);
-    } catch {
-      setDemoApps([
-        { packageName: 'com.google.android.youtube', appName: 'YouTube' },
-        { packageName: 'com.instagram.android', appName: 'Instagram' },
-      ]);
-    }
-  };
-
-  const startDemoSession = async (app: InstalledApp) => {
-    if (demoBusy) return;
-    setDemoBusy(true);
-    try {
-      // Zombie-session supersede, same as TaskPicker (never double-active).
-      try {
-        const existing = await store.getActiveSession();
-        if (existing) {
-          await store.saveSession({
-            ...existing,
-            status: 'completed',
-            endedAt: Date.now(),
-            duration: Date.now() - existing.startedAt,
-          });
-        }
-      } catch {
-        // Best-effort; must not block the demo.
-      }
-      const task: Task = {
-        id: `demo-${Date.now()}`,
-        name: 'Demo Focus',
-        packageName: app.packageName,
-        appName: app.appName,
-        isDemo: true,
-        createdAt: Date.now(),
-        lastUsed: Date.now(),
-        useCount: 0,
-        isActive: true,
-        streak: 0,
-      };
-      await store.saveTask(task);
-      const session = {
-        id: `session-${Date.now()}`,
-        taskId: task.id,
-        startedAt: Date.now(),
-        endedAt: null,
-        duration: null,
-        status: 'active' as const,
-      };
-      await store.saveSession(session);
-      pendingDemo.current = null;
-      setDemoNeedsPermission(false);
-      navigation.navigate('ActiveSession', { task, session });
-    } catch {
-      Alert.alert('Could not start demo', 'Storage failed. Please try again.');
-    } finally {
-      setDemoBusy(false);
-    }
-  };
-
-  const handlePickDemoApp = async (app: InstalledApp) => {
-    // Accessibility is still required — one line of copy + the existing
-    // auto-open-settings flow; resume automatically on return.
-    const granted = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
-    if (granted) {
-      await startDemoSession(app);
-      return;
-    }
-    pendingDemo.current = app;
-    setDemoNeedsPermission(true);
-    AppBlocker.openAccessibilitySettings();
-  };
-
-  // Resume a pending demo pick when returning from settings.
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', async next => {
-      if (next !== 'active' || !pendingDemo.current) return;
-      // Consume first: a denied grant must not linger and ambush some
-      // unrelated future foreground with a surprise demo session.
-      const app = pendingDemo.current;
-      pendingDemo.current = null;
-      const granted = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
-      if (granted) {
-        await startDemoSession(app);
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
   return (
     <View style={[styles.container, { backgroundColor: isDark ? darkColors.paper : colors.paper }]}>
       <ScrollView
@@ -260,57 +147,16 @@ export default function WelcomeScreen({ navigation }: Props) {
         <AnimatedTouchable
           style={styles.primaryButton}
           activeOpacity={0.85}
-          onPress={() => navigation.navigate('PermissionSetup')}
+          onPress={() => { tap(); navigation.navigate('PermissionSetup'); }}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
           <Text style={styles.primaryButtonText}>GET STARTED</Text>
         </AnimatedTouchable>
 
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={openDemoPicker}
-          style={[styles.demoButton, { borderColor: isDark ? darkColors.ink : colors.ink }]}
-        >
-          <Text style={[typography.cta, { color: isDark ? darkColors.ink : colors.midnight, textAlign: 'center' }]}>
-            TRY A 5-MIN DEMO
-          </Text>
-        </TouchableOpacity>
-
         <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.md }]}>
           Takes 30 seconds to set up
         </Text>
-
-        {demoOpen && (
-          <View style={[styles.demoCard, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
-            <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight, textAlign: 'center' }]}>
-              Pick one app to block for 5 minutes
-            </Text>
-            {demoApps.length === 0 && (
-              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', paddingVertical: spacing.md }]}>
-                Loading apps…
-              </Text>
-            )}
-            {demoApps.map(app => (
-              <TouchableOpacity
-                key={app.packageName}
-                activeOpacity={0.7}
-                disabled={demoBusy}
-                onPress={() => handlePickDemoApp(app)}
-                style={styles.demoAppRow}
-              >
-                <Text style={[{ fontFamily: 'SpaceGrotesk-SemiBold', fontSize: 16, lineHeight: 22 }, { color: isDark ? darkColors.ink : colors.midnight }]} numberOfLines={1}>
-                  {app.appName}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            {demoNeedsPermission && (
-              <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.sm }]}>
-                Demo needs the Accessibility permission so StayT can detect the app. Enable it in settings — you will return here automatically.
-              </Text>
-            )}
-          </View>
-        )}
       </Animated.View>
       </ScrollView>
     </View>
@@ -388,27 +234,5 @@ const styles = StyleSheet.create({
     ...typography.cta,
     color: colors.midnight,
     textAlign: 'center',
-  },
-  demoButton: {
-    borderWidth: 2,
-    borderRadius: radius.xl,
-    paddingVertical: 16,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  demoCard: {
-    borderWidth: 2,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    marginTop: spacing.md,
-    gap: spacing.sm,
-  },
-  demoAppRow: {
-    paddingVertical: spacing.md,
-    minHeight: 44,
-    justifyContent: 'center',
   },
 });

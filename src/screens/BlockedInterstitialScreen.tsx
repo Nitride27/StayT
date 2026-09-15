@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, TextInput, ScrollView, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, TextInput, ScrollView, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -16,6 +16,7 @@ import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { store, MAX_DAILY_OVERRIDES } from '../storage/store';
 import { syncWidgetNow } from '../widget/widgetSync';
+import { tap } from '../haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BlockedInterstitial'>;
@@ -42,11 +43,15 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   // P1-3 intention break form state (FREE, consumes one override unit).
   const [breakOpen, setBreakOpen] = useState(false);
   const [intention, setIntention] = useState('');
-  const [breakMinutes, setBreakMinutes] = useState(10);
+  const [breakMinutes, setBreakMinutes] = useState(5);
   const [busy, setBusy] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     let live = true;
+    // Single-surface rule: the native overlay draws over everything,
+    // including StayT. Dismiss it now so only this screen shows.
+    AppBlocker.dismissBlockedOverlay().catch(() => {});
     store.getTasks()
       .then(ts => {
         if (!live) return;
@@ -71,6 +76,14 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     const id = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
     return () => clearInterval(id);
   }, [countdown]);
+
+  // When the intention form opens, its START button can sit below the fold
+  // on small screens. Nudge the scroll to the end so it stays reachable.
+  useEffect(() => {
+    if (!breakOpen) return;
+    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+    return () => clearTimeout(t);
+  }, [breakOpen]);
 
   // Entry animations
   const mascotScale = useSharedValue(0.5);
@@ -119,10 +132,12 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   }));
 
   const handleBackToTask = () => {
+    tap();
     navigation.goBack();
   };
 
   const handleSwitchTask = () => {
+    tap();
     // Session stays active; user picks a different task to focus on.
     navigation.navigate('TaskPicker');
   };
@@ -132,6 +147,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     // concurrent overlay tap) can never burn two units or exceed the cap.
     // M3: strict tasks never reach here (buttons hidden + this guard).
     if (countdown > 0 || busy || taskStrict) return;
+    tap();
     setBusy(true);
     let left = overridesLeft;
     try {
@@ -172,10 +188,11 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
 
   // P1-3 intention break: inline form -> pauseBlocking(min*60) + a 'break'
   // attempt that consumes one override unit (said so in the UI). Strict
-  // tasks never reach here (form hidden).
+  // tasks never reach here (form hidden). Breaks skip the escalating
+  // friction wait by design — only the instant override waits it out.
   const handleStartBreak = async () => {
-    // M2: intention breaks wait out the same escalating friction as overrides.
-    if (busy || taskStrict || countdown > 0) return;
+    if (busy || taskStrict) return;
+    tap('medium');
     setBusy(true);
     let left = overridesLeft;
     try {
@@ -230,15 +247,23 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const ink = isDark ? darkColors.ink : colors.ink;
   const secondary = isDark ? darkColors.inkSecondary : colors.inkSecondary;
   const outlineText = isDark ? colors.ectoGreen : colors.ectoGreenDark;
+  const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
   // Dynamic to screen size: fixed 220px mascots overflow small screens.
   const { height: winH } = useWindowDimensions();
   const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.22)));
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: bg }}
-      contentContainerStyle={[styles.container, { backgroundColor: bg, flexGrow: 1 }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+    <ScrollView
+      ref={scrollRef}
+      style={{ flex: 1, backgroundColor: bg }}
+      contentContainerStyle={[styles.container, { backgroundColor: bg }]}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
     >
       {/* Mascot */}
       <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
@@ -286,7 +311,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
         {taskStrict ? (
           <Animated.View style={[styles.strictBox, button2AnimStyle, { borderColor: outlineText }]}>
             <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
-              STRICT MODE — NO OVERRIDES
+              STRICT MODE: NO OVERRIDES
             </Text>
             <Text style={[typography.caption, { color: secondary, textAlign: 'center', marginTop: 6 }]}>
               This task locks you in. Get back to work.
@@ -310,56 +335,64 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
             </AnimatedTouchable>
 
             <AnimatedTouchable
-              style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText, opacity: overridesLeft > 0 && countdown <= 0 ? 1 : 0.5 }]}
+              style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText, opacity: overridesLeft > 0 ? 1 : 0.5 }]}
               activeOpacity={0.85}
-              onPress={() => setBreakOpen(v => !v)}
-              disabled={overridesLeft <= 0 || countdown > 0}
+              onPress={() => { tap(); setBreakOpen(v => !v); }}
+              disabled={overridesLeft <= 0}
             >
               <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
                 TAKE AN INTENTION BREAK
               </Text>
             </AnimatedTouchable>
 
-            {breakOpen && overridesLeft > 0 && countdown <= 0 && (
-              <Animated.View style={[styles.breakCard, button2AnimStyle, { borderColor: outlineText }]}>
-                <Text style={[typography.bodyMedium, { color: ink, textAlign: 'center' }]}>
-                  {`Break from ${appLabel}`}
+            {breakOpen && overridesLeft > 0 && (
+              <Animated.View
+                style={[styles.breakCard, button2AnimStyle, { backgroundColor: 'transparent', borderColor: outlineText }]}
+                onLayout={() => scrollRef.current?.scrollToEnd({ animated: true })}
+              >
+                <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
+                  {`Break from ${appLabel}`.toUpperCase()}
+                </Text>
+                <Text style={[typography.label, { color: secondary }]}>
+                  WHAT WILL YOU DO ON THIS BREAK?
                 </Text>
                 <TextInput
-                  style={[styles.breakInput, { color: ink, borderColor: outlineText }]}
-                  placeholder="What will you do on this break?"
+                  style={[styles.breakInput, { color: ink, backgroundColor: cardBg, borderColor: outlineText }]}
+                  placeholder="Stretch, water, fresh air"
                   placeholderTextColor={secondary}
                   value={intention}
                   onChangeText={setIntention}
                   maxLength={140}
                 />
-                <View style={styles.chipRow}>
-                  {[5, 10, 15].map(m => (
-                    <TouchableOpacity
-                      key={m}
-                      activeOpacity={0.7}
-                      onPress={() => setBreakMinutes(m)}
-                      style={[styles.chip, { borderColor: outlineText }, breakMinutes === m && styles.chipOn]}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: breakMinutes === m }}
-                      accessibilityLabel={`${m} minute break`}
-                    >
-                      <Text style={[typography.button, { color: breakMinutes === m ? colors.midnight : outlineText }]}>
-                        {`${m} MIN`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                <View style={styles.stepperRow}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => { tap(); setBreakMinutes(m => Math.max(1, m - 1)); }}
+                    style={[styles.stepperBtn, { borderColor: outlineText }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Shorter break"
+                  >
+                    <Text style={[typography.cta, { color: outlineText }]}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={[typography.cta, { color: outlineText }]}>{`${breakMinutes} MIN`}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => { tap(); setBreakMinutes(m => Math.min(60, m + 1)); }}
+                    style={[styles.stepperBtn, { borderColor: outlineText }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Longer break"
+                  >
+                    <Text style={[typography.cta, { color: outlineText }]}>+</Text>
+                  </TouchableOpacity>
                 </View>
                 <TouchableOpacity
                   activeOpacity={0.85}
                   onPress={handleStartBreak}
-                  disabled={busy || countdown > 0}
-                  style={[styles.breakGo, { opacity: busy || countdown > 0 ? 0.5 : 1 }]}
+                  disabled={busy}
+                  style={[styles.breakGo, { opacity: busy ? 0.5 : 1 }]}
                 >
                   <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
-                    {countdown > 0
-                      ? `BREAK UNLOCKS IN ${formatCountdown(countdown)}`
-                      : `START ${breakMinutes}-MIN BREAK (USES 1 OVERRIDE)`}
+                    {`START ${breakMinutes}-MIN BREAK (USES 1 OVERRIDE)`}
                   </Text>
                 </TouchableOpacity>
               </Animated.View>
@@ -368,12 +401,13 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
         )}
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: layout.screenPaddingH,
     paddingTop: layout.headerPaddingTop,
     paddingBottom: layout.safeAreaBottom,
@@ -391,7 +425,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   subtitleSection: {
-    marginBottom: spacing.xxxl,
+    marginBottom: spacing.xl,
     paddingHorizontal: spacing.md,
     maxWidth: 320,
     alignSelf: 'center',
@@ -414,21 +448,23 @@ const styles = StyleSheet.create({
   },
   outlineButton: {
     backgroundColor: 'transparent',
-    paddingVertical: spacing.lg,
+    paddingVertical: 18,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     borderWidth: 2,
   },
   strictBox: {
     backgroundColor: 'transparent',
-    paddingVertical: spacing.lg,
+    paddingVertical: 18,
     paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     borderWidth: 2,
     borderStyle: 'dashed',
   },
@@ -436,38 +472,36 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: radius.md,
     padding: spacing.lg,
+    marginHorizontal: spacing.md,
     gap: spacing.md,
   },
   breakInput: {
     borderWidth: 2,
     borderRadius: radius.md,
-    padding: spacing.md,
-    fontFamily: 'Inter-Regular',
-    fontSize: typography.body.fontSize,
+    padding: spacing.lg,
+    minHeight: 44,
+    ...typography.body,
   },
-  chipRow: {
+  stepperRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  chip: {
-    flex: 1,
-    borderWidth: 2,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    gap: spacing.md,
   },
-  chipOn: {
-    backgroundColor: colors.ectoGreen,
-    borderColor: colors.ectoGreen,
+  stepperBtn: {
+    width: 44,
+    height: 44,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   breakGo: {
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 3,
     borderBottomColor: colors.ectoGreenDark,
     borderRadius: radius.xl,
-    paddingVertical: 14,
+    paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

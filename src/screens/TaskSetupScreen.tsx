@@ -19,6 +19,7 @@ import { mascotSource } from '../theme/mascot';
 import { TaskGlyph, CheckIcon, ChevronLeftIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 import { syncWidgetNow } from '../widget/widgetSync';
+import { tap } from '../haptics';
 
 type InstalledApp = { packageName: string; appName: string; iconBase64?: string };
 
@@ -136,6 +137,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
 
   const handlePickApp = (app: InstalledApp) => {
     if (isSubscribed === null) return;
+    tap();
     const already = selectedApps.some(a => a.packageName === app.packageName);
     if (already) {
       const next = selectedApps.filter(a => a.packageName !== app.packageName);
@@ -187,21 +189,25 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       ]);
       return;
     }
+    tap();
     setStrict(v => !v);
   };
 
   const handleToggleSchedule = () => {
     if (!isPro) { showScheduleProGate(); return; }
+    tap();
     setScheduleEnabled(v => !v);
   };
 
   const handleToggleDay = (day: number) => {
     if (!isPro) { showScheduleProGate(); return; }
+    tap();
     setScheduleDays(prev => (prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]));
   };
 
   const adjustHour = (which: 'start' | 'end', delta: number) => {
     if (!isPro) { showScheduleProGate(); return; }
+    tap();
     if (which === 'start') {
       setStartMinutes(prev => {
         const h = Math.floor(prev / 60);
@@ -217,6 +223,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
 
   const cycleMinute = (which: 'start' | 'end') => {
     if (!isPro) { showScheduleProGate(); return; }
+    tap();
     if (which === 'start') {
       setStartMinutes(prev => {
         const h = Math.floor(prev / 60);
@@ -260,6 +267,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   }, []);
 
   const handleSave = async () => {
+    tap();
     if (!taskName.trim()) return;
     // Manual override wins; otherwise use the picked app(s).
     const rawPkgs = selectedApps.length > 0
@@ -331,6 +339,32 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     navigation.goBack();
   };
 
+  const handleDelete = () => {
+    if (!existingTask) return;
+    tap('medium');
+    Alert.alert('Delete this task?', 'Its schedules go too. This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const schedules = await store.getSchedulesForTask(existingTask.id);
+            for (const s of schedules) {
+              await store.deleteSchedule(s.id).catch(() => {});
+            }
+            await store.deleteTask(existingTask.id);
+          } catch {
+            Alert.alert('Could not delete task', 'Storage failed. Please try again.');
+            return;
+          }
+          await syncSchedulesToNative();
+          navigation.goBack();
+        },
+      },
+    ]);
+  };
+
   const headerAnimStyle = useAnimatedStyle(() => ({
     opacity: headerOpacity.value,
     transform: [{ translateY: headerTranslateY.value }],
@@ -377,7 +411,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Animated.View style={[styles.form, formAnimStyle]}>
-          <Text style={[typography.display, { color: ink, marginBottom: spacing.md }]}>
+          <Text style={[typography.displaySmall, { color: ink, marginBottom: spacing.md }]}>
             TASK NAME
           </Text>
           <View style={styles.nameRow}>
@@ -393,7 +427,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             />
           </View>
 
-          <Text style={[typography.h3, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
             INSTALLED APPS
           </Text>
           <TextInput
@@ -447,7 +481,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                       </View>
                     )}
                     <View style={styles.appInfo}>
-                      <Text style={[{ fontFamily: 'SpaceGrotesk-SemiBold', fontSize: 16, lineHeight: 22 }, { color: ink }]} numberOfLines={1}>
+                      <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
                         {app.appName}
                       </Text>
                     </View>
@@ -457,7 +491,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          <Text style={[typography.label, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
             PACKAGE NAME (MANUAL OVERRIDE)
           </Text>
           <TextInput
@@ -467,7 +501,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             value={packageName}
             onChangeText={(text) => { setPackageName(text); setAppName(''); setSelectedApps([]); }}
           />
-          <Text style={[typography.h3, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
             STRICT MODE{!isPro ? ' · PRO' : ''}
           </Text>
           <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
@@ -480,11 +514,11 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityLabel="Enable strict mode"
             >
               <View style={styles.scheduleToggleText}>
-                <Text style={[{ fontFamily: 'SpaceGrotesk-SemiBold', fontSize: 16, lineHeight: 22 }, { color: ink }]}>
+                <Text style={[typography.bodyMedium, { color: ink }]}>
                   Lock this task in
                 </Text>
                 <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                  Hides every override — no escape hatch
+                  Hides every override. No escape hatch
                 </Text>
               </View>
               <View style={[styles.toggleTrack, { borderColor: border }, strict && styles.toggleTrackOn]}>
@@ -492,7 +526,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               </View>
             </TouchableOpacity>
           </View>
-          <Text style={[typography.h3, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
             SCHEDULE{!isPro ? ' · PRO' : ''}
           </Text>
           <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
@@ -505,7 +539,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityLabel="Enable schedule"
             >
               <View style={styles.scheduleToggleText}>
-                <Text style={[{ fontFamily: 'SpaceGrotesk-SemiBold', fontSize: 16, lineHeight: 22 }, { color: ink }]}>
+                <Text style={[typography.bodyMedium, { color: ink }]}>
                   Enable schedule
                 </Text>
                 <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
@@ -590,6 +624,19 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
         >
           <Text style={styles.primaryButtonText}>SAVE TASK</Text>
         </AnimatedTouchable>
+        {existingTask && (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleDelete}
+            style={styles.deleteButton}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${existingTask.name}`}
+          >
+            <Text style={[typography.cta, { color: colors.danger, textAlign: 'center' }]}>
+              DELETE TASK
+            </Text>
+          </TouchableOpacity>
+        )}
       </Animated.View>
     </View>
   );
@@ -643,8 +690,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: radius.md,
     padding: spacing.lg,
-    fontFamily: 'Inter-Regular',
-    fontSize: typography.body.fontSize,
+    ...typography.body,
   },
   appList: {
     borderWidth: 2,
@@ -739,6 +785,7 @@ const styles = StyleSheet.create({
   dayChip: {
     flex: 1,
     minHeight: 44,
+    backgroundColor: 'transparent',
     borderWidth: 2,
     borderRadius: radius.md,
     justifyContent: 'center',
@@ -749,9 +796,7 @@ const styles = StyleSheet.create({
     borderColor: colors.ectoGreen,
   },
   dayChipText: {
-    fontFamily: 'SpaceGrotesk-Bold',
-    fontSize: 16,
-    lineHeight: 22,
+    ...typography.h3,
   },
   timeRow: {
     flexDirection: 'row',
@@ -768,20 +813,17 @@ const styles = StyleSheet.create({
   stepperBtn: {
     width: 44,
     height: 44,
+    backgroundColor: 'transparent',
     borderWidth: 2,
     borderRadius: radius.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
   stepperText: {
-    fontFamily: 'SpaceGrotesk-Bold',
-    fontSize: 20,
-    lineHeight: 24,
+    ...typography.button,
   },
   timeText: {
-    fontFamily: 'SpaceGrotesk-Bold',
-    fontSize: 18,
-    lineHeight: 22,
+    ...typography.h3,
     minWidth: 58,
     textAlign: 'center',
   },
@@ -789,15 +831,14 @@ const styles = StyleSheet.create({
     height: 44,
     minWidth: 52,
     paddingHorizontal: spacing.sm,
+    backgroundColor: 'transparent',
     borderWidth: 2,
     borderRadius: radius.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
   minuteText: {
-    fontFamily: 'SpaceGrotesk-Bold',
-    fontSize: 16,
-    lineHeight: 22,
+    ...typography.h3,
   },
   bottomSection: {
     paddingTop: spacing.lg,
@@ -818,5 +859,17 @@ const styles = StyleSheet.create({
     ...typography.cta,
     color: colors.midnight,
     textAlign: 'center',
+  },
+  deleteButton: {
+    paddingVertical: spacing.lg,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: colors.danger,
+    backgroundColor: 'transparent',
   },
 });

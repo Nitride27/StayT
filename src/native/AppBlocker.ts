@@ -61,11 +61,22 @@ class AppBlockerBridge {
     }
   }
 
-  async startBlocking(blockedPackages: string[]): Promise<boolean> {
+  async startBlocking(blockedPackages: string[], taskName?: string): Promise<boolean> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
     }
-    return AppBlocker.startBlocking(blockedPackages);
+    try {
+      return await AppBlocker.startBlocking(blockedPackages, taskName ?? null);
+    } catch {
+      // Stale native shell (pre-taskName bridge): the extra arg rejects even
+      // with the service on. Retry the legacy arity so blocking still
+      // engages instead of showing the re-enable banner by mistake.
+      try {
+        return await AppBlocker.startBlocking(blockedPackages);
+      } catch {
+        return false;
+      }
+    }
   }
 
   async stopBlocking(): Promise<boolean> {
@@ -80,6 +91,22 @@ class AppBlockerBridge {
       return false;
     }
     return AppBlocker.pauseBlocking(seconds);
+  }
+
+  /**
+   * Single-surface rule: the JS interstitial calls this on mount so the
+   * native overlay never stacks over it (double blocked screen).
+   * Best-effort: resolves false when native is absent; never throws.
+   */
+  async dismissBlockedOverlay(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.dismissBlockedOverlay) {
+      return false;
+    }
+    try {
+      return await AppBlocker.dismissBlockedOverlay();
+    } catch {
+      return false;
+    }
   }
 
   /**

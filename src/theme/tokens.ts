@@ -66,6 +66,13 @@ export const typography = {
     letterSpacing: -0.03,
     lineHeight: 43, // 0.9
   },
+  // Anton at section-label size: same voice as display, same size as h3.
+  displaySmall: {
+    fontFamily: 'Anton',
+    fontSize: 18,
+    letterSpacing: -0.01,
+    lineHeight: 22,
+  },
 
   // ─── SpaceGrotesk — UI + headings ───
   h1: {

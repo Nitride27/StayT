@@ -100,8 +100,6 @@ function AppNavigator() {
 
         // Reconcile zombie sessions left `active` by a process kill:
         // close them so History never renders phantom 0m rows.
-        // M6: a killed demo leaves an orphan isDemo task — with no session to
-        // own it after the reconcile, delete it so it never counts or lingers.
         try {
           const sessions = await store.getSessions();
           const now = Date.now();
@@ -109,15 +107,6 @@ function AppNavigator() {
             if (s.status === 'active') {
               const duration = Math.max(0, now - s.startedAt);
               await store.saveSession({ ...s, status: 'completed', endedAt: now, duration });
-            }
-          }
-          const settled = await store.getSessions();
-          if (!settled.some(s => s.status === 'active')) {
-            const tasks = await store.getTasks();
-            for (const t of tasks) {
-              if (t.isDemo === true) {
-                await store.deleteTask(t.id).catch(() => {});
-              }
             }
           }
         } catch {

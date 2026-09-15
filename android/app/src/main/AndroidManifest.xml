@@ -43,6 +43,7 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="exp+stayt"/>
+        <data android:scheme="exp+stayt-app"/>
       </intent-filter>
     </activity>
     <receiver android:name="com.nitridee.staytapp.blocker.ScheduleBootReceiver" android:exported="false">

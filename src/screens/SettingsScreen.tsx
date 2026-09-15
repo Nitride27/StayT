@@ -28,6 +28,7 @@ import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
 import { useBlockSelfTest, resolveSelfTestApp } from '../blocktest/useBlockSelfTest';
+import { tap } from '../haptics';
 import appConfig from '../../app.json';
 
 const appVersion: string = appConfig.expo.version;
@@ -76,7 +77,7 @@ const sectionHeaderStyles = StyleSheet.create({
     backgroundColor: colors.danger,
   },
   label: {
-    ...typography.label,
+    ...typography.cta,
   },
 });
 
@@ -137,11 +138,13 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const handleTheme = (key: ThemeMode) => {
+    tap();
     // setMode flips instantly AND persists via ThemeContext.
     setMode(key);
   };
 
   const handleNotifications = async (value: boolean) => {
+    tap();
     setNotificationsEnabled(value);
     await savePrefs({ notificationsEnabled: value });
     if (value) {
@@ -161,6 +164,7 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const handleHaptics = async (value: boolean) => {
+    tap();
     setHapticsEnabled(value);
     await savePrefs({ hapticFeedback: value });
   };
@@ -168,6 +172,7 @@ export default function SettingsScreen({ navigation }: Props) {
   // P0-2 self-test: block the first task's app, prove detection end-to-end.
   // B2: refuses while a session is active — the test would hijack its blocks.
   const handleStartSelfTest = async () => {
+    tap();
     const app = await resolveSelfTestApp();
     setTestApp(app);
     const result = await selfTest.start(app.packageName);
@@ -177,6 +182,7 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const handleResetOnboarding = () => {
+    tap('medium');
     Alert.alert('Reset onboarding?', 'You will see the welcome flow again.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -194,6 +200,7 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const handleClearHistory = () => {
+    tap('medium');
     Alert.alert('Clear history?', 'All sessions and blocked attempts will be deleted. Tasks stay.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -277,7 +284,7 @@ export default function SettingsScreen({ navigation }: Props) {
               {/* N-1: say plainly when the OS disagrees with the toggle. */}
               {notificationsEnabled && !osNotifGranted && (
                 <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.xs }]}>
-                  System notifications are off — turn the toggle on again to open system settings.
+                  System notifications are off. Turn the toggle on again to open settings.
                 </Text>
               )}
             </View>
@@ -302,14 +309,14 @@ export default function SettingsScreen({ navigation }: Props) {
           <SectionHeader label="SUBSCRIPTION" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
           {isSubscribed ? (
             <View style={[styles.proPill, { backgroundColor: colors.ectoGreen, borderColor: cardBorder }]}>
-              <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO — ACTIVE</Text>
+              <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO ACTIVE</Text>
             </View>
           ) : (
             <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Text style={[typography.bodyStrong, { color: ink }]}>Free plan</Text>
               <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => navigation.navigate('Paywall')}
+                onPress={() => { tap(); navigation.navigate('Paywall'); }}
                 style={styles.upgradeButton}
               >
                   <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
@@ -341,7 +348,7 @@ export default function SettingsScreen({ navigation }: Props) {
             {selfTest.state === 'waiting' && (
               <>
                 <Text style={[typography.caption, { color: theme.inkSecondary }]}>
-                  {`Now open ${testApp.appName || 'the app'} — StayT should block it (${selfTest.remaining}s)`}
+                  {`Now open ${testApp.appName || 'the app'}. StayT should block it (${selfTest.remaining}s)`}
                 </Text>
                 <TouchableOpacity activeOpacity={0.7} onPress={selfTest.cancel} style={styles.ghostButton}>
                   <Text style={[typography.button, { color: theme.inkSecondary, textAlign: 'center' }]}>CANCEL TEST</Text>

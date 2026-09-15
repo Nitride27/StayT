@@ -19,6 +19,7 @@ import { typography, spacing, radius, layout, colors, darkColors } from '../them
 import { mascotSource } from '../theme/mascot';
 import { TaskGlyph, ChevronRightIcon, GearIcon, PlusIcon, FlameIcon, ClockIcon } from '../components/icons';
 import { FREE_TASK_LIMIT } from './PaywallScreen';
+import { tap } from '../haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TaskPicker'>;
@@ -134,8 +135,8 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
       const currentStreak = await store.getStreak();
       setStreak(currentStreak);
       const prefs = await store.getPreferences();
-      // M6: presets never counted; demo tasks are temp and never counted either.
-      const userTasks = allTasks.filter(t => !t.isPreset && !t.isDemo).length;
+      // M6: presets never counted toward the free task limit.
+      const userTasks = allTasks.filter(t => !t.isPreset).length;
       setShowPaywall(prefs.isSubscribed !== true && userTasks >= FREE_TASK_LIMIT);
     } catch {
       setTasks([]);
@@ -143,6 +144,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
   };
 
   const handleSelectTask = async (task: Task) => {
+    tap();
     // No service = no blocking and no blocked screen. Route to the
     // permission flow instead of starting a silently unprotected session —
     // the task id rides along so granting resumes this exact tap.
@@ -187,6 +189,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
   };
 
   const handleAddTask = () => {
+    tap();
     if (showPaywall) {
       navigation.navigate('Paywall');
     } else {
@@ -244,7 +247,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
               accessibilityRole="text"
               accessibilityLabel={`${streak} day streak`}
             >
-            <FlameIcon size={14} color={colors.midnight} />
+            <FlameIcon size={16} color={colors.midnight} />
             <Text style={[styles.streakCount]}>{streak}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.7} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} style={[styles.gearButton, { borderColor: ink }]} accessibilityRole="button" accessibilityLabel="Settings">
@@ -342,9 +345,9 @@ const styles = StyleSheet.create({
     minHeight: 38,
   },
   streakCount: {
-    fontFamily: 'Anton',
-    fontSize: 16,
-    letterSpacing: -0.02,
+    ...typography.cta,
+    fontSize: 18,
+    lineHeight: 22,
     color: colors.midnight,
   },
   clockBox: {

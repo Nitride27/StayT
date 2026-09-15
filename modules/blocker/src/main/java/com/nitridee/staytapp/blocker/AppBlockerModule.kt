@@ -59,14 +59,14 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun startBlocking(blocked: ReadableArray?, promise: Promise) {
+    fun startBlocking(blocked: ReadableArray?, taskName: String?, promise: Promise) {
         try {
             if (blocked == null) {
                 promise.reject("INVALID_ARGS", "blockedPackages is null")
                 return
             }
             val blockedPackages = blocked.toArrayList().map { it.toString() }
-            StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages)
+            StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages, taskName = taskName)
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e(TAG, "startBlocking failed", e)
@@ -121,6 +121,22 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "pauseBlocking failed", e)
             promise.reject("PAUSE_BLOCKING_FAILED", e.message, e)
+        }
+    }
+
+    /**
+     * Single-surface rule (JS BlockedInterstitial calls this on mount):
+     * drop the native overlay so it never stacks over the interstitial.
+     * No-op when no overlay is showing; never throws.
+     */
+    @ReactMethod
+    fun dismissBlockedOverlay(promise: Promise) {
+        try {
+            StayTAccessibilityService.dismissOverlay()
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "dismissBlockedOverlay failed", e)
+            promise.reject("DISMISS_OVERLAY_FAILED", e.message, e)
         }
     }
 

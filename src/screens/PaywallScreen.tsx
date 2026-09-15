@@ -16,6 +16,7 @@ import { mascotSource } from '../theme/mascot';
 import { CheckIcon, CloseIcon } from '../components/icons';
 import { useIAP, type Purchase } from 'expo-iap';
 import { PRO_SKU, grantPro } from '../billing/pro';
+import { tap } from '../haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Paywall'>;
@@ -113,7 +114,10 @@ export default function PaywallScreen({ navigation }: Props) {
     }
   }, [availablePurchases]);
 
-  const price = products.find(p => p.id === PRO_SKU)?.displayPrice ?? '$4.99';
+  // Play can return the product with a blank displayPrice (no priced offer
+  // in this region/account) — ?? alone would render an empty number.
+  const rawPrice = products.find(p => p.id === PRO_SKU)?.displayPrice;
+  const price = rawPrice && rawPrice.trim() ? rawPrice : '$4.99';
 
   const handleUnlock = async () => {
     setStoreError(null);
@@ -121,6 +125,7 @@ export default function PaywallScreen({ navigation }: Props) {
       setStoreError('Store unavailable. Check your connection and reopen this screen.');
       return;
     }
+    tap('medium');
     setBusy(true);
     try {
       await requestPurchase({ request: { google: { skus: [PRO_SKU] } }, type: 'in-app' });
@@ -136,6 +141,7 @@ export default function PaywallScreen({ navigation }: Props) {
       setStoreError('Store unavailable. Check your connection and reopen this screen.');
       return;
     }
+    tap();
     setBusy(true);
     setRestoring(true);
     try {
@@ -255,7 +261,7 @@ export default function PaywallScreen({ navigation }: Props) {
           onPressOut={handlePressOut}
         >
           <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
-            {busy ? 'PROCESSING…' : `UNLOCK PRO — ${price}`}
+            {busy ? 'PROCESSING…' : `UNLOCK PRO ${price}`}
           </Text>
         </AnimatedTouchable>
 

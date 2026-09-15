@@ -16,7 +16,9 @@ import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { ChevronRightIcon, ChevronLeftIcon, FlameIcon } from '../components/icons';
+import { ChevronRightIcon, ChevronLeftIcon, FlameIcon, TaskGlyph } from '../components/icons';
+import type { ImageSourcePropType } from 'react-native';
+import { tap } from '../haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'History'>;
@@ -56,7 +58,7 @@ function formatTime(ts: number): string {
 function formatRange(item: Session): string {
   const start = formatTime(item.startedAt);
   const end = item.endedAt ? formatTime(item.endedAt) : 'now';
-  return `${formatDate(item.startedAt)} · ${start} – ${end}`;
+  return `${formatDate(item.startedAt)} · ${start} - ${end}`;
 }
 
 function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number; isDark: boolean }) {
@@ -89,12 +91,31 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
   );
 }
 
+// Installed-app labels/icons: the query renders an icon per app, so repeat
+// visits reuse a short-lived module cache instead of blocking the paint.
+let appMetaCache: { at: number; labels: Record<string, string>; icons: Record<string, string> } | null = null;
+const APP_META_TTL_MS = 5 * 60 * 1000;
+
+// Per-milestone badge art, cut from assets/milestones.png into
+// assets/badges/. Earned = full color, locked = dimmed.
+const MILESTONE_ART: Record<string, ImageSourcePropType> = {
+  'focus-10': require('../../assets/badges/focus-10.png'),
+  'focus-100': require('../../assets/badges/focus-100.png'),
+  'focus-500': require('../../assets/badges/focus-500.png'),
+  'streak-7': require('../../assets/badges/streak-7.png'),
+  'streak-30': require('../../assets/badges/streak-30.png'),
+  'streak-100': require('../../assets/badges/streak-100.png'),
+  'resist-100': require('../../assets/badges/resist-100.png'),
+  'resist-1000': require('../../assets/badges/resist-1000.png'),
+};
+
 export default function HistoryScreen({ navigation }: Props) {
   const { isDark } = useTheme();
   const [sessions, setSessions] = useState<HistoryItem[]>([]);
   const [streak, setStreak] = useState(0);
   const [attempts, setAttempts] = useState<BlockedAttempt[]>([]);
   const [appLabels, setAppLabels] = useState<Record<string, string>>({});
+  const [appIcons, setAppIcons] = useState<Record<string, string>>({});
   const [reclaimed, setReclaimed] = useState({ focusMs: 0, resistCount: 0, estimatedMs: 0, totalMs: 0 });
   const [milestones, setMilestones] = useState<
     { id: string; label: string; progress: number; target: number; earned: boolean }[]
@@ -126,41 +147,55 @@ export default function HistoryScreen({ navigation }: Props) {
   }, []);
 
   const loadData = async () => {
+    // Store reads run in parallel and paint immediately. The slow
+    // package-manager query (per-app icon renders) runs last via
+    // loadAppMeta and upgrades labels/icons in place.
     try {
-      const allSessions = await store.getSessions();
-      const tasks = await store.getTasks();
+      const [allSessions, tasks, currentStreak, blockedAttempts, timeReclaimed, milestoneList] = await Promise.all([
+        store.getSessions(),
+        store.getTasks(),
+        store.getStreak(),
+        store.getBlockedAttempts(),
+        store.getTimeReclaimed(7),
+        store.getMilestones(),
+      ]);
       const taskMap = new Map(tasks.map((t: Task) => [t.id, t.name]));
       const withNames: HistoryItem[] = allSessions.map((s: Session) => ({
         ...s,
         taskName: taskMap.get(s.taskId) || 'Unknown',
       }));
       setSessions(withNames);
-      setStreak(await store.getStreak());
+      setStreak(currentStreak);
+      setAttempts(blockedAttempts);
+      setReclaimed(timeReclaimed);
+      setMilestones(milestoneList);
     } catch {
       setSessions([]);
     }
-    try {
-      setAttempts(await store.getBlockedAttempts());
-    } catch {
-      setAttempts([]);
-    }
-    try {
-      setReclaimed(await store.getTimeReclaimed(7));
-    } catch {
-      setReclaimed({ focusMs: 0, resistCount: 0, estimatedMs: 0, totalMs: 0 });
-    }
-    try {
-      setMilestones(await store.getMilestones());
-    } catch {
-      setMilestones([]);
+    loadAppMeta().catch(() => {});
+  };
+
+  const loadAppMeta = async () => {
+    // Repeat visits paint instantly from cache; the query refreshes in the
+    // background on TTL expiry (new installs pick up within minutes).
+    if (appMetaCache && Date.now() - appMetaCache.at < APP_META_TTL_MS) {
+      setAppLabels(appMetaCache.labels);
+      setAppIcons(appMetaCache.icons);
+      return;
     }
     try {
       const apps = await AppBlocker.getInstalledApps();
       const map: Record<string, string> = {};
-      for (const a of apps) map[a.packageName] = a.appName;
+      const icons: Record<string, string> = {};
+      for (const a of apps) {
+        map[a.packageName] = a.appName;
+        if (a.iconBase64) icons[a.packageName] = a.iconBase64;
+      }
+      appMetaCache = { at: Date.now(), labels: map, icons };
       setAppLabels(map);
+      setAppIcons(icons);
     } catch {
-      setAppLabels({});
+      // Labels fall back to package names; icons to the glyph.
     }
   };
 
@@ -197,9 +232,10 @@ export default function HistoryScreen({ navigation }: Props) {
 
   // P0-1 text share (built-in Share only, no new deps).
   const handleShareReclaimed = async () => {
+    tap();
     try {
       await Share.share({
-        message: `I reclaimed ${formatReclaimed(reclaimed.totalMs)} this week with StayT — ${reclaimed.resistCount} distractions resisted (est.). Small steps build big progress.`,
+        message: `I reclaimed ${formatReclaimed(reclaimed.totalMs)} this week with StayT, ${reclaimed.resistCount} distractions resisted. Small steps build big progress.`,
       });
     } catch {
       // Share sheet is best-effort.
@@ -208,6 +244,7 @@ export default function HistoryScreen({ navigation }: Props) {
 
   // P1-4 earned milestone -> built-in text share.
   const handleShareMilestone = async (label: string, progress: number) => {
+    tap();
     try {
       await Share.share({
         message: `I earned "${label}" on StayT. Small steps build big progress.`,
@@ -269,12 +306,11 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
               </View>
               <Text style={[typography.display, { color: streakGreen, textAlign: 'center', marginTop: spacing.xs }]}>DAY STREAK!</Text>
-              <Text style={[typography.caption, { color: muted, marginTop: spacing.xs, textAlign: 'center', maxWidth: 260, alignSelf: 'center' }]}>
-                Keep going. You're building great habits.
-              </Text>
             </Animated.View>
 
-            <Animated.View style={[styles.chartSection, statsAnimStyle]}>
+            {/* Single week card: chart + total + best day + reclaimed. */}
+            <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
+              <Text style={[typography.cta, { color: ink }]}>THIS WEEK</Text>
               <View style={styles.chartRow}>
                 {weekMinutes.map((mins, i) => (
                   <View key={WEEK_DAYS[i]} style={styles.chartCol}>
@@ -295,38 +331,33 @@ export default function HistoryScreen({ navigation }: Props) {
                   </View>
                 ))}
               </View>
-            </Animated.View>
-
-            <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-              <Text style={[typography.displayXL, { color: ink, textAlign: 'center' }]}>{weeklyTotalMin}</Text>
-              <Text style={[typography.label, { color: muted, textAlign: 'center', marginTop: spacing.xs }]}>
-                MINUTES THIS WEEK
-              </Text>
+              <View style={styles.weekTotalRow}>
+                <Text style={[typography.displayXL, { color: ink }]}>{weeklyTotalMin}</Text>
+                <Text style={[typography.label, { color: muted, marginTop: spacing.xs }]}>
+                  MINUTES
+                </Text>
+              </View>
               <View style={styles.bestDayRow}>
                 <Text style={[typography.label, { color: muted }]}>BEST DAY</Text>
                 <Text style={[typography.bodyMedium, { color: ink }]}>
-                  {weeklyTotalMin > 0 ? WEEK_DAYS[bestDayIdx].toUpperCase() : '—'}
+                  {weeklyTotalMin > 0 ? WEEK_DAYS[bestDayIdx].toUpperCase() : '-'}
                 </Text>
               </View>
-            </Animated.View>
-
-            {/* P0-1 time-reclaimed hero: focus + labelled resist estimates. */}
-            <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-              <Text style={[typography.display, { color: streakGreen, textAlign: 'center' }]}>
-                {formatReclaimed(reclaimed.totalMs).toUpperCase()}
-              </Text>
-              <Text style={[typography.label, { color: muted, textAlign: 'center', marginTop: spacing.xs }]}>
-                RECLAIMED THIS WEEK
-              </Text>
+              <View style={styles.bestDayRow}>
+                <Text style={[typography.label, { color: muted }]}>RECLAIMED</Text>
+                <Text style={[typography.bodyMedium, { color: ink }]}>
+                  {formatReclaimed(reclaimed.totalMs).toUpperCase()}
+                </Text>
+              </View>
               <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
-                {`${formatMs(reclaimed.focusMs)} in focus + ${reclaimed.resistCount} resists (est. 7 min each)`}
+                {`${formatMs(reclaimed.focusMs)} focus, ${reclaimed.resistCount} resists`}
               </Text>
               <TouchableOpacity
-                activeOpacity={0.85}
+                activeOpacity={0.7}
                 onPress={handleShareReclaimed}
-                style={styles.shareButton}
+                style={styles.shareLink}
               >
-                <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+                <Text style={[typography.button, { color: streakGreen, textAlign: 'center' }]}>
                   SHARE
                 </Text>
               </TouchableOpacity>
@@ -335,14 +366,15 @@ export default function HistoryScreen({ navigation }: Props) {
             {/* P1-4 milestone row: earned taps share, locked show progress. */}
             {milestones.length > 0 && (
               <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-                <Text style={[typography.h3, { color: ink }]}>MILESTONES</Text>
+                <Text style={[typography.cta, { color: ink }]}>MILESTONES</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mileRow}>
-                  {milestones.map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      activeOpacity={m.earned ? 0.7 : 1}
-                      disabled={!m.earned}
-                      onPress={() => handleShareMilestone(m.label, m.progress)}
+                  {milestones.map(m => {
+                    return (
+                      <TouchableOpacity
+                        key={m.id}
+                        activeOpacity={m.earned ? 0.7 : 1}
+                        disabled={!m.earned}
+                        onPress={() => handleShareMilestone(m.label, m.progress)}
                       style={[
                         styles.mileChip,
                         { borderColor: border },
@@ -351,28 +383,44 @@ export default function HistoryScreen({ navigation }: Props) {
                       accessibilityRole={m.earned ? 'button' : 'text'}
                       accessibilityLabel={m.earned ? `${m.label} earned. Share.` : `${m.label}, ${Math.floor(m.progress)} of ${m.target}`}
                     >
-                      <Text style={[typography.bodyMedium, { color: m.earned ? colors.midnight : ink, textAlign: 'center' }]} numberOfLines={2}>
-                        {m.label.toUpperCase()}
-                      </Text>
-                      <Text style={[typography.caption, { color: m.earned ? colors.midnight : muted, textAlign: 'center', marginTop: 2 }]}>
-                        {m.earned ? 'EARNED — TAP TO SHARE' : `${Math.floor(m.progress)}/${m.target}`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Image
+                          source={MILESTONE_ART[m.id]}
+                          style={[styles.badgeImage, { opacity: m.earned ? 1 : 0.35 }]}
+                          resizeMode="cover"
+                        />
+                        <Text style={[typography.bodyMedium, { color: m.earned ? colors.midnight : ink, textAlign: 'center' }]} numberOfLines={2}>
+                          {m.label.toUpperCase()}
+                        </Text>
+                        <Text style={[typography.caption, { color: m.earned ? colors.midnight : muted, textAlign: 'center', marginTop: 2 }]}>
+                          {m.earned ? 'TAP TO SHARE' : `${Math.floor(m.progress)}/${m.target}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </Animated.View>
             )}
 
             <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-              <Text style={[typography.h3, { color: ink }]}>MOST BLOCKING YOU</Text>
+              <Text style={[typography.cta, { color: ink }]}>MOST BLOCKED</Text>
               {ranking.length === 0 ? (
                 <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
-                  No blocked attempts yet — stay focused!
+                  No blocks yet. Stay focused!
                 </Text>
               ) : (
                 ranking.map((r, i) => (
                   <View key={r.packageName} style={styles.rankRow}>
                     <Text style={[typography.bodyMedium, { color: ink, width: 20 }]}>{i + 1}</Text>
+                    {appIcons[r.packageName] ? (
+                      <Image
+                        source={{ uri: `data:image/png;base64,${appIcons[r.packageName]}` }}
+                        style={styles.appIcon}
+                      />
+                    ) : (
+                      <View style={styles.appIconFallback}>
+                        <TaskGlyph name={r.label} size={18} color={colors.midnight} />
+                      </View>
+                    )}
                     <View style={styles.rankMain}>
                       <View style={styles.rankTopRow}>
                         <Text style={[typography.bodyMedium, { color: ink, flex: 1 }]} numberOfLines={1}>
@@ -391,7 +439,7 @@ export default function HistoryScreen({ navigation }: Props) {
 
             {sessions.length > 0 && (
               <Animated.View style={[styles.listLabelWrap, listAnimStyle]}>
-                <Text style={[typography.label, { color: muted }]}>
+                <Text style={[typography.cta, { color: ink }]}>
                   PAST SESSIONS
                 </Text>
               </Animated.View>
@@ -403,6 +451,16 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.h3, { color: ink }]}>INTENTION BREAKS</Text>
                 {breaks.map(b => (
                   <View key={b.id} style={styles.breakRow}>
+                    {appIcons[b.packageName] ? (
+                      <Image
+                        source={{ uri: `data:image/png;base64,${appIcons[b.packageName]}` }}
+                        style={styles.appIcon}
+                      />
+                    ) : (
+                      <View style={styles.appIconFallback}>
+                        <TaskGlyph name={appLabels[b.packageName] ?? b.packageName} size={18} color={colors.midnight} />
+                      </View>
+                    )}
                     <View style={styles.breakMain}>
                       <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={2}>
                         {b.intention ? `“${b.intention}”` : 'Intention break'}
@@ -426,7 +484,7 @@ export default function HistoryScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.emptyButton}
               activeOpacity={0.85}
-              onPress={() => navigation.navigate('TaskPicker')}
+              onPress={() => { tap(); navigation.navigate('TaskPicker'); }}
             >
               <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
                 START A SESSION
@@ -478,11 +536,10 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'center',
   },
-  chartSection: {
-    marginBottom: spacing.xl,
-  },  chartRow: {
+  chartRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: spacing.md,
   },
   chartCol: {
     flex: 1,
@@ -518,6 +575,19 @@ const styles = StyleSheet.create({
   rankMain: {
     flex: 1,
   },
+  appIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  appIconFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: colors.ectoGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   rankTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -535,16 +605,15 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: colors.ectoGreen,
   },
-  shareButton: {
-    backgroundColor: colors.ectoGreen,
-    borderBottomWidth: 3,
-    borderBottomColor: colors.ectoGreenDark,
-    borderRadius: radius.xl,
-    paddingVertical: 14,
+  weekTotalRow: {
+    alignItems: 'center',
     marginTop: spacing.lg,
+  },
+  shareLink: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+    marginTop: spacing.sm,
   },
   mileRow: {
     gap: spacing.md,
@@ -556,7 +625,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     justifyContent: 'center',
-    minHeight: 88,
+    alignItems: 'center',
+    minHeight: 168,
+  },
+  badgeImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginBottom: spacing.sm,
   },
   mileChipEarned: {
     backgroundColor: colors.ectoGreen,

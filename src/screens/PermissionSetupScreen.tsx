@@ -28,6 +28,7 @@ import AppBlocker from '../native/AppBlocker';
 import { store } from '../storage/store';
 import { ensureDailyReminder } from '../notifications/reminders';
 import { useBlockSelfTest, resolveSelfTestApp } from '../blocktest/useBlockSelfTest';
+import { tap } from '../haptics';
 import { Platform } from 'react-native';
 
 type Props = {
@@ -189,6 +190,7 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
   };
 
   const handleGrantAccessibility = async () => {
+    tap();
     try {
       AppBlocker.openAccessibilitySettings();
     } catch {
@@ -199,6 +201,7 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
   // P0-2: block the first task's app, prove detection end-to-end.
   // B2: refuses while a session is active — the test would hijack its blocks.
   const handleStartSelfTest = async () => {
+    tap();
     const app = await resolveSelfTestApp();
     setTestApp(app);
     const result = await selfTest.start(app.packageName);
@@ -327,7 +330,7 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
             {selfTest.state === 'waiting' && (
               <>
                 <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
-                  {`Now open ${testApp.appName || 'the app'} — StayT should block it (${selfTest.remaining}s)`}
+                  {`Now open ${testApp.appName || 'the app'}. StayT should block it (${selfTest.remaining}s)`}
                 </Text>
                 <TouchableOpacity
                   activeOpacity={0.7}
