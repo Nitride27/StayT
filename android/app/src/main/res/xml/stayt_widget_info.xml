@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- P2-1 widget provider info. updatePeriodMillis stays 0: JS pushes updates
-     (session end) and the midnight receiver rolls the day over. -->
+<!-- P2-1 widget provider info. Dashboard-sized default (roughly 3x2 cells),
+     resizable both ways. updatePeriodMillis stays 0: JS pushes updates
+     (session start/end) and the midnight receiver rolls the day over. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="110dp"
-    android:minHeight="40dp"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/stayt_widget"
-    android:resizeMode="horizontal"
+    android:description="Your focus dashboard: today's focus time, streak, guarded apps and live session status."
+    android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, useWindowDimensions, Platform } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -11,7 +11,7 @@ import Animated, {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Session, Task, blockedPackagesOf } from '../types';
+import { Session, Task, UserPreferences, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
@@ -28,6 +28,53 @@ type Props = {
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
+type SessionOpts = {
+  friction: { enabled: boolean; delaySeconds: number; escalate: boolean };
+  allowlist: string[] | null;
+};
+
+// Single opts builder for the mount apply and the 5s re-apply: both paths
+// push identical config. Friction prefs absent = disabled; allowlist [] for
+// non-Pro = null ([] never crosses for free).
+function buildSessionOpts(prefs: UserPreferences, task: Task): SessionOpts {
+  const isPro = prefs.isSubscribed === true;
+  return {
+    friction: {
+      enabled: prefs.frictionEnabled === true,
+      delaySeconds: prefs.frictionDelaySeconds ?? 10,
+      escalate: isPro,
+    },
+    allowlist: task.allowlistMode === true && isPro ? (task.allowlist ?? []) : null,
+  };
+}
+
+// Push friction + global budgets/domains/filters, all best-effort. Prefs are
+// read fresh on every call — never cached across re-applies.
+async function pushSessionConfig(task: Task): Promise<SessionOpts> {
+  const fallback: SessionOpts = {
+    friction: { enabled: false, delaySeconds: 10, escalate: false },
+    allowlist: null,
+  };
+  try {
+    const prefs = await store.getPreferences();
+    const opts = buildSessionOpts(prefs, task);
+    await AppBlocker.setFriction(opts.friction).catch(() => {});
+    const [budgets, domains, filters] = await Promise.all([
+      store.getBudgets(),
+      store.getBlockedDomains(),
+      store.getFeedFilters(),
+    ]);
+    await AppBlocker.setBudgets(budgets.filter(b => b.enabled === true)).catch(() => {});
+    await AppBlocker.setBlockedDomains(
+      domains.filter(d => d.enabled !== false).map(d => d.domain),
+    ).catch(() => {});
+    await AppBlocker.setFeedFilters(filters).catch(() => {});
+    return opts;
+  } catch {
+    return fallback;
+  }
+}
+
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const hrs = Math.floor(totalSec / 3600);
@@ -35,6 +82,33 @@ function formatElapsed(ms: number): string {
   const secs = totalSec % 60;
   if (hrs > 0) return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+// Wave 2C2: brand line for the blocking-off banner. Local duplicate of the
+// PermissionSetup OEM logic (do not import across screens).
+function getSessionOEMTip(): string | null {
+  if (Platform.OS !== 'android') return null;
+  const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
+  const manufacturer =
+    (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
+  const hay = `${manufacturer} ${model}`;
+  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
+    return 'Xiaomi: Settings > Apps > StayT > Autostart ON, Battery > No restrictions.';
+  if (hay.includes('samsung'))
+    return 'Samsung: add StayT to Never-sleeping apps, Battery > Unrestricted.';
+  if (hay.includes('huawei') || hay.includes('honor'))
+    return 'Huawei: App launch > StayT > Manage manually, all toggles ON.';
+  if (hay.includes('oppo') || hay.includes('realme'))
+    return 'OPPO: Autostart ON, App battery management > No restrictions.';
+  if (hay.includes('oneplus'))
+    return 'OnePlus: Autostart ON, Battery optimization > Don\u2019t optimize.';
+  if (hay.includes('vivo') || hay.includes('iqoo'))
+    return 'Vivo: Autostart ON, Background power consumption > Allow.';
+  if (hay.includes('motorola') || hay.includes('moto'))
+    return 'Motorola: Adaptive Battery > exclude StayT, Battery > Unrestricted.';
+  if (hay.includes('nothing'))
+    return 'Nothing: Autostart ON, Battery > Unrestricted.';
+  return null;
 }
 
 export default function ActiveSessionScreen({ navigation, route }: Props) {
@@ -95,7 +169,9 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         mark(false);
         return;
       }
-      const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name).catch(() => false);
+      const { allowlist } = await pushSessionConfig(task);
+      if (!live) return;
+      const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name, { allowlist }).catch(() => false);
       mark(ok !== false);
     })();
     // P2-1: push today's totals + last-task packages to the widget mirror.
@@ -114,7 +190,9 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       // in-memory so a kill/re-enable loses it. Only call when we were
       // previously down to avoid re-pushing every 5s.
       if (!blockingOkRef.current) {
-        const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name).catch(() => false);
+        const { allowlist } = await pushSessionConfig(task);
+        if (!live) return;
+        const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name, { allowlist }).catch(() => false);
         mark(ok !== false);
       }
     }, 5000);
@@ -140,10 +218,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   };
 
   // SWITCH TASK ends this session and returns to the picker to start another.
+  // replace (not navigate): the session screen must not stay buried in the
+  // stack — a later start would push a duplicate over it and a system BACK
+  // could resurrect this now-dead instance (stale task, dead blocking).
   const handleSwitchTask = async () => {
     tap();
     await finishSession();
-    navigation.navigate('TaskPicker');
+    navigation.replace('TaskPicker');
   };
 
   // END SESSION ends this session and shows it logged in History.
@@ -153,6 +234,22 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     tap('medium');
     await finishSession();
     navigation.replace('History');
+  };
+
+  // Wave 2C2 OEM survival (additive, best-effort): false → fall back to
+  // the generic accessibility screen. The 5s service poll above is kept.
+  const handleOpenOEM = async () => {
+    tap();
+    try {
+      const ok = await AppBlocker.openManufacturerSettings();
+      if (!ok) AppBlocker.openAccessibilitySettings();
+    } catch {
+      try {
+        AppBlocker.openAccessibilitySettings();
+      } catch {
+        // Best-effort.
+      }
+    }
   };
 
   const headerAnimStyle = useAnimatedStyle(() => ({
@@ -183,6 +280,8 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
   const endBg = isDark ? '#1a1a1a' : colors.midnight;
   const endText = '#ffffff';
+  // Wave 2C2: brand line for the banner below (null on non-matching OEMs).
+  const oemTip = getSessionOEMTip();
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
@@ -194,13 +293,33 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
           <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: 4 }]}>
             StayT needs the Accessibility permission or your apps won't be blocked.
           </Text>
+          {/* Wave 2C2 brand line (additive, banner otherwise unchanged). */}
+          {oemTip && (
+            <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: 4 }]}>
+              {oemTip}
+            </Text>
+          )}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => AppBlocker.openAccessibilitySettings()}
             style={styles.blockWarnBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Re-enable blocking service"
           >
             <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
               RE-ENABLE SERVICE
+            </Text>
+          </TouchableOpacity>
+          {/* Wave 2C2 second button (additive): OEM battery settings. */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleOpenOEM}
+            style={styles.blockWarnBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Open manufacturer battery settings"
+          >
+            <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+              OPEN OEM SETTINGS
             </Text>
           </TouchableOpacity>
         </View>

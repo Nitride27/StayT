@@ -3,6 +3,8 @@ package com.nitridee.staytapp.blocker
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
@@ -13,7 +15,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
-import com.facebook.react.bridge.WritableMap
+import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.ReadableType
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class AppBlockerModule(reactContext: ReactApplicationContext) :
@@ -58,15 +61,31 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * `allowlist` null = blocklist mode (default, old callers); a concrete
+     * array (including empty = block-all-except-safelist) = allowlist mode.
+     * The null-vs-empty distinction is preserved — [] is never coerced to
+     * null here. Matches AppBlocker.ts startBlocking(blocked, taskName, {allowlist}).
+     */
     @ReactMethod
-    fun startBlocking(blocked: ReadableArray?, taskName: String?, promise: Promise) {
+    fun startBlocking(blocked: ReadableArray?, taskName: String?, allowlist: ReadableArray?, promise: Promise) {
         try {
             if (blocked == null) {
                 promise.reject("INVALID_ARGS", "blockedPackages is null")
                 return
             }
             val blockedPackages = blocked.toArrayList().map { it.toString() }
-            StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages, taskName = taskName)
+            if (allowlist == null) {
+                StayTAccessibilityService.clearAllowlist()
+                StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages, taskName = taskName)
+            } else {
+                val allow = try {
+                    allowlist.toArrayList().map { it.toString() }
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages, taskName = taskName, allowlist = allow)
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e(TAG, "startBlocking failed", e)
@@ -141,6 +160,312 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Push escalating-friction config. NOTE on the wire shape: this takes a
+     * SINGLE config map, not three scalars, because the TS caller
+     * (AppBlocker.ts setFriction) sends one object arg:
+     * AppBlocker.setFriction({enabled, delaySeconds, escalate}). A 3-scalar
+     * native signature could never match that call — the map IS the shape.
+     * Missing keys fall back to disabled / 0s / no-escalation. Never throws.
+     */
+    @ReactMethod
+    fun setFriction(config: ReadableMap?, promise: Promise) {
+        try {
+            var enabled = false
+            var delaySec = 0.0
+            var escalate = false
+            try {
+                if (config != null) {
+                    enabled = readBool(config, "enabled", false)
+                    try {
+                        if (config.hasKey("delaySeconds") && config.getType("delaySeconds") == ReadableType.Number) {
+                            delaySec = maxOf(0.0, config.getDouble("delaySeconds"))
+                        }
+                    } catch (_: Exception) {
+                    }
+                    escalate = readBool(config, "escalate", false)
+                }
+            } catch (_: Exception) {
+            }
+            StayTAccessibilityService.setFrictionConfig(enabled, delaySec, escalate)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "setFriction failed", e)
+            try {
+                promise.reject("SET_FRICTION_FAILED", e.message, e)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Push per-app usage budgets: [{packageName, kind ('opens'|'minutes'),
+     * limit, enabled}]. Malformed items are skipped; limit<=0 coerces to
+     * disabled. Never throws.
+     */
+    @ReactMethod
+    fun setBudgets(budgets: ReadableArray?, promise: Promise) {
+        try {
+            val rules = mutableListOf<StayTAccessibilityService.BudgetRule>()
+            try {
+                if (budgets != null) {
+                    for (i in 0 until budgets.size()) {
+                        try {
+                            if (budgets.getType(i) != ReadableType.Map) continue
+                            val m = budgets.getMap(i) ?: continue
+                            val pkg = try {
+                                if (m.hasKey("packageName") && m.getType("packageName") == ReadableType.String) m.getString("packageName") else null
+                            } catch (_: Exception) {
+                                null
+                            } ?: continue
+                            if (pkg.isBlank()) continue
+                            val kind = try {
+                                if (m.hasKey("kind") && m.getType("kind") == ReadableType.String) m.getString("kind") else null
+                            } catch (_: Exception) {
+                                null
+                            } ?: continue
+                            if (kind != "opens" && kind != "minutes") continue
+                            val limit = try {
+                                if (m.hasKey("limit") && m.getType("limit") == ReadableType.Number) m.getDouble("limit").toInt() else 0
+                            } catch (_: Exception) {
+                                0
+                            }
+                            val enabled = readBool(m, "enabled", false)
+                            rules.add(StayTAccessibilityService.BudgetRule(pkg, kind, maxOf(0, limit), enabled && limit > 0))
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            StayTAccessibilityService.setBudgetRules(rules)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "setBudgets failed", e)
+            try {
+                promise.reject("SET_BUDGETS_FAILED", e.message, e)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Today's usage counters: {packageName: {opens, minutes}}. Resolves {}
+     * on any failure; never throws.
+     */
+    @ReactMethod
+    fun getBudgetUsage(promise: Promise) {
+        try {
+            val out = Arguments.createMap()
+            try {
+                val snap = StayTAccessibilityService.budgetUsageSnapshot(reactApplicationContext)
+                for ((pkg, pair) in snap) {
+                    try {
+                        val m = Arguments.createMap()
+                        m.putInt("opens", pair.first)
+                        m.putInt("minutes", pair.second)
+                        out.putMap(pkg, m)
+                    } catch (_: Exception) {
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "getBudgetUsage snapshot failed", e)
+            }
+            promise.resolve(out)
+        } catch (e: Exception) {
+            Log.e(TAG, "getBudgetUsage failed", e)
+            try {
+                promise.reject("GET_BUDGET_USAGE_FAILED", e.message, e)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Push browser-level blocked domains ([String], already lowercased by
+     * JS). Empties and values with no dot are dropped (store + TS bridge
+     * filter first; this is the native backstop). Empty list clears. Never
+     * throws.
+     */
+    @ReactMethod
+    fun setBlockedDomains(domains: ReadableArray?, promise: Promise) {
+        try {
+            val set = mutableSetOf<String>()
+            try {
+                if (domains != null) {
+                    for (i in 0 until domains.size()) {
+                        try {
+                            if (domains.getType(i) != ReadableType.String) continue
+                            val d = domains.getString(i)?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+                            if (d.isNotEmpty() && d.contains('.')) set.add(d)
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            StayTAccessibilityService.setDomainSet(set)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "setBlockedDomains failed", e)
+            try {
+                promise.reject("SET_DOMAINS_FAILED", e.message, e)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Push per-app feed-hardening flags: [{packageName, hideReels,
+     * hideExplore, hideComments, enabled}]. Missing flags fall back to the
+     * creation-site defaults (reels true, explore true, comments false,
+     * enabled true). Never throws.
+     */
+    @ReactMethod
+    fun setFeedFilters(filters: ReadableArray?, promise: Promise) {
+        try {
+            val rules = mutableListOf<StayTAccessibilityService.FeedRule>()
+            try {
+                if (filters != null) {
+                    for (i in 0 until filters.size()) {
+                        try {
+                            if (filters.getType(i) != ReadableType.Map) continue
+                            val m = filters.getMap(i) ?: continue
+                            val pkg = try {
+                                if (m.hasKey("packageName") && m.getType("packageName") == ReadableType.String) m.getString("packageName") else null
+                            } catch (_: Exception) {
+                                null
+                            } ?: continue
+                            if (pkg.isBlank()) continue
+                            rules.add(
+                                StayTAccessibilityService.FeedRule(
+                                    pkg,
+                                    readBool(m, "hideReels", true),
+                                    readBool(m, "hideExplore", true),
+                                    readBool(m, "hideComments", false),
+                                    readBool(m, "enabled", true)
+                                )
+                            )
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            StayTAccessibilityService.setFeedRuleList(rules)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "setFeedFilters failed", e)
+            try {
+                promise.reject("SET_FEED_FILTERS_FAILED", e.message, e)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * OEM battery-optimization onboarding: try manufacturer autostart /
+     * battery pages first (Build.MANUFACTURER, each explicit component
+     * guarded by a resolveActivity check + try/catch), then the AOSP
+     * battery-optimization list (needs NO permission — only the
+     * REQUEST_IGNORE variant needs REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+     * which we deliberately do not declare), then the app-details page.
+     * Resolves true when a page was launched. Never throws. No new
+     * permissions, no manifest change.
+     */
+    @ReactMethod
+    fun openManufacturerSettings(promise: Promise) {
+        try {
+            val launched = try {
+                launchOemSettings()
+            } catch (e: Exception) {
+                Log.w(TAG, "openManufacturerSettings failed", e)
+                false
+            }
+            promise.resolve(launched)
+        } catch (e: Exception) {
+            Log.e(TAG, "openManufacturerSettings outer failed", e)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun launchOemSettings(): Boolean {
+        val ctx = reactApplicationContext
+        val pm = try {
+            ctx.packageManager
+        } catch (_: Exception) {
+            return false
+        }
+        val manufacturer = try {
+            Build.MANUFACTURER?.lowercase(java.util.Locale.ROOT).orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+        val candidates = mutableListOf<Intent>()
+        try {
+            when {
+                manufacturer.contains("xiaomi") || manufacturer.contains("redmi") || manufacturer.contains("poco") -> {
+                    candidates.add(Intent().setClassName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))
+                    candidates.add(Intent().setClassName("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"))
+                }
+                manufacturer.contains("huawei") || manufacturer.contains("honor") -> {
+                    candidates.add(Intent().setClassName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"))
+                    candidates.add(Intent().setClassName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"))
+                }
+                manufacturer.contains("oppo") || manufacturer.contains("realme") -> {
+                    candidates.add(Intent().setClassName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"))
+                    candidates.add(Intent().setClassName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity"))
+                    candidates.add(Intent().setClassName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity"))
+                }
+                manufacturer.contains("oneplus") -> {
+                    candidates.add(Intent().setClassName("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity"))
+                    candidates.add(Intent().setClassName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"))
+                }
+                manufacturer.contains("vivo") || manufacturer.contains("iqoo") -> {
+                    candidates.add(Intent().setClassName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"))
+                    candidates.add(Intent().setClassName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"))
+                    candidates.add(Intent().setClassName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"))
+                }
+                manufacturer.contains("samsung") -> {
+                    candidates.add(Intent().setClassName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"))
+                }
+                manufacturer.contains("asus") -> {
+                    candidates.add(Intent().setClassName("com.asus.mobilemanager", "com.asus.mobilemanager.powersaver.PowerSaverSettings"))
+                }
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            candidates.add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            candidates.add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName)))
+        } catch (_: Exception) {
+        }
+        for (intent in candidates) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val resolved = try {
+                    intent.resolveActivity(pm) != null
+                } catch (_: Exception) {
+                    false
+                }
+                if (!resolved) continue
+                ctx.startActivity(intent)
+                return true
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
+    /** Defensive boolean read with a default for bridge maps. Never throws. */
+    private fun readBool(m: ReadableMap, key: String, def: Boolean): Boolean {
+        return try {
+            if (m.hasKey(key) && m.getType(key) == ReadableType.Boolean) m.getBoolean(key) else def
+        } catch (_: Exception) {
+            def
+        }
+    }
+
+    /**
      * Program native focus-schedule alarms. Persists a mirror of the last pushed
      * list (source of truth stays the JS store; JS re-pushes after every edit),
      * cancels all previous alarms and programs the next START/STOP firings.
@@ -172,6 +497,11 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
      * read with the app dead, (re)programs the midnight rollover, and
      * refreshes the widget. Skips malformed items; rejects only on total
      * failure; never throws.
+     *
+     * Backwards compat: the 8-arg form (pre-mascotMood shells) is kept and
+     * delegates with mood=null (WidgetData.save keeps the previous mood).
+     * New JS sends the 9-arg form with mascotMood ('bright'|'steady'|
+     * 'wilted', '' = keep previous). RN resolves the overload by arity.
      */
     @ReactMethod
     fun syncWidgetData(
@@ -181,6 +511,47 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         lastPackages: ReadableArray?,
         sessionActive: Boolean,
         strictActive: Boolean,
+        activeTaskName: String?,
+        giveInsToday: Double,
+        promise: Promise
+    ) {
+        syncWidgetDataInternal(
+            todayFocusMin, streak, subscribed, lastPackages,
+            sessionActive, strictActive, activeTaskName, giveInsToday,
+            null, promise
+        )
+    }
+
+    @ReactMethod
+    fun syncWidgetData(
+        todayFocusMin: Double,
+        streak: Double,
+        subscribed: Boolean,
+        lastPackages: ReadableArray?,
+        sessionActive: Boolean,
+        strictActive: Boolean,
+        activeTaskName: String?,
+        giveInsToday: Double,
+        mascotMood: String?,
+        promise: Promise
+    ) {
+        syncWidgetDataInternal(
+            todayFocusMin, streak, subscribed, lastPackages,
+            sessionActive, strictActive, activeTaskName, giveInsToday,
+            mascotMood, promise
+        )
+    }
+
+    private fun syncWidgetDataInternal(
+        todayFocusMin: Double,
+        streak: Double,
+        subscribed: Boolean,
+        lastPackages: ReadableArray?,
+        sessionActive: Boolean,
+        strictActive: Boolean,
+        activeTaskName: String?,
+        giveInsToday: Double,
+        mascotMood: String?,
         promise: Promise
     ) {
         try {
@@ -204,7 +575,14 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
                 subscribed,
                 pkgs,
                 sessionActive,
-                strictActive
+                strictActive,
+                activeTaskName,
+                try {
+                    maxOf(0, giveInsToday.toInt())
+                } catch (_: Exception) {
+                    0
+                },
+                mascotMood
             )
             WidgetData.programMidnightAlarm(reactApplicationContext)
             try {

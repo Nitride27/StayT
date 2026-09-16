@@ -66,6 +66,70 @@ function getOEMTip(): string | null {
 const GENERIC_BATTERY_TIP =
   'Keep StayT running: Settings > Apps > StayT > Battery > Unrestricted.';
 
+// Wave 2C2 per-OEM survival steps (additive, static text, no new
+// permissions). Each brand: recents-lock + Autostart/battery +
+// "No restrictions" lines.
+function getOEMSurvivalSteps(): string[] {
+  if (Platform.OS !== 'android') return [];
+  const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
+  const manufacturer =
+    (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
+  const hay = `${manufacturer} ${model}`;
+  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
+    return [
+      'Lock StayT in Recents so MIUI / HyperOS cannot swipe it away.',
+      'Autostart ON for StayT (Settings > Apps > StayT).',
+      'Battery saver → No restrictions for StayT.',
+    ];
+  if (hay.includes('huawei') || hay.includes('honor'))
+    return [
+      'Lock StayT in Recents so EMUI cannot close it.',
+      'App launch > StayT > Manage manually, all toggles ON.',
+      'Battery → No restrictions for StayT.',
+    ];
+  if (hay.includes('oppo') || hay.includes('realme'))
+    return [
+      'Lock StayT in Recents so ColorOS cannot close it.',
+      'Autostart ON for StayT.',
+      'App battery management → No restrictions for StayT.',
+    ];
+  if (hay.includes('oneplus'))
+    return [
+      'Lock StayT in Recents so OxygenOS cannot close it.',
+      'Autostart ON for StayT.',
+      'Battery optimization → Don\u2019t optimize StayT.',
+    ];
+  if (hay.includes('samsung'))
+    return [
+      'Lock StayT in Recents so One UI cannot close it.',
+      'Never-sleeping apps: add StayT.',
+      'Battery → Unrestricted for StayT.',
+    ];
+  if (hay.includes('vivo') || hay.includes('iqoo'))
+    return [
+      'Lock StayT in Recents.',
+      'Autostart ON for StayT.',
+      'Background power consumption → Allow for StayT.',
+    ];
+  if (hay.includes('motorola') || hay.includes('moto'))
+    return [
+      'Lock StayT in Recents.',
+      'Adaptive Battery: exclude StayT.',
+      'Battery → Unrestricted for StayT.',
+    ];
+  if (hay.includes('nothing'))
+    return [
+      'Lock StayT in Recents.',
+      'Autostart ON for StayT.',
+      'Battery → Unrestricted for StayT.',
+    ];
+  return [
+    'Lock StayT in Recents so the system cannot close it.',
+    'Autostart ON for StayT where available.',
+    'Battery → Unrestricted (No restrictions) for StayT.',
+  ];
+}
+
 export default function PermissionSetupScreen({ navigation, route }: Props) {
   const { isDark } = useTheme();
   const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
@@ -198,6 +262,33 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
     }
   };
 
+  // Wave 2C2 OEM survival flow (additive, best-effort, never traps).
+  // Marks oemOnboardingDone on tap; falls back to an Alert with the
+  // generic path when the manufacturer screen cannot open.
+  const handleKeepAlive = async () => {
+    tap();
+    try {
+      const ok = await AppBlocker.openManufacturerSettings();
+      try {
+        const prefs = await store.getPreferences();
+        await store.savePreferences({ ...prefs, oemOnboardingDone: true });
+      } catch {
+        // Best-effort.
+      }
+      if (!ok) {
+        Alert.alert('Keep StayT alive', GENERIC_BATTERY_TIP);
+      }
+    } catch {
+      try {
+        const prefs = await store.getPreferences();
+        await store.savePreferences({ ...prefs, oemOnboardingDone: true });
+      } catch {
+        // Best-effort.
+      }
+      Alert.alert('Keep StayT alive', GENERIC_BATTERY_TIP);
+    }
+  };
+
   // P0-2: block the first task's app, prove detection end-to-end.
   // B2: refuses while a session is active — the test would hijack its blocks.
   const handleStartSelfTest = async () => {
@@ -297,6 +388,33 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
               {GENERIC_BATTERY_TIP}
             </Text>
           </Animated.View>
+        )}
+
+        {/* Wave 2C2 OEM survival flow (additive, below oemCard, no restyle).
+            Static per-brand steps + KEEP STAYT ALIVE deep link. */}
+        {Platform.OS === 'android' && (
+          <View style={[styles.oemKeepCard, { backgroundColor: bg, borderColor: ink }]}>
+            <Text style={[typography.cta, { color: ink, textAlign: 'center' }]}>
+              KEEP STAYT ALIVE
+            </Text>
+            {getOEMSurvivalSteps().map(step => (
+              <Text
+                key={step}
+                style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.xs }]}
+              >
+                {`• ${step}`}
+              </Text>
+            ))}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleKeepAlive}
+              style={styles.oemKeepButton}
+              accessibilityRole="button"
+              accessibilityLabel="Keep StayT alive. Open manufacturer settings"
+            >
+              <Text style={styles.primaryButtonText}>KEEP STAYT ALIVE</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
       </ScrollView>
@@ -430,6 +548,27 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: radius.md,
     marginTop: spacing.xl,
+  },
+  // Wave 2C2 OEM keep-alive card (additive, existing tokens only).
+  oemKeepCard: {
+    padding: spacing.lg,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+    alignItems: 'center',
+  },
+  oemKeepButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 18,
+    paddingHorizontal: spacing.xl,
+    marginTop: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    alignSelf: 'stretch',
   },
   bottomSection: {
     paddingBottom: spacing.xl,

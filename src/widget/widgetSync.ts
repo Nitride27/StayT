@@ -3,6 +3,19 @@ import AppBlocker from '../native/AppBlocker';
 import { blockedPackagesOf, Task } from '../types';
 
 /**
+ * Wave 2C2 owl loss-state mood for the widget (additive).
+ * Derived from give-ins today: 'bright' (0) | 'steady' (1-2) | 'wilted' (>2).
+ * Exported for the backend agent's native mirror; mirrors mascot.ts
+ * widgetMoodForGiveIns without importing theme art into the sync path.
+ */
+export function widgetMascotMood(giveInsToday: number): 'bright' | 'steady' | 'wilted' {
+  const n = typeof giveInsToday === 'number' && Number.isFinite(giveInsToday) ? giveInsToday : 0;
+  if (n > 2) return 'wilted';
+  if (n >= 1) return 'steady';
+  return 'bright';
+}
+
+/**
  * P2-1/P2-2 SharedPreferences mirror writer. The home-screen widget and the
  * QS tile read this file directly so they work with the app dead; JS pushes
  * fresh values at every point the underlying data can change:
@@ -14,11 +27,12 @@ import { blockedPackagesOf, Task } from '../types';
  */
 export async function syncWidgetNow(lastTask?: Task | null): Promise<void> {
   try {
-    const [sessions, streak, prefs, tasks] = await Promise.all([
+    const [sessions, streak, prefs, tasks, giveInsToday] = await Promise.all([
       store.getSessions(),
       store.getStreak(),
       store.getPreferences(),
       store.getTasks(),
+      store.getGiveInsToday(),
     ]);
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -44,6 +58,9 @@ export async function syncWidgetNow(lastTask?: Task | null): Promise<void> {
         : activeTask
           ? blockedPackagesOf(activeTask)
           : [];
+    // Wave 2C2 / feature 4: mascotMood ('bright'|'steady'|'wilted') rides the
+    // optional 9th syncWidgetData param. AppBlocker.ts falls back to the
+    // 8-arg shell on stale natives, so this is safe to always pass.
     await AppBlocker.syncWidgetData({
       todayFocusMin,
       streak,
@@ -51,6 +68,9 @@ export async function syncWidgetNow(lastTask?: Task | null): Promise<void> {
       lastPackages,
       sessionActive,
       strictActive,
+      activeTaskName: activeTask?.name ?? null,
+      giveInsToday,
+      mascotMood: widgetMascotMood(giveInsToday),
     }).catch(() => {});
   } catch {
     // Best-effort.

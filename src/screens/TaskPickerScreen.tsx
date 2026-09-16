@@ -28,7 +28,42 @@ type Props = {
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
-function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index: number; isDark: boolean; onPress: () => void; onEdit: () => void }) {
+function TaskCardContent({ task, isDark, onSelect, onEditTask }: { task: Task; isDark: boolean; onSelect: (t: Task) => void; onEditTask: (t: Task) => void }) {
+  const ink = isDark ? darkColors.ink : colors.ink;
+  const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+  const pkgs = blockedPackagesOf(task);
+  const subtitle = pkgs.length > 1 ? `${task.appName} +${pkgs.length - 1} more` : task.appName;
+
+  return (
+    <>
+      <TaskGlyph name={task.name} size={34} color={ink} />
+      <View style={styles.taskInfo}>
+        <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
+        <Text style={[typography.caption, { color: muted }]} numberOfLines={1}>{subtitle}</Text>
+      </View>
+      <TouchableOpacity onPress={() => onEditTask(task)} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`} style={styles.editHit}>
+        <ChevronRightIcon size={20} color={muted} />
+      </TouchableOpacity>
+    </>
+  );
+}
+
+function TaskCardPressable({ task, isDark, onSelect, onEditTask, animStyle }: { task: Task; isDark: boolean; onSelect: (t: Task) => void; onEditTask: (t: Task) => void; animStyle?: object }) {
+  const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
+  const cardBorder = isDark ? darkColors.ink : colors.ink;
+
+  return (
+    <AnimatedTouchable
+      style={[styles.taskCard, animStyle, { backgroundColor: cardBg, borderColor: cardBorder }]}
+      activeOpacity={0.85}
+      onPress={() => onSelect(task)}
+    >
+      <TaskCardContent task={task} isDark={isDark} onSelect={onSelect} onEditTask={onEditTask} />
+    </AnimatedTouchable>
+  );
+}
+
+function AnimatedTaskCard({ task, index, isDark, onSelect, onEditTask }: { task: Task; index: number; isDark: boolean; onSelect: (t: Task) => void; onEditTask: (t: Task) => void }) {
   const delay = 300 + index * 50;
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(15);
@@ -43,30 +78,17 @@ function TaskCard({ task, index, isDark, onPress, onEdit }: { task: Task; index:
     transform: [{ translateY: translateY.value }],
   }));
 
-  const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
-  const cardBorder = isDark ? darkColors.ink : colors.ink;
-  const ink = isDark ? darkColors.ink : colors.ink;
-  const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
-  const pkgs = blockedPackagesOf(task);
-  const subtitle = pkgs.length > 1 ? `${task.appName} +${pkgs.length - 1} more` : task.appName;
-
-  return (
-    <AnimatedTouchable
-      style={[styles.taskCard, animStyle, { backgroundColor: cardBg, borderColor: cardBorder }]}
-      activeOpacity={0.85}
-      onPress={onPress}
-    >
-      <TaskGlyph name={task.name} size={34} color={ink} />
-      <View style={styles.taskInfo}>
-        <Text style={[typography.h3, { color: ink }]} numberOfLines={1}>{task.name.toUpperCase()}</Text>
-        <Text style={[typography.caption, { color: muted }]} numberOfLines={1}>{subtitle}</Text>
-      </View>
-      <TouchableOpacity onPress={onEdit} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={`Edit ${task.name}`} style={styles.editHit}>
-        <ChevronRightIcon size={20} color={muted} />
-      </TouchableOpacity>
-    </AnimatedTouchable>
-  );
+  return <TaskCardPressable task={task} isDark={isDark} onSelect={onSelect} onEditTask={onEditTask} animStyle={animStyle} />;
 }
+
+// Cards past the first screenful skip the entry stagger: per-card delays
+// over a long task list pile up scheduled animations and jank scrolling.
+const TaskCard = React.memo(function TaskCard({ task, index, isDark, onSelect, onEditTask }: { task: Task; index: number; isDark: boolean; onSelect: (t: Task) => void; onEditTask: (t: Task) => void }) {
+  if (index >= 10) {
+    return <TaskCardPressable task={task} isDark={isDark} onSelect={onSelect} onEditTask={onEditTask} />;
+  }
+  return <AnimatedTaskCard task={task} index={index} isDark={isDark} onSelect={onSelect} onEditTask={onEditTask} />;
+});
 
 export default function TaskPickerScreen({ navigation, route }: Props) {
   const { isDark } = useTheme();
@@ -143,20 +165,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleSelectTask = async (task: Task) => {
-    tap();
-    // No service = no blocking and no blocked screen. Route to the
-    // permission flow instead of starting a silently unprotected session —
-    // the task id rides along so granting resumes this exact tap.
-    const granted = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
-    if (!granted) {
-      navigation.navigate('PermissionSetup', { pendingTaskId: task.id });
-      return;
-    }
-    await startSessionForTask(task);
-  };
-
-  const startSessionForTask = async (task: Task) => {
+  const startSessionForTask = useCallback(async (task: Task) => {
     // Supersede any zombie active session (e.g. process kill) before starting new.
     try {
       const existing = await store.getActiveSession();
@@ -185,8 +194,33 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
       Alert.alert('Could not start session', 'Storage failed. Please try again.');
       return;
     }
-    navigation.navigate('ActiveSession', { task, session });
-  };
+    // reset (not navigate): navigate() pushes a duplicate ActiveSession when
+    // one is already buried in the stack (SWITCH TASK flow), and a later
+    // system BACK resurrects the stale instance — old task name, dead timer,
+    // blocking already stopped. Reset unmounts the buried screens (their
+    // cleanup releases blocking) and mounts exactly one fresh session.
+    navigation.reset({
+      index: 1,
+      routes: [{ name: 'TaskPicker' }, { name: 'ActiveSession', params: { task, session } }],
+    });
+  }, [navigation]);
+
+  const handleSelectTask = useCallback(async (task: Task) => {
+    tap();
+    // No service = no blocking and no blocked screen. Route to the
+    // permission flow instead of starting a silently unprotected session —
+    // the task id rides along so granting resumes this exact tap.
+    const granted = await AppBlocker.isAccessibilityServiceEnabled().catch(() => false);
+    if (!granted) {
+      navigation.navigate('PermissionSetup', { pendingTaskId: task.id });
+      return;
+    }
+    await startSessionForTask(task);
+  }, [navigation, startSessionForTask]);
+
+  const handleEditTask = useCallback((task: Task) => {
+    navigation.navigate('TaskSetup', { task });
+  }, [navigation]);
 
   const handleAddTask = () => {
     tap();
@@ -265,7 +299,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
           <View style={styles.emptyState}>
             <Image source={mascotSource('peeking', isDark)} style={styles.emptyImage} resizeMode="contain" />
             <Text style={[typography.bodyStrong, { color: muted, textAlign: 'center', maxWidth: 280, alignSelf: 'center' }]}>
-              No tasks yet. Create one to start focusing.
+              No tasks yet.
             </Text>
           </View>
         ) : (
@@ -275,7 +309,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
             showsVerticalScrollIndicator={false}
           >
             {tasks.map((task, index) => (
-              <TaskCard key={task.id} task={task} index={index} isDark={isDark} onPress={() => handleSelectTask(task)} onEdit={() => navigation.navigate('TaskSetup', { task })} />
+              <TaskCard key={task.id} task={task} index={index} isDark={isDark} onSelect={handleSelectTask} onEditTask={handleEditTask} />
             ))}
           </ScrollView>
         )}

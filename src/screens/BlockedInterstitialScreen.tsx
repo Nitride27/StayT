@@ -45,6 +45,12 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const [intention, setIntention] = useState('');
   const [breakMinutes, setBreakMinutes] = useState(5);
   const [busy, setBusy] = useState(false);
+  // Wave 2C2 soft-friction display (FREE 10s breathe). When
+  // prefs.frictionEnabled, BACK/SWITCH stay gated behind a breathe
+  // countdown. Strict tasks still show it (delays entry only; strict
+  // overrides stay hidden via the existing taskStrict guard below).
+  const [frictionEnabled, setFrictionEnabled] = useState(false);
+  const [frictionRemaining, setFrictionRemaining] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -67,6 +73,19 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     store.getOverrideWaitSeconds()
       .then(wait => { if (live) setCountdown(wait); })
       .catch(() => {});
+    // Wave 2C2: friction prefs read (best-effort, never traps). Enabled +
+    // delay > 0 → breathe gate; delay 0 or read failure → no friction UI.
+    // Absent delay defaults to 10 (matches UserPreferences contract).
+    store.getPreferences()
+      .then(p => {
+        if (!live) return;
+        const delay = p.frictionDelaySeconds ?? 10;
+        if (p.frictionEnabled === true && delay > 0) {
+          setFrictionEnabled(true);
+          setFrictionRemaining(delay);
+        }
+      })
+      .catch(() => {});
     return () => { live = false; };
   }, [taskId]);
 
@@ -76,6 +95,14 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     const id = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
     return () => clearInterval(id);
   }, [countdown]);
+
+  // Wave 2C2 friction breathe countdown. Cleanup on unmount via
+  // clearInterval. Never auto-dismisses — the user must still choose.
+  useEffect(() => {
+    if (frictionRemaining <= 0) return;
+    const id = setInterval(() => setFrictionRemaining(r => Math.max(0, r - 1)), 1000);
+    return () => clearInterval(id);
+  }, [frictionRemaining]);
 
   // When the intention form opens, its START button can sit below the fold
   // on small screens. Nudge the scroll to the end so it stays reachable.
@@ -133,13 +160,20 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
 
   const handleBackToTask = () => {
     tap();
+    // Wave 2C2 note: BlockedAttempt.action 'friction_pass' is owned by the
+    // backend agent (types.ts). Logging is intentionally skipped here rather
+    // than cast defensively — see return notes.
     navigation.goBack();
   };
 
   const handleSwitchTask = () => {
     tap();
+    // Wave 2C2: no friction_pass log here either (backend-owned type).
     // Session stays active; user picks a different task to focus on.
-    navigation.navigate('TaskPicker');
+    // replace (not navigate): pushing another TaskPicker lets system BACK
+    // land on this stale interstitial; replacing keeps BACK on the live
+    // session underneath.
+    navigation.replace('TaskPicker');
   };
 
   const handleTakeBreak = async () => {
@@ -235,6 +269,9 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
 
   const formatCountdown = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+  // Wave 2C2: while true, BACK/SWITCH stay disabled behind the breathe gate.
+  const frictionActive = frictionEnabled && frictionRemaining > 0;
+
   const handlePressIn = () => {
     buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
@@ -280,31 +317,59 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
       {/* Subtitle */}
       <Animated.View style={[styles.subtitleSection, subtitleAnimStyle]}>
         <Text style={[typography.bodyStrong, { color: secondary, textAlign: 'center', maxWidth: 280, alignSelf: 'center' }]}>
-          {`You're trying to open ${appLabel}, but that's not part of your current task.`}
+          {`${appLabel} is not part of this task.`}
         </Text>
       </Animated.View>
+
+      {/* Wave 2C2 friction breath header (additive): only when the
+          friction toggle is on. Label reads live from route.params above,
+          so a param merge never goes stale. */}
+      {frictionEnabled && (
+        <View
+          style={[styles.frictionCard, { borderColor: outlineText }]}
+          accessibilityRole="text"
+          accessibilityLabel={
+            frictionActive
+              ? `Take a breath. ${frictionRemaining} seconds remaining.`
+              : 'You waited it out. Your choice.'
+          }
+        >
+          <Text style={[typography.bodyStrong, { color: ink, textAlign: 'center' }]}>
+            {`Take a breath. Do you actually need to open ${appLabel} right now?`}
+          </Text>
+          <Text style={[typography.displaySmall, { color: outlineText, textAlign: 'center', marginTop: 6 }]}>
+            {frictionActive ? `BREATHE… ${frictionRemaining}s` : 'YOUR CHOICE'}
+          </Text>
+        </View>
+      )}
 
       {/* Buttons */}
       <View style={styles.buttonSection}>
         <AnimatedTouchable
-          style={[styles.backButton, buttonAnimStyle]}
+          style={[styles.backButton, buttonAnimStyle, frictionActive && { opacity: 0.5 }]}
           activeOpacity={0.85}
           onPress={handleBackToTask}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
+          disabled={frictionActive}
+          accessibilityRole="button"
+          accessibilityLabel={frictionActive ? `Breathe. ${frictionRemaining} seconds remaining.` : 'Back to task'}
         >
           <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
-            BACK TO TASK
+            {frictionActive ? `BREATHE… ${frictionRemaining}s` : 'BACK TO TASK'}
           </Text>
         </AnimatedTouchable>
 
         <AnimatedTouchable
-          style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText }]}
+          style={[styles.outlineButton, button2AnimStyle, { borderColor: outlineText }, frictionActive && { opacity: 0.5 }]}
           activeOpacity={0.85}
           onPress={handleSwitchTask}
+          disabled={frictionActive}
+          accessibilityRole="button"
+          accessibilityLabel={frictionActive ? `Breathe. ${frictionRemaining} seconds remaining.` : 'Switch task'}
         >
           <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
-            SWITCH TASK
+            {frictionActive ? `BREATHE… ${frictionRemaining}s` : 'SWITCH TASK'}
           </Text>
         </AnimatedTouchable>
 
@@ -434,6 +499,15 @@ const styles = StyleSheet.create({
   buttonSection: {
     width: '100%',
     gap: spacing.md,
+  },
+  // Wave 2C2 friction breath card (additive, existing tokens only).
+  frictionCard: {
+    width: '100%',
+    borderWidth: 2,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    alignItems: 'center',
   },
   backButton: {
     backgroundColor: colors.ectoGreen,

@@ -38,3 +38,56 @@ export type MascotExpression = keyof typeof mascotExpressions;
 export function mascotSource(expr: MascotExpression, isDark: boolean): ImageSourcePropType {
   return isDark ? mascotExpressionsWhite[expr] : mascotExpressions[expr];
 }
+
+// Wave 2C2 owl loss-state (additive, no change to existing above).
+// No new art: expression pick only. 0 give-ins → cheering, 1-2 → working,
+// >2 → blocked (renderers dim via opacity, see call sites).
+export function mascotMood(giveInsToday: number, isDark: boolean): ImageSourcePropType {
+  const n = typeof giveInsToday === 'number' && Number.isFinite(giveInsToday) ? giveInsToday : 0;
+  if (n > 2) return mascotSource('blocked', isDark);
+  if (n >= 1) return mascotSource('working', isDark);
+  return mascotSource('cheering', isDark);
+}
+
+// Wave 2C2 mood copy (additive). Single source for TaskPicker + History.
+export function owlMoodLabel(giveInsToday: number): string {
+  const n = typeof giveInsToday === 'number' && Number.isFinite(giveInsToday) ? giveInsToday : 0;
+  if (n > 2) return 'Rough day — bounce back tomorrow.';
+  if (n >= 1) return 'A wobble or two — steady.';
+  return 'Owl is sharp today.';
+}
+
+// Withering sprite sheet (additive). assets/whithering_away.png is a 5-col ×
+// 4-row grid (1536×1024 → ~307×256 cells): row 1 standing→drooping, row 2
+// wilting→collapsed, row 3 leafy mound, row 4 mound→puddle. Single dark-bg
+// sheet, so it renders the same in both themes (framed on midnight).
+// NOTE: filename keeps the repo's existing spelling ("whithering").
+export const witheringSheet: ImageSourcePropType = require('../../assets/whithering_away.png');
+export const WITHERING_COLS = 5;
+export const WITHERING_ROWS = 4;
+export const WITHERING_FRAMES = WITHERING_COLS * WITHERING_ROWS;
+/** Per-frame step while the owl withers/recovers. */
+export const WITHERING_FRAME_MS = 130;
+
+/**
+ * Target wither frame for today's give-ins: 0 → bright (frame 0), 1 →
+ * droopy (end of row 1), 2 → slumped (row 2), 3 → mound (row 3), 4+ → full
+ * puddle (last frame). Mirrors the mascotMood/owlMoodLabel thresholds.
+ */
+export function witheringTargetFrame(giveInsToday: number): number {
+  const n = typeof giveInsToday === 'number' && Number.isFinite(giveInsToday) ? Math.max(0, Math.floor(giveInsToday)) : 0;
+  if (n >= 4) return WITHERING_FRAMES - 1;
+  if (n === 3) return 14;
+  if (n === 2) return 9;
+  if (n === 1) return 4;
+  return 0;
+}
+
+// Wave 2C2 widget mood string (additive). Native mirror pending backend:
+// 'bright' (0) | 'steady' (1-2) | 'wilted' (>2).
+export function widgetMoodForGiveIns(giveInsToday: number): 'bright' | 'steady' | 'wilted' {
+  const n = typeof giveInsToday === 'number' && Number.isFinite(giveInsToday) ? giveInsToday : 0;
+  if (n > 2) return 'wilted';
+  if (n >= 1) return 'steady';
+  return 'bright';
+}

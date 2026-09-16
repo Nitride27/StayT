@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Task, Session, BlockedAttempt, FocusSchedule, UserPreferences } from '../types';
+import { Task, Session, BlockedAttempt, FocusSchedule, UserPreferences, Budget, BlockedDomain, FeedFilter } from '../types';
 
 const TASKS_KEY = '@stayt_tasks';
 const SESSIONS_KEY = '@stayt_sessions';
@@ -7,6 +7,9 @@ const PREFERENCES_KEY = '@stayt_preferences';
 const BLOCKED_ATTEMPTS_KEY = '@stayt_blocked_attempts';
 const SCHEDULES_KEY = '@stayt_schedules';
 const OVERRIDES_KEY = '@stayt_override_budget';
+const BUDGETS_KEY = '@stayt_budgets';
+const BLOCKED_DOMAINS_KEY = '@stayt_blocked_domains';
+const FEED_FILTERS_KEY = '@stayt_feed_filters';
 
 /** Max 2-min overrides per calendar day (anti-abuse budget). */
 export const MAX_DAILY_OVERRIDES = 3;
@@ -183,9 +186,11 @@ export const store = {
 
   /**
    * M1 stats fix: each block must yield exactly one record. The entry path
-   * logs a 'give_in'; an override/break for the same package replaces it —
-   * delete the most recent unmatched 'give_in' for that package so resists
-   * (action != 'override') stay exact. Best-effort; never throws.
+   * logs a 'give_in'; an override/break/friction_pass for the same package
+   * replaces it — delete the most recent unmatched 'give_in' for that
+   * package so resists (action != 'override') stay exact. Best-effort; never
+   * throws. Only 'give_in' rows are ever deleted — a 'friction_pass' row is
+   * terminal and must never be removed here.
    */
   async deleteLatestGiveIn(packageName: string): Promise<void> {
     return serialized(BLOCKED_ATTEMPTS_KEY, async () => {
@@ -300,8 +305,10 @@ export const store = {
   /**
    * P0-1 time-reclaimed stats. Focus = completed session durations inside the
    * window. Resists = BlockedAttempts with action != 'override' (returning to
-   * task, including intention breaks) inside the window, each credited with a
-   * labelled 7-minute estimate. Callers must surface the estimate as such.
+   * task, including intention breaks AND 'friction_pass' breath-countdown
+   * completions — friction_pass is a resist, not an override) inside the
+   * window, each credited with a labelled 7-minute estimate. Callers must
+   * surface the estimate as such.
    */
   async getTimeReclaimed(days: number): Promise<{
     focusMs: number;
@@ -340,7 +347,7 @@ export const store = {
     return 0;
   },
 
-  /** Count of resisted attempts ever (action != 'override'). */
+  /** Count of resisted attempts ever (action != 'override' — includes 'friction_pass'). */
   async getResistCount(): Promise<number> {
     const attempts = await this.getBlockedAttempts();
     return attempts.filter(a => a.action !== 'override').length;
@@ -355,10 +362,147 @@ export const store = {
     );
   },
 
+  // Budgets (per-app opens/minutes limits)
+  async getBudgets(): Promise<Budget[]> {
+    try {
+      const data = await AsyncStorage.getItem(BUDGETS_KEY);
+      const parsed = safeParse<Budget[] | null>(data, null);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveBudget(budget: Budget): Promise<void> {
+    // limit <= 0 can never trigger — persist as disabled, never drop the row.
+    const normalized: Budget =
+      budget.limit <= 0 ? { ...budget, enabled: false } : budget;
+    return serialized(BUDGETS_KEY, async () => {
+      const all = await this.getBudgets();
+      const index = all.findIndex(b => b.id === normalized.id);
+      if (index >= 0) {
+        all[index] = normalized;
+      } else {
+        all.push(normalized);
+      }
+      await AsyncStorage.setItem(BUDGETS_KEY, JSON.stringify(all));
+    });
+  },
+
+  async deleteBudget(budgetId: string): Promise<void> {
+    return serialized(BUDGETS_KEY, async () => {
+      const all = await this.getBudgets();
+      await AsyncStorage.setItem(
+        BUDGETS_KEY,
+        JSON.stringify(all.filter(b => b.id !== budgetId)),
+      );
+    });
+  },
+
+  // Blocked domains (browser-level)
+  async getBlockedDomains(): Promise<BlockedDomain[]> {
+    try {
+      const data = await AsyncStorage.getItem(BLOCKED_DOMAINS_KEY);
+      const parsed = safeParse<BlockedDomain[] | null>(data, null);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveBlockedDomain(entry: BlockedDomain): Promise<void> {
+    const domain = entry.domain.trim().toLowerCase();
+    // Drop empties/invalid (must contain a dot) — never persist a value the
+    // native matcher can't use.
+    if (!domain || !domain.includes('.')) return;
+    const normalized: BlockedDomain = { ...entry, domain };
+    return serialized(BLOCKED_DOMAINS_KEY, async () => {
+      const all = await this.getBlockedDomains();
+      const index = all.findIndex(d => d.id === normalized.id);
+      if (index >= 0) {
+        all[index] = normalized;
+      } else {
+        all.push(normalized);
+      }
+      await AsyncStorage.setItem(BLOCKED_DOMAINS_KEY, JSON.stringify(all));
+    });
+  },
+
+  async deleteBlockedDomain(domainId: string): Promise<void> {
+    return serialized(BLOCKED_DOMAINS_KEY, async () => {
+      const all = await this.getBlockedDomains();
+      await AsyncStorage.setItem(
+        BLOCKED_DOMAINS_KEY,
+        JSON.stringify(all.filter(d => d.id !== domainId)),
+      );
+    });
+  },
+
+  // Feed filters (per-app reels/explore/comments hardening, keyed by package)
+  async getFeedFilters(): Promise<FeedFilter[]> {
+    try {
+      const data = await AsyncStorage.getItem(FEED_FILTERS_KEY);
+      const parsed = safeParse<FeedFilter[] | null>(data, null);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveFeedFilter(filter: FeedFilter): Promise<void> {
+    // Creation-site defaults for missing flags.
+    const normalized: FeedFilter = {
+      ...filter,
+      hideReels: filter.hideReels ?? true,
+      hideExplore: filter.hideExplore ?? true,
+      hideComments: filter.hideComments ?? false,
+      enabled: filter.enabled ?? true,
+    };
+    return serialized(FEED_FILTERS_KEY, async () => {
+      const all = await this.getFeedFilters();
+      const index = all.findIndex(f => f.packageName === normalized.packageName);
+      if (index >= 0) {
+        all[index] = normalized;
+      } else {
+        all.push(normalized);
+      }
+      await AsyncStorage.setItem(FEED_FILTERS_KEY, JSON.stringify(all));
+    });
+  },
+
+  /**
+   * Count of BlockedAttempts with action == 'give_in' since device-local
+   * midnight. 'friction_pass' is deliberately EXCLUDED (it is a resist, not
+   * a give-in — see widgetMascotMood thresholds). Best-effort: malformed
+   * rows are skipped, any read failure yields 0 — never throws.
+   */
+  async getGiveInsToday(): Promise<number> {
+    try {
+      const attempts = await this.getBlockedAttempts();
+      if (!Array.isArray(attempts)) return 0;
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      let count = 0;
+      for (const a of attempts) {
+        if (
+          a &&
+          a.action === 'give_in' &&
+          typeof a.timestamp === 'number' &&
+          a.timestamp >= todayStart
+        ) {
+          count++;
+        }
+      }
+      return count;
+    } catch {
+      return 0;
+    }
+  },
+
   /**
    * P1-4 milestone share cards. Progress/earned derive from store totals only:
    * focus hours (completed sessions), day streak (existing getStreak rule),
-   * resists (action != 'override'). No new deps; image cards are a follow-up
+   * resists (action != 'override', so 'friction_pass' counts). No new deps; image cards are a follow-up
    * (needs react-native-view-shot — intentionally NOT installed).
    */
   async getMilestones(): Promise<

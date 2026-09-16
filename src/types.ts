@@ -14,6 +14,15 @@ export interface Task {
   streak: number;
   /** Hardcore strict mode (Pro): no override or break escape on the interstitial. */
   strict?: boolean;
+  /**
+   * Allowlist mode: when true, ONLY packages in `allowlist` stay usable and
+   * everything else is blocked (native handles the inversion). When false or
+   * absent, `blockedPackagesOf(task)` is the blocklist. An empty allowlist is
+   * distinct from absent — pass through faithfully, never coerce to null.
+   */
+  allowlistMode?: boolean;
+  /** Packages usable while `allowlistMode` is on. */
+  allowlist?: string[];
 }
 
 /**
@@ -50,7 +59,14 @@ export interface BlockedAttempt {
   packageName: string;
   taskId: string;
   timestamp: number;
-  action: 'give_in' | 'override' | 'break';
+  /**
+   * 'give_in' = entry log for a block (App.tsx) / returned to task;
+   * 'friction_pass' = waited out the native breath countdown, then returned
+   *   to task (feature 1 — counts as a RESIST, never as a give-in);
+   * 'override'/'break' = consumed one override unit (replace the entry
+   *   give_in via deleteLatestGiveIn, so each block yields one record).
+   */
+  action: 'give_in' | 'override' | 'break' | 'friction_pass';
   /** Intention-break text (action 'break' only). */
   intention?: string;
   /** Intention-break length in minutes (action 'break' only). */
@@ -64,4 +80,45 @@ export interface UserPreferences {
   freeTaskLimit: number;
   hasOnboarded: boolean;
   isSubscribed: boolean;
+  /** True once the OEM battery-optimization onboarding warning was shown. */
+  oemOnboardingDone?: boolean;
+  /** Escalating-friction toggle for session starts. Absent = disabled. */
+  frictionEnabled?: boolean;
+  /** Friction delay in seconds. Absent = 10. */
+  frictionDelaySeconds?: number;
+}
+
+/**
+ * Per-app usage budget. `kind` selects the meter ('opens' counts launches,
+ * 'minutes' counts foreground time). A budget with `limit <= 0` is treated
+ * as disabled wherever it is consumed (store normalizes `enabled` to false
+ * on save; the bridge coerces before pushing native).
+ */
+export interface Budget {
+  id: string;
+  packageName: string;
+  appLabel: string;
+  kind: 'opens' | 'minutes';
+  limit: number;
+  enabled: boolean;
+}
+
+/** Domain blocked at the browser level. `domain` is stored lowercased/trimmed. */
+export interface BlockedDomain {
+  id: string;
+  domain: string;
+  enabled: boolean;
+}
+
+/**
+ * Per-app feed hardening flags. Creation-site defaults: hideReels true,
+ * hideExplore true, hideComments false, enabled true (applied in
+ * store.saveFeedFilter / bridge.setFeedFilters for missing fields).
+ */
+export interface FeedFilter {
+  packageName: string;
+  hideReels: boolean;
+  hideExplore: boolean;
+  hideComments: boolean;
+  enabled: boolean;
 }

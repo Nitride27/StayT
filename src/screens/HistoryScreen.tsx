@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, FlatList, ScrollView, Share } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -15,8 +15,9 @@ import { Session, Task, BlockedAttempt } from '../types';
 import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
-import { mascotSource } from '../theme/mascot';
+import { mascotSource, owlMoodLabel } from '../theme/mascot';
 import { ChevronRightIcon, ChevronLeftIcon, FlameIcon, TaskGlyph } from '../components/icons';
+import WitheringOwl from '../components/WitheringOwl';
 import type { ImageSourcePropType } from 'react-native';
 import { tap } from '../haptics';
 
@@ -61,7 +62,23 @@ function formatRange(item: Session): string {
   return `${formatDate(item.startedAt)} · ${start} - ${end}`;
 }
 
-function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number; isDark: boolean }) {
+function SessionRowContent({ item, isDark }: { item: HistoryItem; isDark: boolean }) {
+  const ink = isDark ? darkColors.ink : colors.ink;
+  const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+
+  return (
+    <>
+      <View style={styles.sessionLeft}>
+        <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>{item.taskName}</Text>
+        <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>{formatRange(item)}</Text>
+      </View>
+      <Text style={[typography.bodyMedium, { color: ink }]}>{formatMs(item.duration || 0)}</Text>
+      <ChevronRightIcon size={20} color={muted} />
+    </>
+  );
+}
+
+function AnimatedSessionCard({ item, index, isDark }: { item: HistoryItem; index: number; isDark: boolean }) {
   const delay = 450 + index * 50;
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(12);
@@ -76,20 +93,26 @@ function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number
     transform: [{ translateY: translateY.value }],
   }));
 
-  const ink = isDark ? darkColors.ink : colors.ink;
-  const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
-
   return (
     <Animated.View style={[styles.sessionCard, animStyle, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? darkColors.paperBorder : colors.paperBorder }]}>
-      <View style={styles.sessionLeft}>
-        <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>{item.taskName}</Text>
-        <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>{formatRange(item)}</Text>
-      </View>
-      <Text style={[typography.bodyMedium, { color: ink }]}>{formatMs(item.duration || 0)}</Text>
-      <ChevronRightIcon size={20} color={muted} />
+      <SessionRowContent item={item} isDark={isDark} />
     </Animated.View>
   );
 }
+
+// Only the first rows animate in: a per-row stagger over hundreds of past
+// sessions piles up seconds of scheduled animations and mounts a Reanimated
+// node per row. The rest render statically (same layout, no animation).
+const SessionCard = React.memo(function SessionCard({ item, index, isDark }: { item: HistoryItem; index: number; isDark: boolean }) {
+  if (index >= 8) {
+    return (
+      <View style={[styles.sessionCard, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? darkColors.paperBorder : colors.paperBorder }]}>
+        <SessionRowContent item={item} isDark={isDark} />
+      </View>
+    );
+  }
+  return <AnimatedSessionCard item={item} index={index} isDark={isDark} />;
+});
 
 // Installed-app labels/icons: the query renders an icon per app, so repeat
 // visits reuse a short-lived module cache instead of blocking the paint.
@@ -120,6 +143,11 @@ export default function HistoryScreen({ navigation }: Props) {
   const [milestones, setMilestones] = useState<
     { id: string; label: string; progress: number; target: number; earned: boolean }[]
   >([]);
+  // Wave 2C2 analytics depth (additive): range switcher + Pro gate.
+  // Default TODAY (free); WEEK/MONTH render numbers only when subscribed.
+  const [range, setRange] = useState<'today' | 'week' | 'month'>('today');
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [giveInsToday, setGiveInsToday] = useState(0);
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -172,6 +200,19 @@ export default function HistoryScreen({ navigation }: Props) {
     } catch {
       setSessions([]);
     }
+    // Wave 2C2: subscription re-checked on every focus (Pro expiry mid-view
+    // locks WEEK/MONTH on the next visit) + owl mood give-ins. Best-effort.
+    try {
+      const prefs = await store.getPreferences();
+      setIsSubscribed(prefs.isSubscribed === true);
+    } catch {
+      setIsSubscribed(false);
+    }
+    try {
+      setGiveInsToday(await store.getGiveInsToday());
+    } catch {
+      setGiveInsToday(0);
+    }
     loadAppMeta().catch(() => {});
   };
 
@@ -199,36 +240,65 @@ export default function HistoryScreen({ navigation }: Props) {
     }
   };
 
-  // Mon–Sun minutes, computed inline from sessions.
-  const weekMinutes = [0, 0, 0, 0, 0, 0, 0];
-  for (const s of sessions) {
-    if (!s.duration) continue;
-    weekMinutes[(new Date(s.startedAt).getDay() + 6) % 7] += s.duration / 60000;
-  }
-  const weekMax = Math.max(1, ...weekMinutes);
+  // Wave 2C2 range filter (additive): the existing week math below is
+  // unchanged — it now reads rangedSessions instead of sessions. The week
+  // window (7d) is identical to the old inline filter.
+  const { rangeStartMs, todayStartMs } = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const start =
+      range === 'today' ? today : Date.now() - (range === 'month' ? 30 : 7) * 24 * 60 * 60 * 1000;
+    return { rangeStartMs: start, todayStartMs: today };
+  }, [range]);
+  const rangedSessions = useMemo(
+    () => sessions.filter(s => s.startedAt >= rangeStartMs),
+    [sessions, rangeStartMs],
+  );
+  // Wave 2C2: WEEK/MONTH numbers are Pro-gated; TODAY is always free.
+  const numbersLocked = !isSubscribed && range !== 'today';
+  const rangeCardTitle = range === 'today' ? 'TODAY' : range === 'month' ? 'THIS MONTH' : 'THIS WEEK';
 
-  // Advanced stats (all users, read-only, computed inline).
-  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-  const nowTs = Date.now();
-  const recentSessions = sessions.filter(s => s.startedAt >= nowTs - SEVEN_DAYS_MS && (s.duration || 0) > 0);  const weeklyTotalMin = Math.floor(recentSessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000);
-  const recentDayMinutes = [0, 0, 0, 0, 0, 0, 0];
-  for (const s of recentSessions) {
-    recentDayMinutes[(new Date(s.startedAt).getDay() + 6) % 7] += (s.duration || 0) / 60000;
-  }
-  const bestDayIdx = recentDayMinutes.indexOf(Math.max(...recentDayMinutes));
-  const attemptCounts = new Map<string, number>();
-  for (const a of attempts) attemptCounts.set(a.packageName, (attemptCounts.get(a.packageName) ?? 0) + 1);
-  const ranking = [...attemptCounts.entries()]
-    .map(([packageName, count]) => ({ packageName, label: appLabels[packageName] ?? packageName, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
-  const rankMax = Math.max(1, ...ranking.map(r => r.count));
+  // Mon–Sun minutes, computed inline from sessions.
+  const { weekMinutes, weekMax } = useMemo(() => {
+    const mins = [0, 0, 0, 0, 0, 0, 0];
+    for (const s of rangedSessions) {
+      if (!s.duration) continue;
+      mins[(new Date(s.startedAt).getDay() + 6) % 7] += s.duration / 60000;
+    }
+    return { weekMinutes: mins, weekMax: Math.max(1, ...mins) };
+  }, [rangedSessions]);
+
+  // Advanced stats (all users, read-only). Memoized: these scan every
+  // session/attempt, which gets expensive with months of history.
+  const { weeklyTotalMin, recentDayMinutes, bestDayIdx } = useMemo(() => {
+    const recent = rangedSessions.filter(s => (s.duration || 0) > 0);
+    const total = Math.floor(recent.reduce((sum, s) => sum + (s.duration || 0), 0) / 60000);
+    const days = [0, 0, 0, 0, 0, 0, 0];
+    for (const s of recent) {
+      days[(new Date(s.startedAt).getDay() + 6) % 7] += (s.duration || 0) / 60000;
+    }
+    return { weeklyTotalMin: total, recentDayMinutes: days, bestDayIdx: days.indexOf(Math.max(...days)) };
+  }, [rangedSessions]);
+  // Wave 2C2: free sees today's top only; Pro sees the range ranking.
+  const { ranking, rankMax } = useMemo(() => {
+    const start = isSubscribed ? rangeStartMs : todayStartMs;
+    const attemptCounts = new Map<string, number>();
+    for (const a of attempts) {
+      if (a.timestamp < start) continue;
+      attemptCounts.set(a.packageName, (attemptCounts.get(a.packageName) ?? 0) + 1);
+    }
+    const top = [...attemptCounts.entries()]
+      .map(([packageName, count]) => ({ packageName, label: appLabels[packageName] ?? packageName, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+    return { ranking: top, rankMax: Math.max(1, ...top.map(r => r.count)) };
+  }, [attempts, appLabels, isSubscribed, rangeStartMs, todayStartMs]);
 
   // P1-3: intention breaks render distinctly from plain attempts.
-  const breaks = attempts
-    .filter(a => a.action === 'break')
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 10);
+  const breaks = useMemo(
+    () => attempts.filter(a => a.action === 'break').sort((a, b) => b.timestamp - a.timestamp).slice(0, 10),
+    [attempts],
+  );
 
   // P0-1 text share (built-in Share only, no new deps).
   const handleShareReclaimed = async () => {
@@ -269,9 +339,9 @@ export default function HistoryScreen({ navigation }: Props) {
     transform: [{ translateY: listTranslateY.value }],
   }));
 
-  const renderItem = ({ item, index }: { item: HistoryItem; index: number }) => (
+  const renderItem = useCallback(({ item, index }: { item: HistoryItem; index: number }) => (
     <SessionCard item={item} index={index} isDark={isDark} />
-  );
+  ), [isDark]);
 
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
@@ -288,6 +358,11 @@ export default function HistoryScreen({ navigation }: Props) {
         data={sessions}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        initialNumToRender={15}
+        maxToRenderPerBatch={15}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
@@ -301,16 +376,72 @@ export default function HistoryScreen({ navigation }: Props) {
             </Animated.View>
 
             <Animated.View style={[styles.streakSection, statsAnimStyle]}>
-              <View style={styles.streakRow}>
+              {/* Wave 2C2: flame row dims when give-ins > 2 (no new art). */}
+              <View style={[styles.streakRow, giveInsToday > 2 && { opacity: 0.6 }]}>
                 <FlameIcon size={80} color={streakGreen} />
                 <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
               </View>
               <Text style={[typography.display, { color: streakGreen, textAlign: 'center', marginTop: spacing.xs }]}>DAY STREAK!</Text>
+              {/* Wave 2C2 owl mood line (additive, same helper as TaskPicker). */}
+              <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
+                {owlMoodLabel(giveInsToday)}
+              </Text>
+              {/* Withering owl: plays the whithering_away sheet toward today's
+                  give-ins (holds the frame — no looping timer). */}
+              <View style={{ alignItems: 'center', marginTop: spacing.sm }}>
+                <WitheringOwl giveInsToday={giveInsToday} width={104} />
+              </View>
             </Animated.View>
 
+            {/* Wave 2C2 range switcher (additive, above the numbers card).
+                TODAY is free; WEEK/MONTH are Pro-gated below. */}
+            <View style={styles.rangeRow} accessibilityRole="tablist" accessibilityLabel="History range">
+              {(['today', 'week', 'month'] as const).map(r => {
+                const active = range === r;
+                return (
+                  <TouchableOpacity
+                    key={r}
+                    activeOpacity={0.8}
+                    onPress={() => { tap(); setRange(r); }}
+                    style={[
+                      styles.rangeBtn,
+                      { borderColor: border },
+                      active && styles.rangeBtnActive,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Show ${r} history`}
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[typography.button, { color: active ? colors.midnight : muted, fontSize: 14, lineHeight: 18, textAlign: 'center' }]}>
+                      {r.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             {/* Single week card: chart + total + best day + reclaimed. */}
+            {numbersLocked ? (
+              <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
+                <Text style={[typography.cta, { color: ink }]}>PRO · UNLOCK HISTORY</Text>
+                <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
+                  Week & month are Pro.
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => { tap(); navigation.navigate('Paywall'); }}
+                  style={styles.proButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Unlock Pro history"
+                >
+                  <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+                    VIEW PRO
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+            ) : (
             <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-              <Text style={[typography.cta, { color: ink }]}>THIS WEEK</Text>
+              <Text style={[typography.cta, { color: ink }]}>{rangeCardTitle}</Text>
               <View style={styles.chartRow}>
                 {weekMinutes.map((mins, i) => (
                   <View key={WEEK_DAYS[i]} style={styles.chartCol}>
@@ -362,6 +493,7 @@ export default function HistoryScreen({ navigation }: Props) {
                 </Text>
               </TouchableOpacity>
             </Animated.View>
+            )}
 
             {/* P1-4 milestone row: earned taps share, locked show progress. */}
             {milestones.length > 0 && (
@@ -402,7 +534,8 @@ export default function HistoryScreen({ navigation }: Props) {
             )}
 
             <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-              <Text style={[typography.cta, { color: ink }]}>MOST BLOCKED</Text>
+              {/* Wave 2C2: free sees today's top only (ranking memo is gated). */}
+              <Text style={[typography.cta, { color: ink }]}>{isSubscribed ? 'MOST BLOCKED' : "TODAY'S TOP"}</Text>
               {ranking.length === 0 ? (
                 <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
                   No blocks yet. Stay focused!
@@ -479,7 +612,7 @@ export default function HistoryScreen({ navigation }: Props) {
           <View style={styles.emptyState}>
             <Image source={mascotSource('peeking', isDark)} style={styles.emptyImage} resizeMode="contain" />
             <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center' }]}>
-              No sessions yet. Start your first focus session!
+              No sessions yet.
             </Text>
             <TouchableOpacity
               style={styles.emptyButton}
@@ -560,6 +693,37 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.xl,
   },
+  // Wave 2C2 range switcher + Pro locked card (additive, existing tokens).
+  rangeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  rangeBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  rangeBtnActive: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 5,
+    borderBottomColor: colors.ectoGreenDark,
+  },
+  proButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.xl,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: spacing.md,
+  },
   bestDayRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -635,7 +799,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   mileChipEarned: {
-    backgroundColor: colors.ectoGreen,
+    backgroundColor: '#ffffff',
     borderColor: colors.ectoGreenDark,
   },
   breakRow: {

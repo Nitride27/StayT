@@ -1,5 +1,6 @@
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import type { Budget, FeedFilter } from '../types';
 import {
   parseBlockedDeepLink as parseLink,
   isTasksDeepLink as isTasksLink,
@@ -61,20 +62,31 @@ class AppBlockerBridge {
     }
   }
 
-  async startBlocking(blockedPackages: string[], taskName?: string): Promise<boolean> {
+  /**
+   * `opts.allowlist`: null/undefined = blocklist mode (default, old callers);
+   * a concrete array (including []) is passed through faithfully as the 3rd
+   * native arg — null vs [] is semantically distinct natively, so [] is
+   * never coerced to null here.
+   */
+  async startBlocking(blockedPackages: string[], taskName?: string, opts?: { allowlist?: string[] | null }): Promise<boolean> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
     }
+    const allowlist = opts?.allowlist ?? null;
     try {
-      return await AppBlocker.startBlocking(blockedPackages, taskName ?? null);
+      return await AppBlocker.startBlocking(blockedPackages, taskName ?? null, allowlist);
     } catch {
-      // Stale native shell (pre-taskName bridge): the extra arg rejects even
-      // with the service on. Retry the legacy arity so blocking still
-      // engages instead of showing the re-enable banner by mistake.
+      // Stale native shell (pre-allowlist bridge): the extra arg rejects even
+      // with the service on. Retry the taskName arity, then the legacy arity,
+      // so blocking still engages instead of showing the re-enable banner.
       try {
-        return await AppBlocker.startBlocking(blockedPackages);
+        return await AppBlocker.startBlocking(blockedPackages, taskName ?? null);
       } catch {
-        return false;
+        try {
+          return await AppBlocker.startBlocking(blockedPackages);
+        } catch {
+          return false;
+        }
       }
     }
   }
@@ -160,10 +172,14 @@ class AppBlockerBridge {
 
   /**
    * P2-1 widget prefs mirror. Writes {date, todayFocusMin, streak,
-   * subscribed, lastPackages, sessionActive, strictActive} to the
-   * SharedPreferences file the home-screen widget reads directly (widgets
-   * must work with the app dead). Best-effort: resolves false when native
-   * is absent; never throws.
+   * subscribed, lastPackages, sessionActive, strictActive, giveInsToday,
+   * mascotMood} to the SharedPreferences file the home-screen widget reads
+   * directly (widgets must work with the app dead). Best-effort: resolves
+   * false when native is absent; never throws.
+   * `mascotMood` ('bright'|'steady'|'wilted', derived in widgetSync via
+   * widgetMascotMood) is a nullable trailing param: tries the 9-arg native
+   * overload first, then falls back to the 8-arg shell (same stale-shell
+   * retry pattern as startBlocking) so old builds keep syncing.
    */
   async syncWidgetData(data: {
     todayFocusMin: number;
@@ -172,6 +188,9 @@ class AppBlockerBridge {
     lastPackages: string[];
     sessionActive: boolean;
     strictActive: boolean;
+    activeTaskName: string | null;
+    giveInsToday: number;
+    mascotMood?: string;
   }): Promise<boolean> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
@@ -184,7 +203,141 @@ class AppBlockerBridge {
         data.lastPackages,
         data.sessionActive,
         data.strictActive,
+        data.activeTaskName,
+        data.giveInsToday ?? 0,
+        data.mascotMood ?? '',
       );
+    } catch {
+      // Stale native shell (pre-mascotMood bridge): retry the 8-arg arity so
+      // the mirror still syncs instead of dropping the whole push.
+      try {
+        return await AppBlocker.syncWidgetData(
+          data.todayFocusMin,
+          data.streak,
+          data.subscribed,
+          data.lastPackages,
+          data.sessionActive,
+          data.strictActive,
+          data.activeTaskName,
+          data.giveInsToday ?? 0,
+        );
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  /**
+   * Push per-app usage budgets. limit <= 0 is coerced to disabled before
+   * crossing the bridge. Best-effort: resolves false when native is absent
+   * or rejects; never throws.
+   */
+  async setBudgets(budgets: Budget[]): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.setBudgets) {
+      return false;
+    }
+    try {
+      const list = Array.isArray(budgets) ? budgets : [];
+      return await AppBlocker.setBudgets(
+        list.map(b => ({ ...b, enabled: b.enabled === true && b.limit > 0 })),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Read back native usage counters keyed by package name. Best-effort:
+   * resolves {} when native is absent, rejects, or returns garbage; never
+   * throws.
+   */
+  async getBudgetUsage(): Promise<Record<string, { opens: number; minutes: number }>> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.getBudgetUsage) {
+      return {};
+    }
+    try {
+      const raw = await AppBlocker.getBudgetUsage();
+      if (!raw || typeof raw !== 'object') return {};
+      return raw as Record<string, { opens: number; minutes: number }>;
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Push escalating-friction config. Best-effort: resolves false when native
+   * is absent or rejects; never throws.
+   */
+  async setFriction(f: { enabled: boolean; delaySeconds: number; escalate: boolean }): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.setFriction) {
+      return false;
+    }
+    try {
+      return await AppBlocker.setFriction({
+        enabled: f.enabled === true,
+        delaySeconds: Math.max(0, f.delaySeconds || 0),
+        escalate: f.escalate === true,
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Push browser-level blocked domains. Entries are lowercased/trimmed and
+   * empties/invalid (no dot) are dropped before crossing the bridge.
+   * Best-effort: resolves false when native is absent or rejects; never
+   * throws.
+   */
+  async setBlockedDomains(domains: string[]): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.setBlockedDomains) {
+      return false;
+    }
+    try {
+      const list = (Array.isArray(domains) ? domains : [])
+        .map(d => (typeof d === 'string' ? d.trim().toLowerCase() : ''))
+        .filter(d => d.length > 0 && d.includes('.'));
+      return await AppBlocker.setBlockedDomains(list);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Push per-app feed-hardening flags. Missing flags fall back to the
+   * creation-site defaults (hideReels true, hideExplore true, hideComments
+   * false, enabled true). Best-effort: resolves false when native is absent
+   * or rejects; never throws.
+   */
+  async setFeedFilters(filters: FeedFilter[]): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.setFeedFilters) {
+      return false;
+    }
+    try {
+      const list = (Array.isArray(filters) ? filters : []).map(ff => ({
+        ...ff,
+        hideReels: ff.hideReels ?? true,
+        hideExplore: ff.hideExplore ?? true,
+        hideComments: ff.hideComments ?? false,
+        enabled: ff.enabled ?? true,
+      }));
+      return await AppBlocker.setFeedFilters(list);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Open the manufacturer battery-optimization settings screen (OEM
+   * onboarding). Best-effort: resolves false when native is absent or
+   * rejects; never throws.
+   */
+  async openManufacturerSettings(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.openManufacturerSettings) {
+      return false;
+    }
+    try {
+      return await AppBlocker.openManufacturerSettings();
     } catch {
       return false;
     }
