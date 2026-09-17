@@ -16,8 +16,8 @@ import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource, owlMoodLabel } from '../theme/mascot';
-import { ChevronRightIcon, ChevronLeftIcon, FlameIcon, TaskGlyph } from '../components/icons';
 import WitheringOwl from '../components/WitheringOwl';
+import { ChevronRightIcon, ChevronLeftIcon, FlameIcon, TaskGlyph } from '../components/icons';
 import type { ImageSourcePropType } from 'react-native';
 import { tap } from '../haptics';
 
@@ -405,7 +405,7 @@ export default function HistoryScreen({ navigation }: Props) {
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => { tap(); setShowAllSessions(v => !v); }}
-              style={styles.showMoreRow}
+              style={[styles.showMoreRow, { borderTopColor: track }]}
               accessibilityRole="button"
               accessibilityState={{ expanded: showAllSessions }}
               accessibilityLabel={showAllSessions ? `Session list expanded, ${sortedSessions.length} sessions` : `Session list collapsed, ${sortedSessions.length - 5} more`}
@@ -414,11 +414,11 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
                   {showAllSessions ? `${sortedSessions.length} of ${sortedSessions.length}` : `5 of ${sortedSessions.length}`}
                 </Text>
-                <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={1}>
-                  {showAllSessions ? `${sortedSessions.length} sessions` : `${sortedSessions.length - 5} more`}
+                <Text style={[typography.label, { color: muted, marginTop: 2 }]} numberOfLines={1}>
+                  {showAllSessions ? `${sortedSessions.length} SESSIONS` : `${sortedSessions.length - 5} MORE`}
                 </Text>
               </View>
-              <View style={{ transform: [{ rotate: showAllSessions ? '90deg' : '0deg' }] }}>
+              <View style={[styles.showMoreChevron, { borderColor: track, transform: [{ rotate: showAllSessions ? '90deg' : '0deg' }] }]}>
                 <ChevronRightIcon size={20} color={muted} />
               </View>
             </TouchableOpacity>
@@ -445,15 +445,14 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
               </View>
               <Text style={[typography.display, { color: streakGreen, textAlign: 'center', marginTop: spacing.xs }]}>DAY STREAK!</Text>
+              {/* Withering owl: transparent, no card — today's loss-state at hero size. */}
+              <View style={{ alignItems: 'center', marginTop: spacing.md }}>
+                <WitheringOwl giveInsToday={giveInsToday} width={120} />
+              </View>
               {/* Wave 2C2 owl mood line (additive, same helper as TaskPicker). */}
               <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
                 {owlMoodLabel(giveInsToday)}
               </Text>
-              {/* Withering owl: plays the whithering_away sheet toward today's
-                  give-ins (holds the frame — no looping timer). */}
-              <View style={{ alignItems: 'center', marginTop: spacing.sm }}>
-                <WitheringOwl giveInsToday={giveInsToday} width={104} />
-              </View>
             </Animated.View>
 
             {/* Wave 2C2 range switcher (additive, above the numbers card).
@@ -577,6 +576,10 @@ export default function HistoryScreen({ navigation }: Props) {
                         styles.mileChip,
                         { borderColor: border },
                         m.earned && styles.mileChipEarned,
+                        // Theme-aware earned fill: the static paperCard white
+                        // melts into the light card (white-on-white), so use
+                        // pale green in light mode. Dark keeps paperCard.
+                        m.earned && { backgroundColor: isDark ? colors.paperCard : colors.ectoGreenLight },
                       ]}
                       accessibilityRole={m.earned ? 'button' : 'text'}
                       accessibilityLabel={m.earned ? `${m.label} earned. Share.` : `${m.label}, ${Math.floor(m.progress)} of ${m.target}`}
@@ -641,7 +644,7 @@ export default function HistoryScreen({ navigation }: Props) {
                     <TouchableOpacity
                       activeOpacity={0.7}
                       onPress={() => { tap(); setShowAllRanking(v => !v); }}
-                      style={styles.showMoreRow}
+                      style={[styles.showMoreRow, { borderTopColor: track }]}
                       accessibilityRole="button"
                       accessibilityState={{ expanded: showAllRanking }}
                       accessibilityLabel={showAllRanking ? `Blocked list expanded, ${ranking.length} apps` : `Blocked list collapsed, ${ranking.length - 5} more`}
@@ -650,11 +653,11 @@ export default function HistoryScreen({ navigation }: Props) {
                         <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
                           {showAllRanking ? `${ranking.length} of ${ranking.length}` : `5 of ${ranking.length}`}
                         </Text>
-                        <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={1}>
-                          {showAllRanking ? `${ranking.length} apps` : `${ranking.length - 5} more`}
+                        <Text style={[typography.label, { color: muted, marginTop: 2 }]} numberOfLines={1}>
+                          {showAllRanking ? `${ranking.length} APPS` : `${ranking.length - 5} MORE`}
                         </Text>
                       </View>
-                      <View style={{ transform: [{ rotate: showAllRanking ? '90deg' : '0deg' }] }}>
+                      <View style={[styles.showMoreChevron, { borderColor: track, transform: [{ rotate: showAllRanking ? '90deg' : '0deg' }] }]}>
                         <ChevronRightIcon size={20} color={muted} />
                       </View>
                     </TouchableOpacity>
@@ -921,10 +924,17 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
+    borderWidth: 2,
+    borderColor: colors.ectoGreenDark,
     marginBottom: spacing.sm,
+    // Contrasting medallion behind the art: several badges carry white
+    // line art to the circle edge (white-on-white on a light card), so the
+    // transparent pixels resolve to midnight in both themes. Opaque badge
+    // pixels cover it; white rings pop against it. The green ring keeps the
+    // circle edge legible even where opaque art covers the medallion.
+    backgroundColor: colors.midnight,
   },
   mileChipEarned: {
-    backgroundColor: colors.paperCard,
     borderColor: colors.ectoGreenDark,
   },
   breakRow: {
@@ -943,13 +953,26 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
+  // Count-subtitle chevron row: hairline rule on top (color set inline per
+  // theme), semibold count, muted subtitle, chevron in a ring. One style
+  // serves MOST BLOCKED + PAST SESSIONS; the whole row stays the 44px target.
   showMoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 44,
     marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
     gap: spacing.sm,
+  },
+  showMoreChevron: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   showMoreText: {
     flex: 1,

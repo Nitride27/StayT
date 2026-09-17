@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, Image, StyleSheet, PixelRatio } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -39,10 +39,10 @@ type Props = {
 // Per-edge trim, as a fraction of one cell, sized from those measurements:
 // large enough to cover overlap + bilinear fringe at any display width,
 // small enough to keep every hard sprite part (feet, batteries, mound tops)
-// inside the window. Right stays thin because battery outlines end ~1 src px
-// before the right seam; left/top/bottom take the full guard.
+// inside the window. All four edges take the full guard: the old thin right
+// guard (≈3 src px) still showed a bilinear fringe at small widths.
 const INSET_L = 0.0195; // ≈6 src px
-const INSET_R = 0.0098; // ≈3 src px
+const INSET_R = 0.0195; // ≈6 src px
 const INSET_T = 0.0195; // ≈5 src px
 const INSET_B = 0.0195; // ≈5 src px
 
@@ -64,25 +64,29 @@ const CELL_RATIO = (256 / 307.2) * ((1 - INSET_T - INSET_B) / (1 - INSET_L - INS
  * smoothstep crossfade — each frame holds, then dissolves briskly instead of
  * lingering as a 50/50 ghost of two owls — from that value in worklets: zero
  * setState per frame, zero layout passes. `fadeDuration={0}` stops Android's
- * loader fade fighting the blend.
+ * loader fade fighting the blend. Crop offsets snap to device pixels, so
+ * small widths can't fringe a neighbour cell in.
  * The sheet is decode-warmed behind the static fallback before `ready` flips,
  * so the animation never starts on a cold texture. Reduced-motion users snap
  * straight to the target frame.
  */
-export default function WitheringOwl({ giveInsToday, width = 64, frameMs = WITHERING_FRAME_MS }: Props) {
+export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHERING_FRAME_MS }: Props) {
   const { isDark } = useTheme();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const reduceMotion = useReducedMotion();
-  // Exact float: CELL_RATIO already compensates the trims, so rounding here
-  // would reintroduce distortion and drift the cut at larger widths.
-  const height = width * CELL_RATIO;
+  // Window + sheet geometry, snapped to device pixels: the crop offsets below
+  // land on physical pixels, so the bilinear sampler can't fringe a neighbour
+  // cell in. Multiples stay exact (sheet = cell × cols/rows), so the grid
+  // can't drift; CELL_RATIO still owns the aspect.
+  const devicePx = Math.max(1, PixelRatio.get() || 1);
+  const height = PixelRatio.roundToNearestPixel(width * CELL_RATIO);
   const progress = useSharedValue(0);
 
   // Scaled sheet geometry for the inset crop: the visible window (width ×
   // height) shows one cell minus the per-edge trims (L left, T top).
-  const cellW = width / (1 - INSET_L - INSET_R);
-  const cellH = height / (1 - INSET_T - INSET_B);
+  const cellW = PixelRatio.roundToNearestPixel(width / (1 - INSET_L - INSET_R));
+  const cellH = PixelRatio.roundToNearestPixel(height / (1 - INSET_T - INSET_B));
   const sheetW = cellW * WITHERING_COLS;
   const sheetH = cellH * WITHERING_ROWS;
 
@@ -109,8 +113,8 @@ export default function WitheringOwl({ giveInsToday, width = 64, frameMs = WITHE
     const e = frac * frac * (3 - 2 * frac); // smoothstep: hold, then blend
     return {
       transform: [
-        { translateX: -(col + INSET_L) * cellW },
-        { translateY: -(row + INSET_T) * cellH },
+        { translateX: Math.round(-(col + INSET_L) * cellW * devicePx) / devicePx },
+        { translateY: Math.round(-(row + INSET_T) * cellH * devicePx) / devicePx },
       ],
       opacity: 1 - e,
     };
@@ -126,8 +130,8 @@ export default function WitheringOwl({ giveInsToday, width = 64, frameMs = WITHE
     const e = frac * frac * (3 - 2 * frac); // smoothstep: hold, then blend
     return {
       transform: [
-        { translateX: -(col + INSET_L) * cellW },
-        { translateY: -(row + INSET_T) * cellH },
+        { translateX: Math.round(-(col + INSET_L) * cellW * devicePx) / devicePx },
+        { translateY: Math.round(-(row + INSET_T) * cellH * devicePx) / devicePx },
       ],
       opacity: e,
     };

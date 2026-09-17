@@ -64,8 +64,8 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
 
   useEffect(() => {
     let live = true;
-    // Single-surface rule: the native overlay draws over everything,
-    // including StayT. Dismiss it now so only this screen shows.
+    // No-overlay (ADR-0005): native no-op shim — kept so this seam never
+    // breaks; resolves true with zero native side effects.
     // Deps include packageName: a replace() with a new package reuses this
     // mounted instance, and the previous block's overlay must drop too.
     AppBlocker.dismissBlockedOverlay().catch(() => {});

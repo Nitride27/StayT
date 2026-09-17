@@ -1294,12 +1294,15 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Apply bedtime preset 11 PM to 7 AM"
             >
-              <Text style={[typography.bodyMedium, { color: lockedInk }]}>
-                Bedtime 23:00–07:00
-              </Text>
-              <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                Nightly
-              </Text>
+              <View style={styles.presetBtnText}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
+                  Bedtime 23:00–07:00
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Nightly
+                </Text>
+              </View>
+              <ChevronRightIcon size={20} color={muted} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.7}
@@ -1309,12 +1312,15 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Apply work hours preset 9 AM to 5 PM weekdays"
             >
-              <Text style={[typography.bodyMedium, { color: lockedInk }]}>
-                Work hours 09:00–17:00 weekdays
-              </Text>
-              <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                Weekdays
-              </Text>
+              <View style={styles.presetBtnText}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
+                  Work hours 09:00–17:00 weekdays
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Weekdays
+                </Text>
+              </View>
+              <ChevronRightIcon size={20} color={muted} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.7}
@@ -1324,12 +1330,15 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Start a one-shot 25 minute block from now"
             >
-              <Text style={[typography.bodyMedium, { color: lockedInk }]}>
-                Focus sprint · 25 min
-              </Text>
-              <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                Today only
-              </Text>
+              <View style={styles.presetBtnText}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
+                  Focus sprint · 25 min
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Today only
+                </Text>
+              </View>
+              <ChevronRightIcon size={20} color={muted} />
             </TouchableOpacity>
             {presetNote && (
               <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
@@ -2110,12 +2119,17 @@ const styles = StyleSheet.create({
   },
   // ── Wave 2C1 additive styles (reuse radius/spacing/typography above) ──
   presetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     borderWidth: 2,
     borderRadius: radius.md,
     padding: spacing.md,
     marginTop: spacing.sm,
     minHeight: 44,
-    justifyContent: 'center',
+  },
+  presetBtnText: {
+    flex: 1,
   },
   budgetRow: {
     marginTop: spacing.md,

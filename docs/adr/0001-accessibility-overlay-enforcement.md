@@ -1,7 +1,7 @@
 # ADR-0001: TYPE_ACCESSIBILITY_OVERLAY as the enforcement surface
 
 Date: 2026-09-17
-Status: accepted
+Status: superseded by ADR-0005 (2026-09-17)
 
 ## Context
 Blocked apps must be stopped without Play-review-costly permissions.

@@ -703,7 +703,7 @@ const styles = StyleSheet.create({
     minWidth: 72,
   },
   oemStepOpenText: {
-    ...typography.button,
+    ...typography.displaySmall,
     color: colors.midnight,
     textAlign: 'center',
   },

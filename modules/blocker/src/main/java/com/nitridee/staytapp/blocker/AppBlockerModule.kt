@@ -168,9 +168,9 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Single-surface rule (JS BlockedInterstitial calls this on mount):
-     * drop the native overlay so it never stacks over the interstitial.
-     * No-op when no overlay is showing; never throws.
+     * No-overlay (ADR-0005): no-op shim — JS BlockedInterstitial still calls
+     * this on mount, and with no native window it trivially resolves true.
+     * Kept so the JS seam needs zero changes; never throws.
      */
     @ReactMethod
     fun dismissBlockedOverlay(promise: Promise) {
