@@ -9,6 +9,7 @@ import {
   Switch,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -23,7 +24,7 @@ import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
-import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon } from '../components/icons';
+import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
@@ -45,6 +46,41 @@ const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
 ];
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Last-resort manual path, shown only when neither the native app-info
+// intent nor the OS settings page can be opened. Same copy as
+// PermissionSetupScreen — one path everywhere, no divergent instructions.
+const RESTRICTED_MANUAL_PATH =
+  'Settings > Apps > StayT, tap \u22EE (top-right) > Allow restricted settings, then turn StayT on in Accessibility.';
+
+// Sideloaded APKs (Android 13+) can hit a silent "restricted setting" refusal
+// on the accessibility toggle — worst on HyperOS/MIUI and some Samsung
+// builds. OEM-specific path to the app-info ⋮ > Allow restricted settings
+// toggle. Same Platform.constants seam as PermissionSetupScreen.
+function getRestrictedSettingsSteps(): string[] {
+  if (Platform.OS !== 'android') return [];
+  const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
+  const manufacturer =
+    (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
+  const hay = `${manufacturer} ${model}`;
+  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
+    return [
+      'Open StayT\u2019s app-info page with the button below.',
+      'Tap \u22EE (top-right) > Allow restricted settings.',
+      'Come back, open Accessibility, and turn StayT on.',
+    ];
+  if (hay.includes('samsung'))
+    return [
+      'Open StayT\u2019s app-info page with the button below.',
+      'Tap \u22EE (top-right) > Allow restricted settings.',
+      'Come back, open Accessibility, and turn StayT on.',
+    ];
+  return [
+    'Open StayT\u2019s app-info page with the button below.',
+    'Tap \u22EE (top-right) > Allow restricted settings, if shown.',
+    'Come back, open Accessibility, and turn StayT on.',
+  ];
+}
 
 function SectionHeader({ label, color, glyph }: { label: string; color: string; glyph: React.ReactNode }) {
   return (
@@ -89,9 +125,12 @@ export default function SettingsScreen({ navigation }: Props) {
   const [versionTaps, setVersionTaps] = useState(0);
   // N-1: actual OS permission state (may disagree with the pref toggle).
   const [osNotifGranted, setOsNotifGranted] = useState(true);
+  // Permissions checklist: real accessibility-service state.
+  const [a11yEnabled, setA11yEnabled] = useState(true);
   // P0-2 self-test state machine (blocking auto-releases on every path).
   const selfTest = useBlockSelfTest();
   const [testApp, setTestApp] = useState({ packageName: '', appName: '' });
+  // Danger zone is always visible (no disclosure state).
 
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(20);
@@ -117,6 +156,12 @@ export default function SettingsScreen({ navigation }: Props) {
     // N-1: surface the real OS state alongside the pref toggle.
     try {
       setOsNotifGranted(await AppBlocker.isNotificationPermissionGranted());
+    } catch {
+      // Keep previous value on error.
+    }
+    // Permissions checklist: real accessibility-service state.
+    try {
+      setA11yEnabled(await AppBlocker.isAccessibilityServiceEnabled());
     } catch {
       // Keep previous value on error.
     }
@@ -167,6 +212,59 @@ export default function SettingsScreen({ navigation }: Props) {
     tap();
     setHapticsEnabled(value);
     await savePrefs({ hapticFeedback: value });
+  };
+
+  const handleOpenAccessibility = () => {
+    tap();
+    try {
+      AppBlocker.openAccessibilitySettings();
+    } catch {
+      Alert.alert('Error', 'Could not open accessibility settings.');
+    }
+  };
+
+  // Restricted-settings escape hatch (sideloaded APKs on HyperOS/MIUI and
+  // some Samsung builds): native app-info first, OS app settings second
+  // (Linking.openSettings per Expo v57 docs), exact manual path last —
+  // never leave the user guessing.
+  const handleOpenAppInfo = async () => {
+    tap();
+    try {
+      const ok = await AppBlocker.openAppInfoSettings();
+      if (ok) return;
+    } catch {
+      // Fall through to the OS fallback below.
+    }
+    try {
+      await Linking.openSettings();
+    } catch {
+      Alert.alert('Open StayT app info', RESTRICTED_MANUAL_PATH);
+    }
+  };
+
+  // App-info row: a tap opens StayT's system page (version, storage,
+  // toggles) — no dead rows. DEV ONLY: every 5th tap flips Pro for
+  // testing instead; __DEV__ is false in production builds.
+  const handleAppInfoRow = async () => {
+    if (__DEV__) {
+      const next = versionTaps + 1;
+      setVersionTaps(next);
+      if (next >= 5) {
+        setVersionTaps(0);
+        try {
+          const prefs = await store.getPreferences();
+          const flipped = !prefs.isSubscribed;
+          await store.savePreferences({ ...prefs, isSubscribed: flipped });
+          setIsSubscribed(flipped);
+          Alert.alert(
+            'Dev Pro toggle',
+            flipped ? 'Pro ON (testing only).' : 'Pro OFF (testing only).',
+          );
+        } catch {}
+        return;
+      }
+    }
+    await handleOpenAppInfo();
   };
 
   // P0-2 self-test: block the first task's app, prove detection end-to-end.
@@ -276,6 +374,59 @@ export default function SettingsScreen({ navigation }: Props) {
               })}
           </View>
 
+          {/* Permissions — blocking lives or dies here, so status is always visible. */}
+          <SectionHeader label="PERMISSIONS" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
+          <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Text style={[typography.bodyStrong, { color: ink }]}>Blocking permission</Text>
+            {a11yEnabled ? (
+              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                On. StayT can see which app is open, so blocks work.
+              </Text>
+            ) : (
+              <Text style={[typography.caption, { color: colors.danger }]}>
+                Off. StayT cannot block anything until this is on.
+              </Text>
+            )}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleOpenAccessibility}
+              style={styles.upgradeButton}
+              accessibilityRole="button"
+              accessibilityLabel="Open accessibility settings"
+            >
+              <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+                OPEN SETTINGS
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {/* Sideloaded APKs can be silently refused at the toggle above
+              (HyperOS/MIUI, some Samsung). Shown exactly when stuck:
+              accessibility still off on Android. */}
+          {Platform.OS === 'android' && !a11yEnabled && (
+            <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <Text style={[typography.bodyStrong, { color: ink }]}>Still stuck? Allow restricted settings</Text>
+              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                Apps installed outside the Play Store can be blocked from the accessibility toggle. Allow it once:
+              </Text>
+              {getRestrictedSettingsSteps().map((step, index) => (
+                <Text key={step} style={[typography.caption, { color: theme.inkSecondary }]}>
+                  {`${index + 1}. ${step}`}
+                </Text>
+              ))}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleOpenAppInfo}
+                style={styles.upgradeButton}
+                accessibilityRole="button"
+                accessibilityLabel="Open StayT app info"
+              >
+                <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
+                  OPEN APP INFO
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Feedback */}
           <SectionHeader label="FEEDBACK" color={theme.inkSecondary} glyph={<BoltIcon size={16} color={colors.midnight} />} />
           <View style={[styles.rowBox, styles.rowSplit, { backgroundColor: cardBg, borderColor: cardBorder }]}>
@@ -382,39 +533,40 @@ export default function SettingsScreen({ navigation }: Props) {
               </>
             )}
           </View>
-          <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <Text style={[typography.bodyStrong, { color: ink }]}>StayT</Text>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={async () => {
-                // DEV ONLY: 5 taps on the version toggles Pro for testing.
-                // __DEV__ is false in production builds, so this can't ship.
-                if (!__DEV__) return;
-                const next = versionTaps + 1;
-                setVersionTaps(next);
-                if (next >= 5) {
-                  setVersionTaps(0);
-                  try {
-                    const prefs = await store.getPreferences();
-                    const flipped = !prefs.isSubscribed;
-                    await store.savePreferences({ ...prefs, isSubscribed: flipped });
-                    setIsSubscribed(flipped);
-                    Alert.alert(
-                      'Dev Pro toggle',
-                      flipped ? 'Pro ON (testing only).' : 'Pro OFF (testing only).',
-                    );
-                  } catch {}
-                }
-              }}
-            >
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => { tap(); navigation.navigate('PrivacyPolicy'); }}
+            style={[styles.rowBox, styles.navRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+            accessibilityRole="button"
+            accessibilityLabel="Privacy Policy"
+            accessibilityHint="Opens the privacy policy"
+          >
+            <View style={styles.rowText}>
+              <Text style={[typography.bodyStrong, { color: ink }]}>Privacy Policy</Text>
+              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                What StayT stores and why.
+              </Text>
+            </View>
+            <ChevronRightIcon size={24} color={theme.inkSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleAppInfoRow}
+            style={[styles.rowBox, styles.navRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+            accessibilityRole="button"
+            accessibilityLabel="App info"
+            accessibilityHint="Opens StayT system settings"
+          >
+            <View style={styles.rowText}>
+              <Text style={[typography.bodyStrong, { color: ink }]}>App info</Text>
               <Text style={[typography.caption, { color: theme.inkSecondary, marginTop: spacing.xs }]}>
                 v{appVersion} · SMALL STEPS. BUILD BIG PROGRESS.
               </Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+            <ChevronRightIcon size={24} color={theme.inkSecondary} />
+          </TouchableOpacity>
 
-          {/* Danger zone */}
-          <SectionHeader label="DANGER ZONE" color={colors.danger} glyph={<CloseIcon size={16} color="#ffffff" />} />
+          <SectionHeader label="DANGER ZONE" color={colors.danger} glyph={<CloseIcon size={16} color={colors.paperCard} />} />
           <TouchableOpacity activeOpacity={0.7} onPress={handleResetOnboarding} style={[styles.rowBox, styles.dangerBox, { backgroundColor: cardBg }]}>
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>Reset onboarding</Text>
           </TouchableOpacity>
@@ -488,7 +640,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  navRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   segmentRow: {
+    flexDirection: 'row',
     gap: spacing.sm,
   },
   segment: {

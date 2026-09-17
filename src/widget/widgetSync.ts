@@ -1,6 +1,6 @@
 import { store } from '../storage/store';
 import AppBlocker from '../native/AppBlocker';
-import { blockedPackagesOf, Task } from '../types';
+import { blockedPackagesOf, Task, isEffectiveStrict } from '../types';
 
 /**
  * Wave 2C2 owl loss-state mood for the widget (additive).
@@ -51,7 +51,7 @@ export async function syncWidgetNow(lastTask?: Task | null): Promise<void> {
     const active = sessions.find(s => s.status === 'active') ?? null;
     const activeTask = active ? tasks.find(t => t.id === active.taskId) ?? null : null;
     const sessionActive = active != null;
-    const strictActive = activeTask?.strict === true;
+    const strictActive = isEffectiveStrict(activeTask?.strict, prefs.dumfoundMode);
     const lastPackages =
       lastTask != null
         ? blockedPackagesOf(lastTask)

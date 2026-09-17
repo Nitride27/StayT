@@ -92,25 +92,35 @@ function copyResFiles(projectRoot) {
     } catch (_) {}
   }
 
-  // values/strings.xml — merge service description into existing
+  // values/strings.xml — merge blocker-owned strings into the existing
+  // Expo-generated file. The template owns app_name; every string in the
+  // module source (service description, widget description, …) must be
+  // present or the build breaks (widget_info references stayt_widget_desc).
+  // Merge, never overwrite: missing entries are inserted, existing kept.
   const stringsDest = path.join(destRes, "values/strings.xml");
-  const serviceDesc =
-    "StayT uses this service to detect when you open a blocked app and redirect you back to your task. No data is collected or transmitted.";
+  const ownedStrings = {
+    accessibility_service_description:
+      "StayT uses this service to detect when you open a blocked app and redirect you back to your task. No data is collected or transmitted.",
+    stayt_widget_desc:
+      "Focus time, streak and live session status.",
+  };
   if (fs.existsSync(stringsDest)) {
     let existing = fs.readFileSync(stringsDest, "utf8");
-    if (!existing.includes("accessibility_service_description")) {
-      existing = existing.replace(
-        "</resources>",
-        `  <string name="accessibility_service_description">${serviceDesc}</string>\n</resources>`
-      );
-      fs.writeFileSync(stringsDest, existing);
+    for (const [name, value] of Object.entries(ownedStrings)) {
+      if (!existing.includes(`name="${name}"`)) {
+        existing = existing.replace(
+          "</resources>",
+          `  <string name="${name}">${value}</string>\n</resources>`
+        );
+      }
     }
+    fs.writeFileSync(stringsDest, existing);
   } else {
     fs.mkdirSync(path.dirname(stringsDest), { recursive: true });
-    fs.writeFileSync(
-      stringsDest,
-      `<resources>\n  <string name="accessibility_service_description">${serviceDesc}</string>\n</resources>\n`
-    );
+    const entries = Object.entries(ownedStrings)
+      .map(([name, value]) => `  <string name="${name}">${value}</string>`)
+      .join("\n");
+    fs.writeFileSync(stringsDest, `<resources>\n  <string name="app_name">StayT</string>\n${entries}\n</resources>\n`);
   }
 }
 

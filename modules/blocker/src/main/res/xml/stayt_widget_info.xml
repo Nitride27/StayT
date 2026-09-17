@@ -7,6 +7,6 @@
     android:minHeight="110dp"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/stayt_widget"
-    android:description="Your focus dashboard: today's focus time, streak, guarded apps and live session status."
+    android:description="@string/stayt_widget_desc"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />

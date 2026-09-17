@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Task, Session, BlockedAttempt, FocusSchedule, UserPreferences, Budget, BlockedDomain, FeedFilter } from '../types';
+import { Task, Session, BlockedAttempt, FocusSchedule, UserPreferences, Budget, BlockedDomain, FeedFilter, blockedPackagesOf } from '../types';
 
 const TASKS_KEY = '@stayt_tasks';
 const SESSIONS_KEY = '@stayt_sessions';
@@ -28,6 +28,20 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
+/**
+ * Crash-hardening seam for every list read: AsyncStorage can hold anything
+ * (corrupt JSON, a dict where a list belongs, null rows from a killed
+ * write). safeParse only covers null/malformed-JSON — a parsed non-array or
+ * null rows would crash every downstream .find/.filter/.map. This coerces to
+ * a dense array of objects so readers never deref null.
+ */
+function asArray<T extends object>(v: unknown): T[] {
+  if (!Array.isArray(v)) return [];
+  return (v as unknown[]).filter(
+    (e): e is T => e != null && typeof e === 'object',
+  );
+}
+
 // Serialize read-modify-write cycles per key so concurrent saves can't interleave.
 const writeChains = new Map<string, Promise<unknown>>();
 function serialized<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -41,11 +55,11 @@ export const store = {
   // Tasks
   async getTasks(): Promise<Task[]> {
     const data = await AsyncStorage.getItem(TASKS_KEY);
-    return safeParse<Task[]>(data, []);
+    return asArray<Task>(safeParse<Task[] | null>(data, null));
   },
 
   async saveTask(task: Task): Promise<void> {
-    return serialized(TASKS_KEY, async () => {
+    await serialized(TASKS_KEY, async () => {
       const tasks = await this.getTasks();
       const index = tasks.findIndex(t => t.id === task.id);
       if (index >= 0) {
@@ -55,6 +69,14 @@ export const store = {
       }
       await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
     });
+    // Task blockedPackages are hard-block sources: any feed entry now
+    // colliding is auto-disabled (hard block wins). Best-effort; the task
+    // itself already saved. Callers re-push native feeds after this.
+    try {
+      await this.reconcileFeedCollisions();
+    } catch {
+      // Best-effort.
+    }
   },
 
   async deleteTask(taskId: string): Promise<void> {
@@ -68,7 +90,7 @@ export const store = {
   // Sessions
   async getSessions(): Promise<Session[]> {
     const data = await AsyncStorage.getItem(SESSIONS_KEY);
-    return safeParse<Session[]>(data, []);
+    return asArray<Session>(safeParse<Session[] | null>(data, null));
   },
 
   async saveSession(session: Session): Promise<void> {
@@ -99,8 +121,7 @@ export const store = {
 
   // Preferences
   async getPreferences(): Promise<UserPreferences> {
-    const data = await AsyncStorage.getItem(PREFERENCES_KEY);
-    return safeParse<UserPreferences | null>(data, null) ?? {
+    const defaults: UserPreferences = {
       themeMode: 'system',
       notificationsEnabled: true,
       hapticFeedback: true,
@@ -108,6 +129,13 @@ export const store = {
       hasOnboarded: false,
       isSubscribed: false,
     };
+    const data = await AsyncStorage.getItem(PREFERENCES_KEY);
+    const parsed = safeParse<Partial<UserPreferences> | null>(data, null);
+    // A parsed non-object (number/string/array from a corrupt write) must not
+    // reach callers as "preferences" — merge over defaults so every field
+    // exists with a usable type. Leaf values ride through as stored.
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return defaults;
+    return { ...defaults, ...parsed };
   },
 
   async savePreferences(prefs: UserPreferences): Promise<void> {
@@ -167,7 +195,7 @@ export const store = {
   // Blocked Attempts
   async getBlockedAttempts(): Promise<BlockedAttempt[]> {
     const data = await AsyncStorage.getItem(BLOCKED_ATTEMPTS_KEY);
-    return safeParse<BlockedAttempt[]>(data, []);
+    return asArray<BlockedAttempt>(safeParse<BlockedAttempt[] | null>(data, null));
   },
 
   async saveBlockedAttempt(attempt: BlockedAttempt): Promise<void> {
@@ -208,7 +236,7 @@ export const store = {
   // Focus schedules (Pro)
   async getSchedules(): Promise<FocusSchedule[]> {
     const data = await AsyncStorage.getItem(SCHEDULES_KEY);
-    return safeParse<FocusSchedule[]>(data, []);
+    return asArray<FocusSchedule>(safeParse<FocusSchedule[] | null>(data, null));
   },
 
   async saveSchedule(schedule: FocusSchedule): Promise<void> {
@@ -278,6 +306,14 @@ export const store = {
   },
 
   async getStreak(): Promise<number> {
+    // Dumfound: frozen at the enable-time snapshot — blocks during dumfound
+    // log nothing, so without this the display would decay to 0 (streak loss).
+    try {
+      const prefs = await this.getPreferences();
+      if (prefs.dumfoundMode === true) return Math.max(0, prefs.dumfoundStreak ?? 0);
+    } catch {
+      // Fall through to the live computation.
+    }
     const todayAttempts = await this.getBlockedAttemptsToday();
     if (todayAttempts.length === 0) return 0;
     
@@ -373,20 +409,54 @@ export const store = {
     }
   },
 
-  async saveBudget(budget: Budget): Promise<void> {
+  async getBudgetsForTask(taskId: string): Promise<Budget[]> {
+    const all = await this.getBudgets();
+    return all.filter(b => b.taskId === taskId);
+  },
+
+  /**
+   * Task-only enforcement read path: only budgets with a taskId set are
+   * enforceable (enabled + limit > 0). Rows without taskId are legacy/inert
+   * — stored, never pushed, never enforced (no invisible metering, no data
+   * loss, no migration). Push sites must read through this (or
+   * getBudgetsForTask for a single active task), never getBudgets().
+   */
+  async getEnforceableBudgets(): Promise<Budget[]> {
+    const all = await this.getBudgets();
+    return all.filter(
+      b => typeof b.taskId === 'string' && b.taskId.length > 0 && b.enabled === true && b.limit > 0,
+    );
+  },
+
+  async saveBudget(budget: Budget): Promise<string[]> {
     // limit <= 0 can never trigger — persist as disabled, never drop the row.
+    // Collision rule: an enabled budget wins over Feed Shield for the same
+    // app (over-limit takes the block path — one app, one enforcement
+    // mechanism). Feed entries colliding with the newly enabled budget are
+    // auto-disabled here; the disabled package list is returned for UI notice.
+    // A task edit could un-block the app tomorrow — the feed row is kept
+    // (disabled), never dropped, so re-enabling is one toggle.
     const normalized: Budget =
       budget.limit <= 0 ? { ...budget, enabled: false } : budget;
-    return serialized(BUDGETS_KEY, async () => {
+    await serialized(BUDGETS_KEY, async () => {
       const all = await this.getBudgets();
       const index = all.findIndex(b => b.id === normalized.id);
       if (index >= 0) {
-        all[index] = normalized;
+        const prev = all[index];
+        // Merge, don't drop: a task-tagged row stays tagged unless the caller
+        // explicitly re-tags. Absent stays absent (= legacy/inert — stored,
+        // never enforced, no migration that deletes user data).
+        all[index] = { ...normalized, taskId: normalized.taskId ?? prev.taskId };
       } else {
         all.push(normalized);
       }
       await AsyncStorage.setItem(BUDGETS_KEY, JSON.stringify(all));
     });
+    try {
+      return await this.reconcileFeedCollisions();
+    } catch {
+      return [];
+    }
   },
 
   async deleteBudget(budgetId: string): Promise<void> {
@@ -449,7 +519,7 @@ export const store = {
     }
   },
 
-  async saveFeedFilter(filter: FeedFilter): Promise<void> {
+  async saveFeedFilter(filter: FeedFilter): Promise<{ autoDisabled: boolean; reason: 'blocked' | 'budget' | null }> {
     // Creation-site defaults for missing flags.
     const normalized: FeedFilter = {
       ...filter,
@@ -458,6 +528,34 @@ export const store = {
       hideComments: filter.hideComments ?? false,
       enabled: filter.enabled ?? true,
     };
+    // Collision rule: an app must not be both hard-blocked and feed-shielded.
+    // An enabled save for a colliding package persists as disabled (the
+    // block side wins) and reports it for UI notice. Reason 'blocked' = task
+    // list, 'budget' = enabled budget (over-limit takes the block path).
+    // The row is kept, never dropped — re-enabling is one toggle.
+    let result: { autoDisabled: boolean; reason: 'blocked' | 'budget' | null } = {
+      autoDisabled: false,
+      reason: null,
+    };
+    if (normalized.enabled === true) {
+      try {
+        const [hard, budgets] = await Promise.all([
+          this.getHardBlockedPackages(),
+          this.getEnforceableBudgets(),
+        ]);
+        if (hard.includes(normalized.packageName)) {
+          normalized.enabled = false;
+          result = { autoDisabled: true, reason: 'blocked' };
+        } else if (
+          budgets.some(b => b.packageName === normalized.packageName && b.enabled === true && b.limit > 0)
+        ) {
+          normalized.enabled = false;
+          result = { autoDisabled: true, reason: 'budget' };
+        }
+      } catch {
+        // Best-effort collision check; persist normalized on failure.
+      }
+    }
     return serialized(FEED_FILTERS_KEY, async () => {
       const all = await this.getFeedFilters();
       const index = all.findIndex(f => f.packageName === normalized.packageName);
@@ -467,6 +565,95 @@ export const store = {
         all.push(normalized);
       }
       await AsyncStorage.setItem(FEED_FILTERS_KEY, JSON.stringify(all));
+      return result;
+    });
+  },
+
+  /**
+   * Q4 store-level guard: union of every task's effective blocklist (reuses
+   * blockedPackagesOf — no second blocklist derivation). Single detection
+   * path for feed-vs-block and budget-vs-block collisions; runtime
+   * enforcement stays native (hard block wins — feed shield never blocks and
+   * falls through to block evaluation). Never throws.
+   */
+  async getHardBlockedPackages(): Promise<string[]> {
+    try {
+      const tasks = await this.getTasks();
+      const set = new Set<string>();
+      for (const t of tasks) {
+        for (const p of blockedPackagesOf(t)) if (p) set.add(p);
+      }
+      return [...set];
+    } catch {
+      return [];
+    }
+  },
+
+  /** Feed-shielded pkgs that are also fully blocked (block wins). Never throws. */
+  async findFeedBlockCollisions(): Promise<string[]> {
+    try {
+      const [blocked, filters] = await Promise.all([
+        this.getHardBlockedPackages(),
+        this.getFeedFilters(),
+      ]);
+      const set = new Set(blocked);
+      // Enabled only: auto-disabled rows (see saveFeedFilter/reconcile) are
+      // resolved and must not warn.
+      return filters.filter(f => f.enabled === true).map(f => f.packageName).filter(p => set.has(p));
+    } catch {
+      return [];
+    }
+  },
+
+  /** Budgeted pkgs that are also fully blocked (block wins while active). Never throws. */
+  async findBudgetBlockCollisions(): Promise<string[]> {
+    try {
+      const [blocked, budgets] = await Promise.all([
+        this.getHardBlockedPackages(),
+        this.getBudgets(),
+      ]);
+      const set = new Set(blocked);
+      return [...new Set(budgets.map(b => b.packageName).filter(p => set.has(p)))];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Force-disable every enabled feed entry colliding with a hard block or an
+   * enabled budget (one app, one enforcement mechanism — the block side
+   * wins). Rows are kept, never dropped. Returns the packages it disabled so
+   * callers can notice the user + re-push native feeds. Called from saveTask
+   * and saveBudget (the paths that can newly collide a feed row); never throws.
+   */
+  async reconcileFeedCollisions(): Promise<string[]> {
+    return serialized(FEED_FILTERS_KEY, async () => {
+      try {
+        const [all, hard, budgets] = await Promise.all([
+          this.getFeedFilters(),
+          this.getHardBlockedPackages(),
+          this.getEnforceableBudgets(),
+        ]);
+        const hardSet = new Set(hard);
+        const budgeted = new Set(
+          budgets.filter(b => b.enabled === true && b.limit > 0).map(b => b.packageName),
+        );
+        const disabled: string[] = [];
+        let changed = false;
+        for (const f of all) {
+          if (f.enabled === true && (hardSet.has(f.packageName) || budgeted.has(f.packageName))) {
+            f.enabled = false;
+            disabled.push(f.packageName);
+            changed = true;
+          }
+        }
+        if (changed) {
+          await AsyncStorage.setItem(FEED_FILTERS_KEY, JSON.stringify(all));
+        }
+        return disabled;
+      } catch {
+        return [];
+      }
     });
   },
 
@@ -477,6 +664,14 @@ export const store = {
    * rows are skipped, any read failure yields 0 — never throws.
    */
   async getGiveInsToday(): Promise<number> {
+    // Dumfound: frozen at the enable-time snapshot (nothing is logged while
+    // on, so the live count would under-report the pre-dumfound mood).
+    try {
+      const prefs = await this.getPreferences();
+      if (prefs.dumfoundMode === true) return Math.max(0, prefs.dumfoundGiveIns ?? 0);
+    } catch {
+      // Fall through to the live count.
+    }
     try {
       const attempts = await this.getBlockedAttempts();
       if (!Array.isArray(attempts)) return 0;

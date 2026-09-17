@@ -8,6 +8,7 @@
 // ({ size, color }) so call sites keep working.
 import React from 'react';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { colors } from '../theme/tokens';
 
 export type IconProps = {
   size?: number;
@@ -17,7 +18,7 @@ export type IconProps = {
 
 function Base({
   size = 24,
-  color = '#000',
+  color = colors.ink,
   strokeWidth = 2.6,
   children,
 }: IconProps & { children: React.ReactNode }) {
@@ -39,7 +40,7 @@ function Base({
 
 function Solid({
   size = 24,
-  color = '#000',
+  color = colors.ink,
   children,
 }: IconProps & { children: React.ReactNode }) {
   return (
@@ -169,7 +170,7 @@ const FLAME_INNER =
   'M12 12.9C11 14.3 9.4 15.7 9.4 17.7C9.4 19.7 10.7 21.1 12 21.1' +
   'C13.3 21.1 14.6 19.7 14.6 17.7C14.6 15.7 13 14.3 12 12.9Z';
 
-export function FlameIcon({ size = 24, color = '#58cc02' }: IconProps) {
+export function FlameIcon({ size = 24, color = colors.ectoGreen }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
@@ -206,7 +207,7 @@ export function taskIconForName(name: string): TaskIconName {
 export function TaskGlyph({
   name,
   size = 22,
-  color = '#000437',
+  color = colors.ink,
 }: {
   name: string;
   size?: number;

@@ -16,7 +16,7 @@ import { Task, FocusSchedule, Budget, BlockedDomain, FeedFilter, blockedPackages
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
-import { TaskGlyph, CheckIcon, ChevronLeftIcon } from '../components/icons';
+import { TaskGlyph, CheckIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
 import AppBlocker from '../native/AppBlocker';
 import { syncWidgetNow } from '../widget/widgetSync';
 import { tap } from '../haptics';
@@ -68,11 +68,12 @@ async function syncSchedulesToNative(): Promise<void> {
 }
 
 // Wave 2C1 mirrors of syncSchedulesToNative: the store is the source of
-// truth, native persists nothing. Every push is best-effort.
+// truth, native persists nothing. Every push is best-effort. Only enforceable
+// (task-tagged + enabled + limit>0) budgets push — never via startBlocking.
 async function syncBudgetsToNative(): Promise<void> {
   try {
-    const all = await store.getBudgets();
-    await AppBlocker.setBudgets(all.filter(b => b.enabled)).catch(() => {});
+    const all = await store.getEnforceableBudgets();
+    await AppBlocker.setBudgets(all).catch(() => {});
   } catch {
     // Best-effort; a failed push must never block the UI flow.
   }
@@ -113,9 +114,38 @@ function RowSwitch(props: { on: boolean; onPress: () => void; border: string; la
   );
 }
 
-// Shared installed-app picker modal for the Wave 2C1 allowlist + feed cards.
-// The main task app picker above is untouched; this is the additive twin.
-function AppSelectModal(props: {
+// Disclosure row: section title + live summary subtitle + a chevron that
+// rotates when open. One tappable 44px target, tokens only, no disclosure
+// text. The subtitle keeps layout stable via numberOfLines={1}; critical
+// warnings render outside the row so they stay visible while collapsed.
+function SectionRow(props: { open: boolean; title: string; summary: string; ink: string; muted: string; onPress: () => void; label: string }) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={props.onPress}
+      style={[styles.rowBetween, { marginTop: spacing.xl, marginBottom: spacing.xs }]}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: props.open }}
+      accessibilityLabel={`${props.label}, ${props.summary}`}
+    >
+      <View style={styles.sectionRowText}>
+        <Text style={[typography.displaySmall, { color: props.ink }]} numberOfLines={1}>
+          {props.title}
+        </Text>
+        <Text style={[typography.caption, { color: props.muted, marginTop: 2 }]} numberOfLines={1}>
+          {props.summary}
+        </Text>
+      </View>
+      <View style={{ transform: [{ rotate: props.open ? '90deg' : '0deg' }] }}>
+        <ChevronRightIcon size={20} color={props.muted} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Shared installed-app picker modal for the allowlist + feed + budget cards.
+// Exported for reuse — never clone for a second picker.
+export function AppSelectModal(props: {
   visible: boolean;
   onClose: () => void;
   onPick: (app: InstalledApp) => void;
@@ -126,6 +156,7 @@ function AppSelectModal(props: {
   ink: string;
   muted: string;
   placeholder: string;
+  loading?: boolean;
 }) {
   const [q, setQ] = useState('');
   const filtered = props.apps.filter(
@@ -162,7 +193,7 @@ function AppSelectModal(props: {
                 keyboardShouldPersistTaps="handled"
                 ListEmptyComponent={
                   <Text style={[typography.caption, { color: props.muted, textAlign: 'center', paddingVertical: spacing.md }]}>
-                    No apps found
+                    {props.loading ? 'Loading apps…' : 'No apps found'}
                   </Text>
                 }
                 renderItem={({ item: app }) => {
@@ -174,7 +205,7 @@ function AppSelectModal(props: {
                       style={[
                         styles.appRow,
                         {
-                          backgroundColor: checked ? 'rgba(88,204,2,0.10)' : 'transparent',
+                          backgroundColor: checked ? colors.ectoGreen + '1A' : 'transparent',
                           borderRadius: radius.sm,
                         },
                       ]}
@@ -214,10 +245,15 @@ function AppSelectModal(props: {
 export default function TaskSetupScreen({ navigation, route }: Props) {
   const { isDark } = useTheme();
   const existingTask = route.params?.task;
+  // Stable id for task-wise budgets: existing task keeps its id; a new task
+  // reuses this draft id at save so budgets added pre-save stay attached.
+  const [draftTaskId] = useState(() => existingTask?.id ?? `task-${Date.now()}`);
+  const currentTaskId = existingTask?.id ?? draftTaskId;
   const [taskName, setTaskName] = useState(existingTask?.name || '');
   const [packageName, setPackageName] = useState(existingTask?.packageName || '');
   const [appName, setAppName] = useState(existingTask?.appName || '');
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+  const [appsLoaded, setAppsLoaded] = useState(installedAppsCache !== null);
   const [appSearchQuery, setAppSearchQuery] = useState('');
   const [isSubscribed, setIsSubscribed] = useState<boolean | null>(null);
   const [selectedApps, setSelectedApps] = useState<InstalledApp[]>(() => {
@@ -239,6 +275,10 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const [existingScheduleId, setExistingScheduleId] = useState<string | null>(null);
   // P1-1 hardcore strict mode (Pro): no override or break escape.
   const [strict, setStrict] = useState(existingTask?.strict === true);
+  // Dumbphone Mode (per-task): strict blocking, nothing counts. One boolean
+  // drives the grey-out of every other setup section below; the allowlist
+  // nests inside the dumbphone card (a dumbphone still needs essentials).
+  const [dumb, setDumb] = useState(existingTask?.dumbphoneMode === true);
   // ── Wave 2C1 A: schedule presets (free) ──
   const [scheduleFromPreset, setScheduleFromPreset] = useState(false);
   const [presetNote, setPresetNote] = useState<string | null>(null);
@@ -247,7 +287,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const [allowlistMode, setAllowlistMode] = useState(existingTask?.allowlistMode === true);
   const [allowlistPkgs, setAllowlistPkgs] = useState<string[]>(existingTask?.allowlist ?? []);
   const [allowlistPickerOpen, setAllowlistPickerOpen] = useState(false);
-  // ── Wave 2C1 B/D/E: global lists (budgets, domains, feed filters) ──
+  // ── Wave 2C1 B/D/E: task-scoped budgets + global domains/feed filters ──
+  // Budgets here are this task's rows only (no global path remains).
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetUsage, setBudgetUsage] = useState<Record<string, { opens: number; minutes: number }>>({});
   const [newBudgetPkg, setNewBudgetPkg] = useState('');
@@ -258,14 +299,31 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const [domainError, setDomainError] = useState<string | null>(null);
   const [feedFilters, setFeedFilters] = useState<FeedFilter[]>([]);
   const [feedPickerOpen, setFeedPickerOpen] = useState(false);
+  // Product-clarity Q2: budget creation reuses AppSelectModal (no twin picker).
+  const [budgetPickerOpen, setBudgetPickerOpen] = useState(false);
+  // Product-clarity Q4: pkgs where the hard block wins over feed/budget.
+  const [feedCollisions, setFeedCollisions] = useState<string[]>([]);
+  const [budgetCollisions, setBudgetCollisions] = useState<string[]>([]);
+  // Declutter: progressive disclosure — advanced sections collapsed by default.
+  // Visibility only; save/store/navigation/push logic below is untouched.
+  const [showManualPkg, setShowManualPkg] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
+  const [showBudgets, setShowBudgets] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showDomains, setShowDomains] = useState(false);
+  const [showFeeds, setShowFeeds] = useState(false);
 
-  // Wave 2C1 lists live outside the task — (re)load on mount and on focus.
+  // Wave 2C1 lists — (re)load on mount and on focus. Budgets are scoped to
+  // this task (getBudgetsForTask); domains/feeds stay global. Native pushes
+  // ride their own sync fns, never the session path.
   const refreshWave2Lists = useCallback(() => {
-    store.getBudgets().then(setBudgets).catch(() => {});
+    store.getBudgetsForTask(currentTaskId).then(setBudgets).catch(() => {});
     store.getBlockedDomains().then(setDomains).catch(() => {});
     store.getFeedFilters().then(setFeedFilters).catch(() => {});
+    store.findFeedBlockCollisions().then(setFeedCollisions).catch(() => {});
+    store.findBudgetBlockCollisions().then(setBudgetCollisions).catch(() => {});
     AppBlocker.getBudgetUsage().then(u => setBudgetUsage(u ?? {})).catch(() => {});
-  }, []);
+  }, [currentTaskId]);
 
   useEffect(() => { refreshWave2Lists(); }, [refreshWave2Lists]);
 
@@ -278,9 +336,9 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     AppBlocker.getInstalledApps()
       .then(apps => {
         installedAppsCache = apps;
-        if (live) setInstalledApps(apps);
+        if (live) { setInstalledApps(apps); setAppsLoaded(true); }
       })
-      .catch(() => { if (live && !installedAppsCache) setInstalledApps([]); });
+      .catch(() => { if (live && !installedAppsCache) { setInstalledApps([]); setAppsLoaded(true); } });
     store.getPreferences()
       .then(p => { if (live) setIsSubscribed(p.isSubscribed === true); })
       .catch(() => {});
@@ -361,6 +419,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   };
 
   const isPro = isSubscribed === true;
+  const taskBudgets = budgets;
 
   const showScheduleProGate = () => {
     Alert.alert('Pro feature', 'Schedules are Pro.', [
@@ -380,6 +439,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     }
     tap();
     setStrict(v => !v);
+  };
+
+  // Dumbphone Mode (per-task, ungated like the former global dumfound):
+  // strict blocking, nothing counts. Locks the rest of this task's setup.
+  const handleToggleDumbphone = () => {
+    tap();
+    setDumb(v => !v);
   };
 
   const handleToggleSchedule = () => {
@@ -489,7 +555,9 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     setPresetBusy(false);
   };
 
-  // ── Wave 2C1 B: daily budgets (free: 1 budgeted app) ──
+  // ── Wave 2C1 B: daily budgets (free: 1 budgeted app for this task) ──
+  // Task-wise organization: new rows auto-tag with currentTaskId.
+  // Enforcement reads the enforceable set via syncBudgetsToNative.
   const showBudgetProGate = () => {
     Alert.alert('One budget on Free', 'Free: 1 app. Pro: unlimited.', [
       { text: 'View Pro', onPress: () => navigation.navigate('Paywall') },
@@ -497,36 +565,64 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     ]);
   };
 
+  // Collision notice shared by every path that auto-disables a shield:
+  // hard block wins, the feed row is kept (disabled) for one-tap re-enable.
+  const showShieldDisabledNotice = (pkgs: string[], reason: 'blocked' | 'budget') => {
+    if (pkgs.length === 0) return;
+    const names = pkgs.map(appLabelFor).join(', ');
+    Alert.alert(
+      'Feed Shield auto-disabled',
+      reason === 'blocked'
+        ? `Hard block wins: ${names} ${pkgs.length === 1 ? 'is' : 'are'} fully blocked by a task, so the shield was turned off. The entry is kept — re-enable it after unblocking.`
+        : `Budget wins: ${names} ${pkgs.length === 1 ? 'has' : 'have'} an enabled budget now (over-limit takes the block path), so the shield was turned off. The entry is kept — re-enable it after removing the budget.`,
+    );
+  };
+
+  // Re-push feeds after any write that may have auto-disabled a shield row
+  // (saveFeedFilter / saveTask / saveBudget all reconcile internally).
+  const refreshFeedsAndPush = async (): Promise<void> => {
+    try {
+      setFeedFilters(await store.getFeedFilters());
+    } catch {
+      // Best-effort.
+    }
+    await syncFeedsToNative();
+  };
+
   const handleAddBudget = async () => {
     tap();
     const pkg = newBudgetPkg.trim();
     if (!pkg) {
-      Alert.alert('Pick an app', 'Choose an app below.');
+      Alert.alert('Pick an app', 'Choose an app with the picker above.');
       return;
     }
     if (!isPro && budgets.length >= 1) { showBudgetProGate(); return; }
     const limit = Math.min(999, Math.max(1, newBudgetLimit));
-    const duplicate = budgets.some(b => b.packageName === pkg && b.kind === newBudgetKind);
+    const duplicate = taskBudgets.some(b => b.packageName === pkg && b.kind === newBudgetKind);
     // Label is derived — one less field in the form.
     const label =
       installedApps.find(a => a.packageName === pkg)?.appName
       ?? selectedApps.find(a => a.packageName === pkg)?.appName
       ?? pkg;
     try {
-      await store.saveBudget({
+      const shieldOff = await store.saveBudget({
         id: `budget-${Date.now()}`,
         packageName: pkg,
         appLabel: label,
         kind: newBudgetKind,
         limit,
         enabled: true,
+        taskId: currentTaskId,
       });
-      setBudgets(await store.getBudgets());
+      setBudgets(await store.getBudgetsForTask(currentTaskId));
       await syncBudgetsToNative();
+      await refreshFeedsAndPush();
       setNewBudgetPkg('');
       setNewBudgetLimit(10);
       if (duplicate) {
         Alert.alert('Duplicate budget', 'This app + meter is already tracked. Both rows are kept.');
+      } else {
+        showShieldDisabledNotice(shieldOff, 'budget');
       }
     } catch {
       Alert.alert('Could not save budget', 'Storage failed. Please try again.');
@@ -542,9 +638,11 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     // the enabled switch (the store also normalizes limit <= 0 to disabled).
     if (patch.limit !== undefined) merged.limit = Math.min(999, Math.max(1, patch.limit));
     try {
-      await store.saveBudget(merged);
-      setBudgets(await store.getBudgets());
+      const shieldOff = await store.saveBudget(merged);
+      setBudgets(await store.getBudgetsForTask(currentTaskId));
       await syncBudgetsToNative();
+      await refreshFeedsAndPush();
+      showShieldDisabledNotice(shieldOff, 'budget');
     } catch {
       Alert.alert('Could not save budget', 'Storage failed. Please try again.');
     }
@@ -554,7 +652,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     tap();
     try {
       await store.deleteBudget(id);
-      setBudgets(await store.getBudgets());
+      setBudgets(await store.getBudgetsForTask(currentTaskId));
       await syncBudgetsToNative();
     } catch {
       Alert.alert('Could not delete budget', 'Storage failed. Please try again.');
@@ -646,7 +744,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
 
   // ── Wave 2C1 E: feed shield (Pro) ──
   const showFeedsProGate = () => {
-    showWave2ProGate('Feed Shield is Pro.', 'Hide reels & explore per app.');
+    showWave2ProGate('Feed Shield is Pro.', 'Cleans reels, explore and comments per app.');
   };
 
   const handleOpenFeedPicker = () => {
@@ -666,9 +764,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     const next: FeedFilter = { ...cur };
     next[flag] = !next[flag];
     try {
-      await store.saveFeedFilter(next);
+      const res = await store.saveFeedFilter(next);
       setFeedFilters(await store.getFeedFilters());
       await syncFeedsToNative();
+      // Enabling onto a blocked/budgeted app auto-disables (hard block wins).
+      if (res.autoDisabled && res.reason) {
+        showShieldDisabledNotice([next.packageName], res.reason);
+      }
     } catch {
       Alert.alert('Could not save feed filter', 'Storage failed. Please try again.');
     }
@@ -682,7 +784,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     }
     tap();
     try {
-      await store.saveFeedFilter({
+      const res = await store.saveFeedFilter({
         packageName: app.packageName,
         hideReels: true,
         hideExplore: true,
@@ -692,6 +794,9 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       setFeedFilters(await store.getFeedFilters());
       await syncFeedsToNative();
       setFeedPickerOpen(false);
+      if (res.autoDisabled && res.reason) {
+        showShieldDisabledNotice([app.packageName], res.reason);
+      }
     } catch {
       Alert.alert('Could not save feed filter', 'Storage failed. Please try again.');
     }
@@ -738,15 +843,30 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     const pkgs = isSubscribed ? rawPkgs : rawPkgs.slice(0, 1);
     const firstApp = selectedApps.find(a => a.packageName === pkgs[0])?.appName
       || appName.trim() || pkgs[0];
-    const taskId = existingTask ? existingTask.id : `task-${Date.now()}`;
+    const taskId = currentTaskId;
     // Free tier forces the schedule off at save — except preset schedules,
     // which are free by design (Wave 2C1 A).
     const effectiveScheduleEnabled = scheduleEnabled && (isPro || scheduleFromPreset);
+    // Collision notice: capture enabled shields before the save — saveTask
+    // auto-disables newly colliding ones (hard block wins); the diff below
+    // is the notice list.
+    let shieldsBefore: string[] = [];
+    try {
+      shieldsBefore = (await store.getFeedFilters())
+        .filter(f => f.enabled === true)
+        .map(f => f.packageName);
+    } catch {
+      // Best-effort; the save below still reconciles.
+    }
 
     try {
       let saved: Task;
+      // Allowed apps only run inside Dumbphone Mode: the flag is forced off
+      // when dumb is off (the list stays stored but inactive — the session
+      // push path already follows task.allowlistMode).
+      const dumbPatch = { dumbphoneMode: dumb };
       if (existingTask) {
-        saved = { ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs, strict: isPro ? strict : false, allowlistMode: isPro ? allowlistMode : false, allowlist: isPro ? allowlistPkgs : undefined };
+        saved = { ...existingTask, name: taskName.trim(), packageName: pkgs[0], appName: firstApp, blockedPackages: pkgs, strict: isPro ? strict : false, allowlistMode: isPro && dumb ? allowlistMode : false, allowlist: isPro ? allowlistPkgs : undefined, ...dumbPatch } as Task;
         await store.saveTask(saved);
       } else {
         saved = {
@@ -756,14 +876,15 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           appName: firstApp,
           blockedPackages: pkgs,
           strict: isPro ? strict : false,
-          allowlistMode: isPro ? allowlistMode : false,
+          allowlistMode: isPro && dumb ? allowlistMode : false,
           allowlist: isPro ? allowlistPkgs : undefined,
+          ...dumbPatch,
           createdAt: Date.now(),
           lastUsed: 0,
           useCount: 0,
           isActive: true,
           streak: 0,
-        };
+        } as Task;
         await store.saveTask(saved);
       }
       // Tile staleness: the tile's toggle target is the mirror's lastPackages —
@@ -797,6 +918,21 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       // Best-effort; the task itself already saved.
     }
     await syncSchedulesToNative();
+    // Task edits can newly collide feed rows (saveTask auto-disabled them
+    // internally) — refresh the list, re-push native feeds, and notice.
+    try {
+      const after = await store.getFeedFilters();
+      setFeedFilters(after);
+      const newlyOff = after
+        .filter(f => f.enabled !== true && shieldsBefore.includes(f.packageName))
+        .map(f => f.packageName);
+      if (newlyOff.length > 0) {
+        showShieldDisabledNotice(newlyOff, 'blocked');
+      }
+    } catch {
+      // Best-effort.
+    }
+    await syncFeedsToNative();
     navigation.goBack();
   };
 
@@ -854,7 +990,104 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const cardBg = isDark ? darkColors.paperCard : colors.paperCard;
   const border = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
+  // Dumbphone grey-out greys TEXT too: locked sections render labels/values
+  // in muted (not just container opacity) so nothing looks tappable. When
+  // dumb is off this equals ink — zero visual change.
+  const lockedInk = dumb ? muted : ink;
   const canSave = taskName.trim() && (selectedApps.length > 0 || packageName.trim()) && (!scheduleEnabled || scheduleValid);
+  const saveHint = !taskName.trim()
+    ? 'Name your task to save.'
+    : selectedApps.length === 0 && !packageName.trim()
+      ? 'Choose an app to block.'
+      : scheduleEnabled && !scheduleValid
+        ? 'Fix the schedule to save.'
+        : null;
+  // Per-row collision lookup: reuse the section arrays, one Set per render —
+  // no extra store calls inside the row maps below.
+  const budgetCollisionSet = new Set(budgetCollisions);
+  const feedCollisionSet = new Set(feedCollisions);
+
+  // Live disclosure subtitles — derived from existing state only, no new
+  // store calls. Each SectionRow shows one of these under its title.
+  const scheduleDaySummary = (() => {
+    const s = new Set(scheduleDays);
+    if (scheduleDays.length === 0) return 'No days';
+    if (scheduleDays.length === 7) return 'Daily';
+    if (scheduleDays.length === 5 && [1, 2, 3, 4, 5].every(d => s.has(d))) return 'Weekdays';
+    if (scheduleDays.length === 2 && s.has(0) && s.has(6)) return 'Weekends';
+    return `${scheduleDays.length} days`;
+  })();
+  const scheduleSummary = !scheduleEnabled
+    ? 'Off'
+    : `${scheduleDaySummary} · ${formatScheduleTime(startMinutes)}–${formatScheduleTime(endMinutes)}`;
+  const budgetSummary = taskBudgets.length === 0
+    ? 'Off'
+    : `${taskBudgets.length} app${taskBudgets.length === 1 ? '' : 's'}`;
+  const domainsSummary = domains.length === 0
+    ? 'Off'
+    : `${domains.length} site${domains.length === 1 ? '' : 's'}`;
+  const enabledFeedCount = feedFilters.filter(f => f.enabled).length;
+  const feedSummary = enabledFeedCount === 0
+    ? 'Off'
+    : `${enabledFeedCount} app${enabledFeedCount === 1 ? '' : 's'}`;
+  const manualSummary = packageName.trim() ? packageName.trim() : 'Off';
+  const presetsSummary = presetNote ?? 'Not applied';
+
+  // Single budget-row renderer for this task's rows. Enforcement reads the
+  // enforceable set via syncBudgetsToNative.
+  const renderBudgetRow = (b: Budget) => {
+    const u = budgetUsage[b.packageName];
+    const used = b.kind === 'opens' ? u?.opens : u?.minutes;
+    const unit = b.kind === 'opens' ? 'opens' : 'min';
+    return (
+      <View key={b.id} style={styles.budgetRow}>
+        <View style={styles.rowBetween}>
+          <Text style={[typography.bodyMedium, { color: lockedInk, flex: 1 }]} numberOfLines={1}>
+            {`${b.appLabel} · ${b.limit} ${unit}/day${used !== undefined ? ` · ${used} used` : ''}`}
+          </Text>
+          {budgetCollisionSet.has(b.packageName) && (
+            <View
+              style={styles.collisionBadge}
+              accessibilityRole="text"
+              accessibilityLabel={`Blocked: ${b.appLabel} is fully blocked`}
+            >
+              <Text style={[typography.label, { color: colors.danger }]}>
+                Blocked
+              </Text>
+            </View>
+          )}
+          <RowSwitch
+            on={b.enabled}
+            onPress={() => handleUpdateBudget(b.id, { enabled: !b.enabled })}
+            border={border}
+            label={`${b.appLabel} budget ${b.enabled ? 'on' : 'off'}`}
+          />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => handleDeleteBudget(b.id)}
+            style={styles.deleteTextBtn}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete budget for ${b.appLabel}`}
+          >
+            <Text style={[typography.caption, { color: colors.danger }]}>
+              DELETE
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.compactStepperRow}>
+          <View style={styles.stepperGroup}>
+            <TouchableOpacity style={[styles.compactStepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => handleUpdateBudget(b.id, { limit: b.limit - 1 })} accessibilityRole="button" accessibilityLabel="Lower limit">
+              <Text style={[styles.compactStepperText, { color: lockedInk }]}>−</Text>
+            </TouchableOpacity>
+            <Text style={[styles.compactStepperValue, { color: lockedInk }]}>{b.limit}</Text>
+            <TouchableOpacity style={[styles.compactStepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => handleUpdateBudget(b.id, { limit: b.limit + 1 })} accessibilityRole="button" accessibilityLabel="Raise limit">
+              <Text style={[styles.compactStepperText, { color: lockedInk }]}>+</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
@@ -888,18 +1121,19 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             />
           </View>
 
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+          <Text style={[typography.displaySmall, { color: lockedInk, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
             INSTALLED APPS
           </Text>
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => { tap(); setAppPickerOpen(true); }}
-            style={[styles.input, styles.appPickerField, { backgroundColor: cardBg, borderColor: border }]}
+            disabled={dumb}
+            style={[styles.input, styles.appPickerField, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}
             accessibilityRole="button"
             accessibilityLabel="Choose apps to block"
           >
             <Text
-              style={[typography.body, { color: selectedApps.length > 0 ? ink : muted, flex: 1 }]}
+              style={[typography.body, { color: selectedApps.length > 0 ? lockedInk : muted, flex: 1 }]}
               numberOfLines={1}
             >
               {selectedApps.length > 0
@@ -907,6 +1141,27 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                 : 'Search apps...'}
             </Text>
           </TouchableOpacity>
+          {selectedApps.length > 0 && (
+            <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.chipRow, dumb && styles.grayed]}>
+              {selectedApps.map(a => (
+                <TouchableOpacity
+                  key={a.packageName}
+                  activeOpacity={0.7}
+                  onPress={() => handlePickApp(a)}
+                  style={[styles.chip, { borderColor: border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${a.appName}`}
+                >
+                  <Text style={[typography.caption, { color: lockedInk }]} numberOfLines={1}>
+                    {a.appName}
+                  </Text>
+                  <Text style={[typography.caption, { color: muted }]}>
+                    ×
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <Modal
             visible={appPickerOpen}
             transparent
@@ -925,13 +1180,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                       onChangeText={setAppSearchQuery}
                       autoFocus
                     />
-                    {filteredApps.length === 0 ? (
+                    {filteredApps.length === 0 || !appsLoaded ? (
                       <View style={styles.noAppsFound}>
-                        {isDark && (
+                        {appsLoaded && (
                           <Image source={mascotSource('thinking', isDark)} style={styles.noAppsImage} resizeMode="contain" />
                         )}
                         <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkMuted, paddingVertical: spacing.md, textAlign: 'center' }]}>
-                          No apps found
+                          {appsLoaded ? 'No apps found' : 'Loading apps…'}
                         </Text>
                       </View>
                     ) : (
@@ -954,8 +1209,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                                 {
                                   backgroundColor: checked
                                     ? isDark
-                                      ? 'rgba(255,255,255,0.06)'
-                                      : 'rgba(28,176,246,0.08)'
+                                      ? darkColors.ink + '0F'
+                                      : colors.ectoGreen + '14'
                                     : 'transparent',
                                   borderRadius: radius.sm,
                                 },
@@ -992,45 +1247,45 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             </TouchableWithoutFeedback>
           </Modal>
 
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            PACKAGE NAME (MANUAL OVERRIDE)
-          </Text>
-          <TextInput
-            style={[styles.input, { color: ink, backgroundColor: cardBg, borderColor: border }]}
-            placeholder="e.g., com.instagram.android"
-            placeholderTextColor={isDark ? darkColors.inkMuted : colors.inkMuted}
-            value={packageName}
-            onChangeText={(text) => { setPackageName(text); setAppName(''); setSelectedApps([]); }}
+          <SectionRow
+            open={showManualPkg}
+            title="MANUAL SETUP"
+            summary={manualSummary}
+            ink={lockedInk}
+            muted={muted}
+            onPress={() => { tap(); setShowManualPkg(v => !v); }}
+            label="Manual package override"
           />
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            STRICT MODE{!isPro ? ' · PRO' : ''}
+          {showManualPkg && (
+            <>
+              <Text style={[typography.caption, { color: muted, marginBottom: spacing.sm }]}>
+                Only needed if your app is not in the list above.
+              </Text>
+              <TextInput
+                style={[styles.input, { color: lockedInk, backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}
+                placeholder="e.g., com.instagram.android"
+                placeholderTextColor={isDark ? darkColors.inkMuted : colors.inkMuted}
+                value={packageName}
+                editable={!dumb}
+                onChangeText={(text) => { setPackageName(text); setAppName(''); setSelectedApps([]); }}
+              />
+            </>
+          )}
+          <SectionRow
+            open={showPresets}
+            title="QUICK PRESETS"
+            summary={presetsSummary}
+            ink={lockedInk}
+            muted={muted}
+            onPress={() => { tap(); setShowPresets(v => !v); }}
+            label="Schedule shortcuts"
+          />
+          {showPresets && (
+          <>
+          <Text style={[typography.caption, { color: muted, marginBottom: spacing.sm }]}>
+            Shortcuts fill in the schedule below. Nothing is blocked until you save with the schedule on.
           </Text>
-          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleToggleStrict}
-              style={styles.scheduleToggleRow}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: strict }}
-              accessibilityLabel="Enable strict mode"
-            >
-              <View style={styles.scheduleToggleText}>
-                <Text style={[typography.bodyMedium, { color: ink }]}>
-                  Lock this task in
-                </Text>
-                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                  No overrides. No escape.
-                </Text>
-              </View>
-              <View style={[styles.toggleTrack, { borderColor: border }, strict && styles.toggleTrackOn]}>
-                <View style={[styles.toggleKnob, strict && styles.toggleKnobOn]} />
-              </View>
-            </TouchableOpacity>
-          </View>
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            QUICK PRESETS
-          </Text>
-          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
+          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => applySchedulePreset('bedtime')}
@@ -1039,7 +1294,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Apply bedtime preset 11 PM to 7 AM"
             >
-              <Text style={[typography.bodyMedium, { color: ink }]}>
+              <Text style={[typography.bodyMedium, { color: lockedInk }]}>
                 Bedtime 23:00–07:00
               </Text>
               <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
@@ -1054,7 +1309,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Apply work hours preset 9 AM to 5 PM weekdays"
             >
-              <Text style={[typography.bodyMedium, { color: ink }]}>
+              <Text style={[typography.bodyMedium, { color: lockedInk }]}>
                 Work hours 09:00–17:00 weekdays
               </Text>
               <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
@@ -1069,7 +1324,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Start a one-shot 25 minute block from now"
             >
-              <Text style={[typography.bodyMedium, { color: ink }]}>
+              <Text style={[typography.bodyMedium, { color: lockedInk }]}>
                 Focus sprint · 25 min
               </Text>
               <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
@@ -1082,10 +1337,126 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               </Text>
             )}
           </View>
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            SCHEDULE{!isPro ? ' · PRO' : ''}
+          </>
+          )}
+          <Text style={[typography.displaySmall, { color: muted, marginTop: spacing.xl, textAlign: 'center' }]}>
+            PRO FEATURES
+          </Text>
+          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.xs }]}>
+            DUMBPHONE MODE
           </Text>
           <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleToggleDumbphone}
+              style={styles.scheduleToggleRow}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: dumb }}
+              accessibilityLabel="Enable Dumbphone Mode"
+            >
+              <View style={styles.scheduleToggleText}>
+                <Text style={[typography.bodyMedium, { color: ink }]}>
+                  Dumbphone Mode
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Strict blocking, nothing counts. Locks the rest of this task's setup, except allowed apps.
+                </Text>
+              </View>
+              <View style={[styles.toggleTrack, { borderColor: border }, dumb && styles.toggleTrackOn]}>
+                <View style={[styles.toggleKnob, dumb && styles.toggleKnobOn]} />
+              </View>
+            </TouchableOpacity>
+            {/* Allowed apps nest inside Dumbphone Mode — active only when dumb is on (and Pro). */}
+            <View style={[styles.nestedDivider, { borderColor: muted }]} />
+            <View pointerEvents={dumb ? 'auto' : 'none'} style={[!dumb && styles.grayed]}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleToggleAllowlist}
+                style={styles.scheduleToggleRow}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: allowlistMode }}
+                accessibilityLabel="Enable allowlist mode"
+              >
+                <View style={styles.scheduleToggleText}>
+                  <Text style={[typography.bodyMedium, { color: ink }]}>
+                    Only allowed apps work
+                  </Text>
+                  <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                    Rest is blocked
+                  </Text>
+                </View>
+                <View style={[styles.toggleTrack, { borderColor: border }, allowlistMode && styles.toggleTrackOn]}>
+                  <View style={[styles.toggleKnob, allowlistMode && styles.toggleKnobOn]} />
+                </View>
+              </TouchableOpacity>
+              <View style={[!isPro && styles.grayed]}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleOpenAllowlistPicker}
+                  style={[styles.presetBtn, { borderColor: border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose allowed apps"
+                >
+                  <Text style={[typography.bodyMedium, { color: ink }]}>
+                    {allowlistPkgs.length > 0 ? `${allowlistPkgs.length} app${allowlistPkgs.length === 1 ? '' : 's'} allowed` : 'Choose allowed apps…'}
+                  </Text>
+                  <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={2}>
+                    {allowlistPkgs.length > 0 ? allowlistPkgs.map(appLabelFor).join(', ') : 'No apps chosen yet'}
+                  </Text>
+                </TouchableOpacity>
+                {allowlistMode && allowlistPkgs.length === 0 && (
+                  <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
+                    Empty = all blocked but phone & StayT
+                  </Text>
+                )}
+              </View>
+            </View>
+          </View>
+          <Text style={[typography.displaySmall, { color: lockedInk, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+            STRICT MODE
+          </Text>
+          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleToggleStrict}
+              style={styles.scheduleToggleRow}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: strict }}
+              accessibilityLabel="Enable strict mode"
+            >
+              <View style={styles.scheduleToggleText}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
+                  Lock this task in
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  No overrides. No escape.
+                </Text>
+              </View>
+              <View style={[styles.toggleTrack, { borderColor: border }, strict && styles.toggleTrackOn]}>
+                <View style={[styles.toggleKnob, strict && styles.toggleKnobOn]} />
+              </View>
+            </TouchableOpacity>
+          </View>
+          <SectionRow
+            open={showSchedule}
+            title="AUTO-BLOCK SCHEDULE"
+            summary={scheduleSummary}
+            ink={lockedInk}
+            muted={muted}
+            onPress={() => { tap(); setShowSchedule(v => !v); }}
+            label="Auto-block schedule"
+          />
+          {scheduleHint && !showSchedule && (
+            <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
+              {scheduleHint}
+            </Text>
+          )}
+          {showSchedule && (
+          <>
+          <Text style={[typography.caption, { color: muted, marginBottom: spacing.sm }]}>
+            Recurring auto-block for THIS task only. Runs on its own — no session needed.
+          </Text>
+          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={handleToggleSchedule}
@@ -1095,7 +1466,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityLabel="Enable schedule"
             >
               <View style={styles.scheduleToggleText}>
-                <Text style={[typography.bodyMedium, { color: ink }]}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
                   Enable schedule
                 </Text>
                 <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
@@ -1121,7 +1492,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                         accessibilityState={{ checked: on }}
                         accessibilityLabel={`Day ${day}`}
                       >
-                        <Text style={[styles.dayChipText, { color: on ? colors.midnight : ink }]}>
+                        <Text style={[styles.dayChipText, { color: on ? colors.midnight : lockedInk }]}>
                           {DAY_LABELS[i]}
                         </Text>
                       </TouchableOpacity>
@@ -1129,32 +1500,32 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                   })}
                 </View>
                 <View style={styles.timeRow}>
-                  <Text style={[typography.label, { color: ink }]}>START</Text>
+                  <Text style={[typography.label, { color: lockedInk }]}>START</Text>
                   <View style={styles.stepperGroup}>
                     <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('start', -1)} accessibilityRole="button" accessibilityLabel="Decrease start hour">
-                      <Text style={[styles.stepperText, { color: ink }]}>−</Text>
+                      <Text style={[styles.stepperText, { color: lockedInk }]}>−</Text>
                     </TouchableOpacity>
-                    <Text style={[styles.timeText, { color: ink }]}>{formatScheduleTime(startMinutes)}</Text>
+                    <Text style={[styles.timeText, { color: lockedInk }]}>{formatScheduleTime(startMinutes)}</Text>
                     <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('start', 1)} accessibilityRole="button" accessibilityLabel="Increase start hour">
-                      <Text style={[styles.stepperText, { color: ink }]}>+</Text>
+                      <Text style={[styles.stepperText, { color: lockedInk }]}>+</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.minuteBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => cycleMinute('start')} accessibilityRole="button" accessibilityLabel="Cycle start minutes">
-                      <Text style={[styles.minuteText, { color: ink }]}>:{String(startMinutes % 60).padStart(2, '0')}</Text>
+                      <Text style={[styles.minuteText, { color: lockedInk }]}>:{String(startMinutes % 60).padStart(2, '0')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
                 <View style={styles.timeRow}>
-                  <Text style={[typography.label, { color: ink }]}>END</Text>
+                  <Text style={[typography.label, { color: lockedInk }]}>END</Text>
                   <View style={styles.stepperGroup}>
                     <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('end', -1)} accessibilityRole="button" accessibilityLabel="Decrease end hour">
-                      <Text style={[styles.stepperText, { color: ink }]}>−</Text>
+                      <Text style={[styles.stepperText, { color: lockedInk }]}>−</Text>
                     </TouchableOpacity>
-                    <Text style={[styles.timeText, { color: ink }]}>{formatScheduleTime(endMinutes)}</Text>
+                    <Text style={[styles.timeText, { color: lockedInk }]}>{formatScheduleTime(endMinutes)}</Text>
                     <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => adjustHour('end', 1)} accessibilityRole="button" accessibilityLabel="Increase end hour">
-                      <Text style={[styles.stepperText, { color: ink }]}>+</Text>
+                      <Text style={[styles.stepperText, { color: lockedInk }]}>+</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.minuteBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => cycleMinute('end')} accessibilityRole="button" accessibilityLabel="Cycle end minutes">
-                      <Text style={[styles.minuteText, { color: ink }]}>:{String(endMinutes % 60).padStart(2, '0')}</Text>
+                      <Text style={[styles.minuteText, { color: lockedInk }]}>:{String(endMinutes % 60).padStart(2, '0')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1166,78 +1537,50 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               </>
             )}
           </View>
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            DAILY BUDGETS
+          </>
+          )}
+          <SectionRow
+            open={showBudgets}
+            title="APP BUDGETS · FOR THIS TASK"
+            summary={budgetSummary}
+            ink={lockedInk}
+            muted={muted}
+            onPress={() => { tap(); setShowBudgets(v => !v); }}
+            label="App budgets for this task"
+          />
+          {budgetCollisions.length > 0 && (
+            <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
+              {`Hard block wins: ${budgetCollisions.map(appLabelFor).join(', ')} ${budgetCollisions.length === 1 ? 'is' : 'are'} already fully blocked by a task — the budget only meters when no block is active.`}
+            </Text>
+          )}
+          {showBudgets && (
+          <>
+          <Text style={[typography.caption, { color: muted, marginBottom: spacing.sm }]}>
+            Metered per app for this task. Enforcement is still global while any session runs.
           </Text>
-          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
-            {budgets.length === 0 ? (
+          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
+            {taskBudgets.length === 0 ? (
               <Text style={[typography.caption, { color: muted }]}>
-                No budgets yet.
+                No budgets for this task yet.
               </Text>
-            ) : budgets.map(b => {
-              const u = budgetUsage[b.packageName];
-              const used = b.kind === 'opens' ? u?.opens : u?.minutes;
-              const unit = b.kind === 'opens' ? 'opens' : 'min';
-              return (
-                <View key={b.id} style={styles.budgetRow}>
-                  <View style={styles.rowBetween}>
-                    <Text style={[typography.bodyMedium, { color: ink, flex: 1 }]} numberOfLines={1}>
-                      {`${b.appLabel} · ${b.limit} ${unit}/day${used !== undefined ? ` · ${used} used` : ''}`}
-                    </Text>
-                    <RowSwitch
-                      on={b.enabled}
-                      onPress={() => handleUpdateBudget(b.id, { enabled: !b.enabled })}
-                      border={border}
-                      label={`${b.appLabel} budget ${b.enabled ? 'on' : 'off'}`}
-                    />
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      onPress={() => handleDeleteBudget(b.id)}
-                      style={styles.deleteTextBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Delete budget for ${b.appLabel}`}
-                    >
-                      <Text style={[typography.h3, { color: colors.danger }]}>
-                        ×
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.rowBetween}>
-                    <View style={styles.stepperGroup}>
-                      <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => handleUpdateBudget(b.id, { limit: b.limit - 1 })} accessibilityRole="button" accessibilityLabel="Lower limit">
-                        <Text style={[styles.stepperText, { color: ink }]}>−</Text>
-                      </TouchableOpacity>
-                      <Text style={[styles.timeText, { color: ink }]}>{b.limit}</Text>
-                      <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => handleUpdateBudget(b.id, { limit: b.limit + 1 })} accessibilityRole="button" accessibilityLabel="Raise limit">
-                        <Text style={[styles.stepperText, { color: ink }]}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
-            <TextInput
-              style={[styles.input, { color: ink, backgroundColor: cardBg, borderColor: border, marginTop: spacing.md }]}
-              placeholder="Package, e.g. com.instagram.android"
-              placeholderTextColor={muted}
-              value={newBudgetPkg}
-              onChangeText={setNewBudgetPkg}
-              autoCapitalize="none"
-            />
-            {selectedApps.length > 0 && selectedApps[0] && (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => {
-                  setNewBudgetPkg(selectedApps[0].packageName);
-                }}
-                style={styles.linkBtn}
-              >
-                <Text style={[typography.caption, { color: muted }]}>
-                  Use {selectedApps[0].appName}
-                </Text>
-              </TouchableOpacity>
+            ) : (
+              taskBudgets.map(renderBudgetRow)
             )}
-            <View style={styles.dayRow}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => { tap(); setBudgetPickerOpen(true); }}
+              style={[styles.input, styles.appPickerField, { backgroundColor: cardBg, borderColor: border, marginTop: spacing.md }]}
+              accessibilityRole="button"
+              accessibilityLabel="Choose app to meter"
+            >
+              <Text
+                style={[typography.body, { color: newBudgetPkg ? lockedInk : muted, flex: 1 }]}
+                numberOfLines={1}
+              >
+                {newBudgetPkg ? appLabelFor(newBudgetPkg) : 'Choose app…'}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.compactSegRow}>
               {(['opens', 'minutes'] as const).map(k => {
                 const on = newBudgetKind === k;
                 return (
@@ -1245,27 +1588,27 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                     key={k}
                     activeOpacity={0.7}
                     onPress={() => { tap(); setNewBudgetKind(k); }}
-                    style={[styles.dayChip, { borderColor: border }, on && styles.dayChipOn]}
+                    style={[styles.compactSegBtn, { borderColor: border }, on && styles.compactSegBtnOn]}
                     accessibilityRole="radio"
                     accessibilityState={{ checked: on }}
                     accessibilityLabel={`Budget meter ${k}`}
                   >
-                    <Text style={[styles.dayChipText, { color: on ? colors.midnight : ink }]}>
+                    <Text style={[styles.compactSegText, { color: on ? colors.midnight : lockedInk }]}>
                       {k === 'opens' ? 'OPENS' : 'MIN'}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <View style={styles.timeRow}>
-              <Text style={[typography.label, { color: ink }]}>LIMIT</Text>
+            <View style={styles.compactStepperRow}>
+              <Text style={[typography.label, { color: lockedInk }]}>LIMIT</Text>
               <View style={styles.stepperGroup}>
-                <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => { tap(); setNewBudgetLimit(v => Math.max(1, v - 1)); }} accessibilityRole="button" accessibilityLabel="Lower new budget limit">
-                  <Text style={[styles.stepperText, { color: ink }]}>−</Text>
+                <TouchableOpacity style={[styles.compactStepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => { tap(); setNewBudgetLimit(v => Math.max(1, v - 1)); }} accessibilityRole="button" accessibilityLabel="Lower new budget limit">
+                  <Text style={[styles.compactStepperText, { color: lockedInk }]}>−</Text>
                 </TouchableOpacity>
-                <Text style={[styles.timeText, { color: ink }]}>{newBudgetLimit}</Text>
-                <TouchableOpacity style={[styles.stepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => { tap(); setNewBudgetLimit(v => Math.min(999, v + 1)); }} accessibilityRole="button" accessibilityLabel="Raise new budget limit">
-                  <Text style={[styles.stepperText, { color: ink }]}>+</Text>
+                <Text style={[styles.compactStepperValue, { color: lockedInk }]}>{newBudgetLimit}</Text>
+                <TouchableOpacity style={[styles.compactStepperBtn, { borderColor: border }]} activeOpacity={0.7} onPress={() => { tap(); setNewBudgetLimit(v => Math.min(999, v + 1)); }} accessibilityRole="button" accessibilityLabel="Raise new budget limit">
+                  <Text style={[styles.compactStepperText, { color: lockedInk }]}>+</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1276,61 +1619,30 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Add budget"
             >
-              <Text style={[typography.bodyMedium, { color: ink, textAlign: 'center' }]}>
+              <Text style={[typography.bodyMedium, { color: lockedInk, textAlign: 'center' }]}>
                 ADD BUDGET
               </Text>
             </TouchableOpacity>
           </View>
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            DUMBPHONE MODE · PRO
-          </Text>
-          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleToggleAllowlist}
-              style={styles.scheduleToggleRow}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: allowlistMode }}
-              accessibilityLabel="Enable dumbphone mode"
-            >
-              <View style={styles.scheduleToggleText}>
-                <Text style={[typography.bodyMedium, { color: ink }]}>
-                  Only allowed apps work
-                </Text>
-                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                  Rest is blocked
-                </Text>
-              </View>
-              <View style={[styles.toggleTrack, { borderColor: border }, allowlistMode && styles.toggleTrackOn]}>
-                <View style={[styles.toggleKnob, allowlistMode && styles.toggleKnobOn]} />
-              </View>
-            </TouchableOpacity>
-            <View style={[!isPro && styles.grayed]}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={handleOpenAllowlistPicker}
-                style={[styles.presetBtn, { borderColor: border }]}
-                accessibilityRole="button"
-                accessibilityLabel="Choose allowed apps"
-              >
-                <Text style={[typography.bodyMedium, { color: ink }]}>
-                  {allowlistPkgs.length > 0 ? `${allowlistPkgs.length} app${allowlistPkgs.length === 1 ? '' : 's'} allowed` : 'Choose allowed apps…'}
-                </Text>
-                <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={2}>
-                  {allowlistPkgs.length > 0 ? allowlistPkgs.map(appLabelFor).join(', ') : 'No apps chosen yet'}
-                </Text>
-              </TouchableOpacity>
-              {allowlistMode && allowlistPkgs.length === 0 && (
-                <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
-                  Empty = all blocked but phone & StayT
-                </Text>
-              )}
-            </View>
-          </View>
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            WEBSITES · PRO
-          </Text>
-          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
+          </>
+          )}
+          <SectionRow
+            open={showDomains}
+            title="WEBSITES"
+            summary={domainsSummary}
+            ink={lockedInk}
+            muted={muted}
+            onPress={() => { tap(); setShowDomains(v => !v); }}
+            label="Blocked websites"
+          />
+          {domainError && !showDomains && (
+            <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
+              {domainError}
+            </Text>
+          )}
+          {showDomains && (
+          <>
+          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
             {domains.length === 0 ? (
               <Text style={[typography.caption, { color: muted }]}>
                 No blocked sites yet.
@@ -1338,7 +1650,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             ) : domains.map(d => (
               <View key={d.id} style={styles.rowBetween}>
                 <View style={styles.rowMain}>
-                  <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
+                  <Text style={[typography.bodyMedium, { color: lockedInk }]} numberOfLines={1}>
                     {d.domain}
                   </Text>
                 </View>
@@ -1362,10 +1674,11 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               </View>
             ))}
             <TextInput
-              style={[styles.input, { color: ink, backgroundColor: cardBg, borderColor: border, marginTop: spacing.md }]}
+              style={[styles.input, { color: lockedInk, backgroundColor: cardBg, borderColor: border, marginTop: spacing.md }]}
               placeholder="example.com"
               placeholderTextColor={muted}
               value={newDomain}
+              editable={!dumb}
               onChangeText={t => { setNewDomain(t); if (domainError) setDomainError(null); }}
               autoCapitalize="none"
               keyboardType="url"
@@ -1382,18 +1695,38 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Add website"
             >
-              <Text style={[typography.bodyMedium, { color: ink, textAlign: 'center' }]}>
+              <Text style={[typography.bodyMedium, { color: lockedInk, textAlign: 'center' }]}>
                 ADD WEBSITE
               </Text>
             </TouchableOpacity>
           </View>
-          <Text style={[typography.displaySmall, { color: ink, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-            FEED SHIELD · PRO
-          </Text>
-          <View style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }]}>
-            <Text style={[typography.caption, { color: muted }]}>
-              Off if glitchy.
+          </>
+          )}
+          <SectionRow
+            open={showFeeds}
+            title="FEED SHIELD"
+            summary={feedSummary}
+            ink={lockedInk}
+            muted={muted}
+            onPress={() => { tap(); setShowFeeds(v => !v); }}
+            label="Feed Shield"
+          />
+          {feedCollisions.length > 0 && !showFeeds && (
+            <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
+              {`Hard block wins: ${feedCollisions.map(appLabelFor).join(', ')} already fully blocked.`}
             </Text>
+          )}
+          {showFeeds && (
+          <>
+          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
+            <Text style={[typography.caption, { color: muted }]}>
+              Hardens feeds, never blocks. If the app is also fully blocked, the block wins. Off if glitchy.
+            </Text>
+            {feedCollisions.length > 0 && (
+              <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
+                {`Hard block wins: ${feedCollisions.map(appLabelFor).join(', ')} already fully blocked — Feed Shield adds nothing while blocked.`}
+              </Text>
+            )}
             {feedFilters.length === 0 ? (
               <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
                 No apps shielded yet.
@@ -1402,12 +1735,23 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               <View key={f.packageName} style={styles.budgetRow}>
                 <View style={styles.rowBetween}>
                   <View style={styles.rowMain}>
-                    <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
-                      {appLabelFor(f.packageName)}
+                      <Text style={[typography.bodyMedium, { color: lockedInk }]} numberOfLines={1}>
+                        {appLabelFor(f.packageName)}
                     </Text>
                     <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={1}>
                       {f.packageName}
                     </Text>
+                    {feedCollisionSet.has(f.packageName) && (
+                      <View
+                        style={[styles.collisionBadge, { alignSelf: 'flex-start', marginLeft: 0, marginTop: spacing.xs }]}
+                        accessibilityRole="text"
+                        accessibilityLabel={`Blocked: ${appLabelFor(f.packageName)} is fully blocked`}
+                      >
+                        <Text style={[typography.label, { color: colors.danger }]}>
+                          Blocked
+                        </Text>
+                      </View>
+                    )}
                   </View>
                   <RowSwitch
                     on={f.enabled}
@@ -1416,16 +1760,16 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                     label={`Feed Shield for ${f.packageName} ${f.enabled ? 'enabled' : 'disabled'}`}
                   />
                 </View>
-                {([['hideReels', 'Hide Reels'], ['hideExplore', 'Hide Explore'], ['hideComments', 'Hide Comments']] as const).map(([flag, label]) => (
+                {([['hideReels', 'Reels'], ['hideExplore', 'Explore'], ['hideComments', 'Comments']] as const).map(([flag, label]) => (
                   <View key={flag} style={styles.rowBetween}>
-                    <Text style={[typography.body, { color: ink }]}>
+                    <Text style={[typography.body, { color: lockedInk }]}>
                       {label}
                     </Text>
                     <RowSwitch
                       on={f[flag]}
                       onPress={() => handleToggleFeedFlag(f.packageName, flag)}
                       border={border}
-                      label={`${label} for ${f.packageName}`}
+                      label={`${label} filter for ${f.packageName}`}
                     />
                   </View>
                 ))}
@@ -1438,11 +1782,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Add app to Feed Shield"
             >
-              <Text style={[typography.bodyMedium, { color: ink, textAlign: 'center' }]}>
+              <Text style={[typography.bodyMedium, { color: lockedInk, textAlign: 'center' }]}>
                 ADD APP
               </Text>
             </TouchableOpacity>
           </View>
+          </>
+          )}
           <AppSelectModal
             visible={allowlistPickerOpen}
             onClose={() => setAllowlistPickerOpen(false)}
@@ -1454,6 +1800,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             ink={ink}
             muted={muted}
             placeholder="Search allowed apps..."
+            loading={!appsLoaded}
           />
           <AppSelectModal
             visible={feedPickerOpen}
@@ -1466,13 +1813,28 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             ink={ink}
             muted={muted}
             placeholder="Search apps..."
+            loading={!appsLoaded}
+          />
+          {/* Q2: budget creation reuses the same picker — single-pick and close. */}
+          <AppSelectModal
+            visible={budgetPickerOpen}
+            onClose={() => setBudgetPickerOpen(false)}
+            onPick={(app) => { tap(); setNewBudgetPkg(app.packageName); setBudgetPickerOpen(false); }}
+            apps={installedApps}
+            picked={newBudgetPkg ? [newBudgetPkg] : []}
+            cardBg={cardBg}
+            border={border}
+            ink={ink}
+            muted={muted}
+            placeholder="Search app to meter..."
+            loading={!appsLoaded}
           />
         </Animated.View>
       </ScrollView>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
         <AnimatedTouchable
-          style={[styles.primaryButton, { opacity: canSave ? 1 : 0.5, backgroundColor: isDark ? '#ffffff' : colors.ectoGreen, borderBottomWidth: isDark ? 0 : 3 }]}
+          style={[styles.primaryButton, { opacity: canSave ? 1 : 0.5 }]}
           activeOpacity={0.85}
           onPress={handleSave}
           disabled={!canSave}
@@ -1481,6 +1843,11 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
         >
           <Text style={styles.primaryButtonText}>SAVE TASK</Text>
         </AnimatedTouchable>
+        {!canSave && saveHint && (
+          <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
+            {saveHint}
+          </Text>
+        )}
         {existingTask && (
           <TouchableOpacity
             activeOpacity={0.7}
@@ -1556,7 +1923,7 @@ const styles = StyleSheet.create({
   },
   pickerBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
@@ -1639,7 +2006,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: radius.full,
-    backgroundColor: '#999',
+    backgroundColor: colors.inkFaint,
     alignSelf: 'flex-start',
   },
   toggleKnobOn: {
@@ -1767,15 +2134,88 @@ const styles = StyleSheet.create({
   grayed: {
     opacity: 0.55,
   },
-  linkBtn: {
-    marginTop: spacing.sm,
-    minHeight: 44,
-    justifyContent: 'center',
+  // Hairline separating the nested allowlist from the dumbphone toggle above.
+  nestedDivider: {
+    borderTopWidth: 1,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
   },
   deleteTextBtn: {
     minHeight: 44,
     minWidth: 44,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  sectionRowText: {
+    flex: 1,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderWidth: 2,
+    borderRadius: radius.full,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minHeight: 44,
+  },
+  collisionBadge: {
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: radius.full,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+    marginLeft: spacing.sm,
+    alignSelf: 'center',
+  },
+  compactSegRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+  },
+  compactSegBtn: {
+    flex: 1,
+    minHeight: 40,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  compactSegBtnOn: {
+    backgroundColor: colors.ectoGreen,
+    borderColor: colors.ectoGreen,
+  },
+  compactSegText: {
+    ...typography.label,
+  },
+  compactStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    minHeight: 40,
+  },
+  compactStepperBtn: {
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compactStepperText: {
+    ...typography.bodyMedium,
+  },
+  compactStepperValue: {
+    ...typography.bodyMedium,
+    minWidth: 44,
+    textAlign: 'center',
   },
 });

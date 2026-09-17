@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar, View, ActivityIndicator, Linking } from 'react-native';
-import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -11,13 +11,15 @@ import TaskSetupScreen from './src/screens/TaskSetupScreen';
 import ActiveSessionScreen from './src/screens/ActiveSessionScreen';
 import BlockedInterstitialScreen from './src/screens/BlockedInterstitialScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
+import SessionDetailScreen from './src/screens/SessionDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import PrivacyPolicyScreen from './src/screens/PrivacyPolicyScreen';
 import PermissionSetupScreen from './src/screens/PermissionSetupScreen';
 import PaywallScreen from './src/screens/PaywallScreen';
 import { store } from './src/storage/store';
 import { Task, Session } from './src/types';
 import AppBlocker from './src/native/AppBlocker';
-import { decideEntry } from './src/navigation/blockedEntry';
+import { decideEntry, shouldLogEntry } from './src/navigation/blockedEntry';
 import {
   ensureReminderHandler,
   setupReminderGuard,
@@ -36,22 +38,12 @@ export type RootStackParamList = {
   ActiveSession: { task: Task; session: Session };
   BlockedInterstitial: { packageName: string; taskId: string; appLabel?: string };
   History: undefined;
+  SessionDetail: { sessionId: string };
   Settings: undefined;
+  PrivacyPolicy: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-
-// M7: BAL-delayed re-entries (>1500ms late) would otherwise double-log one
-// block as two give_ins. Skip the log when the same package logged <5s ago;
-// the interstitial still shows.
-const lastLoggedAt = new Map<string, number>();
-function shouldLogGiveIn(packageName: string): boolean {
-  const now = Date.now();
-  const last = lastLoggedAt.get(packageName) ?? 0;
-  if (now - last < 5000) return false;
-  lastLoggedAt.set(packageName, now);
-  return true;
-}
 
 // M1: collision-proof record IDs — two blocks in the same millisecond must
 // never share an ID.
@@ -79,6 +71,24 @@ function AppNavigator() {
         routePkg: (r?.params as { packageName?: string } | undefined)?.packageName,
       }) === 'shown'
     );
+  };
+
+  // Idempotent interstitial routing (no navigate-push stacking): already on
+  // this package's interstitial -> no-op; on another package's interstitial
+  // -> replace (BACK must land on the live session, not a stale
+  // interstitial); anywhere else -> push once. Duplicate pushes were the
+  // "returning shows only parts of the session screen" path — BACK landed on
+  // a stale interstitial instead of the session underneath.
+  const showBlockedInterstitial = (packageName: string, taskId: string, appLabel: string): void => {
+    if (!navigationRef.isReady()) return;
+    const r = navigationRef.getCurrentRoute();
+    const routePkg = (r?.params as { packageName?: string } | undefined)?.packageName;
+    if (r?.name === 'BlockedInterstitial') {
+      if (routePkg === packageName) return;
+      navigationRef.dispatch(StackActions.replace('BlockedInterstitial', { packageName, taskId, appLabel }));
+      return;
+    }
+    navigationRef.navigate('BlockedInterstitial', { packageName, taskId, appLabel });
   };
 
   const [fontsLoaded, fontError] = useFonts({
@@ -140,17 +150,21 @@ function AppNavigator() {
     const unsub = AppBlocker.onBlockedAttempt(async (event) => {
       try {
         if (!claimBlockedNav(event.packageName)) return;
-        const tasks = await store.getTasks();
+        const tasks = await store.getTasks().catch(() => []);
         const task = tasks.find(
           t => t.packageName === event.packageName || t.blockedPackages?.includes(event.packageName),
-        );
+        ) as (Task & { dumbphoneMode?: boolean }) | undefined;
+        // Dumbphone gate is per-task: strict blocking, nothing counts.
+        const dumfound = task?.dumbphoneMode === true;
         // P0-1/P1-4 stats need every block recorded: the attempt itself is a
         // 'give_in'; a later override adds a separate 'override' record, so
         // resists (action != 'override') stay exact. Best-effort, never crash.
         // M1: the override/break path deletes this give_in, so each block
         // yields exactly one record. M7: late re-entries skip the log.
+        // Dumfound: non-consequential — the interstitial still shows, but
+        // nothing is recorded (no give_in, no streak/mascot movement).
         try {
-          if (shouldLogGiveIn(event.packageName)) {
+          if (!dumfound && shouldLogEntry(event.packageName)) {
             await store.saveBlockedAttempt({
               id: newBlockedId(),
               packageName: event.packageName,
@@ -162,13 +176,11 @@ function AppNavigator() {
         } catch {
           // Logging must never block the interstitial.
         }
-        if (navigationRef.isReady()) {
-          navigationRef.navigate('BlockedInterstitial', {
-            packageName: event.packageName,
-            taskId: task?.id ?? '',
-            appLabel: event.appLabel ?? event.packageName,
-          });
-        }
+        showBlockedInterstitial(
+          event.packageName,
+          task?.id ?? '',
+          event.appLabel ?? event.packageName,
+        );
       } catch {
         // Best-effort navigation; a missed interstitial must never crash the app.
       }
@@ -194,12 +206,14 @@ function AppNavigator() {
       if (!link || !navigationRef.isReady()) return;
       if (!claimBlockedNav(link.packageName)) return;
       try {
-        const tasks = await store.getTasks();
+        const tasks = await store.getTasks().catch(() => []);
         const task = tasks.find(
           t => t.packageName === link.packageName || t.blockedPackages?.includes(link.packageName),
         );
+        // Dumbphone gate is per-task (source of truth), same as the live path above.
+        const dumfound = task?.dumbphoneMode === true;
         try {
-          if (shouldLogGiveIn(link.packageName)) {
+          if (!dumfound && shouldLogEntry(link.packageName)) {
             await store.saveBlockedAttempt({
               id: newBlockedId(),
               packageName: link.packageName,
@@ -211,11 +225,11 @@ function AppNavigator() {
         } catch {
           // Logging must never block the interstitial.
         }
-        navigationRef.navigate('BlockedInterstitial', {
-          packageName: link.packageName,
-          taskId: task?.id ?? '',
-          appLabel: link.appLabel ?? link.packageName,
-        });
+        showBlockedInterstitial(
+          link.packageName,
+          task?.id ?? '',
+          link.appLabel ?? link.packageName,
+        );
       } catch {
         // Best-effort navigation; must never crash the app.
       }
@@ -304,8 +318,18 @@ function AppNavigator() {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="SessionDetail"
+            component={SessionDetailScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="Settings"
             component={SettingsScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="PrivacyPolicy"
+            component={PrivacyPolicyScreen}
             options={{ headerShown: false }}
           />
         </Stack.Navigator>

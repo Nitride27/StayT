@@ -42,10 +42,14 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     fun isAccessibilityServiceEnabled(promise: Promise) {
         try {
             // M4: shared seam — same Settings.Secure logic the tile uses.
+            // Best-effort: resolves false on any failure; never throws to JS.
             promise.resolve(StayTAccessibilityService.isServiceEnabled(reactApplicationContext))
         } catch (e: Exception) {
             Log.e(TAG, "isAccessibilityServiceEnabled failed", e)
-            promise.reject("ACCESSIBILITY_CHECK_FAILED", e.message, e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -71,16 +75,16 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     fun startBlocking(blocked: ReadableArray?, taskName: String?, allowlist: ReadableArray?, promise: Promise) {
         try {
             if (blocked == null) {
-                promise.reject("INVALID_ARGS", "blockedPackages is null")
+                promise.resolve(false)
                 return
             }
-            val blockedPackages = blocked.toArrayList().map { it.toString() }
+            val blockedPackages = cleanPackages(blocked.toArrayList())
             if (allowlist == null) {
                 StayTAccessibilityService.clearAllowlist()
                 StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages, taskName = taskName)
             } else {
                 val allow = try {
-                    allowlist.toArrayList().map { it.toString() }
+                    cleanPackages(allowlist.toArrayList())
                 } catch (_: Exception) {
                     emptyList()
                 }
@@ -89,7 +93,10 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e(TAG, "startBlocking failed", e)
-            promise.reject("START_BLOCKING_FAILED", e.message, e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -100,7 +107,10 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e(TAG, "stopBlocking failed", e)
-            promise.reject("STOP_BLOCKING_FAILED", e.message, e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -128,18 +138,32 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
             promise.resolve(result)
         } catch (e: Exception) {
             Log.e(TAG, "getInstalledApps failed", e)
-            promise.reject("GET_APPS_FAILED", e.message, e)
+            try {
+                promise.resolve(Arguments.createArray())
+            } catch (_: Exception) {
+            }
         }
     }
 
     @ReactMethod
     fun pauseBlocking(seconds: Double, promise: Promise) {
         try {
-            StayTAccessibilityService.pauseBlocking(seconds.toLong())
+            // Clamp the break window: NaN -> 0, negatives -> 0, absurdly
+            // large values -> 60 min, so a buggy caller can never park
+            // blocking off for years via one bridge call.
+            val s = try {
+                seconds.toLong().coerceIn(0L, 3600L)
+            } catch (_: Exception) {
+                0L
+            }
+            StayTAccessibilityService.pauseBlocking(s)
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e(TAG, "pauseBlocking failed", e)
-            promise.reject("PAUSE_BLOCKING_FAILED", e.message, e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -155,7 +179,10 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e(TAG, "dismissBlockedOverlay failed", e)
-            promise.reject("DISMISS_OVERLAY_FAILED", e.message, e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -191,7 +218,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "setFriction failed", e)
             try {
-                promise.reject("SET_FRICTION_FAILED", e.message, e)
+                promise.resolve(false)
             } catch (_: Exception) {
             }
         }
@@ -242,7 +269,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "setBudgets failed", e)
             try {
-                promise.reject("SET_BUDGETS_FAILED", e.message, e)
+                promise.resolve(false)
             } catch (_: Exception) {
             }
         }
@@ -274,7 +301,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "getBudgetUsage failed", e)
             try {
-                promise.reject("GET_BUDGET_USAGE_FAILED", e.message, e)
+                promise.resolve(Arguments.createMap())
             } catch (_: Exception) {
             }
         }
@@ -308,7 +335,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "setBlockedDomains failed", e)
             try {
-                promise.reject("SET_DOMAINS_FAILED", e.message, e)
+                promise.resolve(false)
             } catch (_: Exception) {
             }
         }
@@ -356,7 +383,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "setFeedFilters failed", e)
             try {
-                promise.reject("SET_FEED_FILTERS_FAILED", e.message, e)
+                promise.resolve(false)
             } catch (_: Exception) {
             }
         }
@@ -384,6 +411,57 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
             promise.resolve(launched)
         } catch (e: Exception) {
             Log.e(TAG, "openManufacturerSettings outer failed", e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Battery optimization screen: request-ignore with package URI first,
+     * then the list, then generic Settings. Best-effort, never throws.
+     * No new permissions, no manifest change.
+     */
+    @ReactMethod
+    fun openBatteryOptimizationSettings(promise: Promise) {
+        try {
+            val launched = try {
+                launchBatteryOptimizationSettings()
+            } catch (e: Exception) {
+                Log.w(TAG, "openBatteryOptimizationSettings failed", e)
+                false
+            }
+            promise.resolve(launched)
+        } catch (e: Exception) {
+            Log.e(TAG, "openBatteryOptimizationSettings outer failed", e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * App info screen for StayT (Settings > Apps > StayT path).
+     * Best-effort, never throws.
+     */
+    @ReactMethod
+    fun openAppInfoSettings(promise: Promise) {
+        try {
+            val launched = try {
+                launchAppInfoSettings()
+            } catch (e: Exception) {
+                Log.w(TAG, "openAppInfoSettings failed", e)
+                false
+            }
+            promise.resolve(launched)
+        } catch (e: Exception) {
+            Log.e(TAG, "openAppInfoSettings outer failed", e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -456,6 +534,86 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         return false
     }
 
+    @Suppress("DEPRECATION")
+    private fun launchBatteryOptimizationSettings(): Boolean {
+        val ctx = reactApplicationContext
+        val pm = try {
+            ctx.packageManager
+        } catch (_: Exception) {
+            return false
+        }
+        val candidates = mutableListOf<Intent>()
+        try {
+            candidates.add(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + ctx.packageName)
+                )
+            )
+        } catch (_: Exception) {
+        }
+        try {
+            candidates.add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        } catch (_: Exception) {
+        }
+        try {
+            candidates.add(Intent(Settings.ACTION_SETTINGS))
+        } catch (_: Exception) {
+        }
+        for (intent in candidates) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val resolved = try {
+                    intent.resolveActivity(pm) != null
+                } catch (_: Exception) {
+                    false
+                }
+                if (!resolved) continue
+                ctx.startActivity(intent)
+                return true
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
+    private fun launchAppInfoSettings(): Boolean {
+        val ctx = reactApplicationContext
+        return try {
+            val intent = Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + ctx.packageName)
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val resolved = try {
+                intent.resolveActivity(ctx.packageManager) != null
+            } catch (_: Exception) {
+                false
+            }
+            if (!resolved) return false
+            ctx.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Bridge hygiene for package lists: drop blanks/oversize entries and cap
+     * the size so a buggy caller can't bloat the durable prefs mirror.
+     * Never throws.
+     */
+    private fun cleanPackages(raw: ArrayList<Any>): List<String> {
+        return try {
+            raw.asSequence().map { it.toString() }
+                .filter { it.isNotBlank() && it.length <= 256 }
+                .distinct().take(1000).toList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     /** Defensive boolean read with a default for bridge maps. Never throws. */
     private fun readBool(m: ReadableMap, key: String, def: Boolean): Boolean {
         return try {
@@ -469,7 +627,8 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
      * Program native focus-schedule alarms. Persists a mirror of the last pushed
      * list (source of truth stays the JS store; JS re-pushes after every edit),
      * cancels all previous alarms and programs the next START/STOP firings.
-     * Skips malformed items; rejects only on total failure; never throws.
+     * Skips malformed items; resolves false on total failure; never throws
+     * to JS and always settles the promise.
      */
     @ReactMethod
     fun setSchedules(schedules: ReadableArray, promise: Promise) {
@@ -482,12 +641,16 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
             } catch (e: Exception) {
                 Log.e(TAG, "setSchedules failed", e)
                 try {
-                    promise.reject("SET_SCHEDULES_FAILED", e.message, e)
+                    promise.resolve(false)
                 } catch (_: Exception) {
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "setSchedules outer failed", e)
+            try {
+                promise.resolve(false)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -495,33 +658,13 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
      * P2-1 widget prefs mirror push (JS: syncWidgetNow on session start/end,
      * override consume, and Pro grant). Persists the snapshot the widget/tile
      * read with the app dead, (re)programs the midnight rollover, and
-     * refreshes the widget. Skips malformed items; rejects only on total
-     * failure; never throws.
+     * refreshes the widget. Skips malformed items; resolves false on total
+     * failure; never throws to JS.
      *
-     * Backwards compat: the 8-arg form (pre-mascotMood shells) is kept and
-     * delegates with mood=null (WidgetData.save keeps the previous mood).
-     * New JS sends the 9-arg form with mascotMood ('bright'|'steady'|
-     * 'wilted', '' = keep previous). RN resolves the overload by arity.
+     * Single arity: TurboModule interop rejects duplicate JS names, so the
+     * old 8-arg shell is gone. mascotMood ('bright'|'steady'|'wilted',
+     * '' = keep previous) is nullable; WidgetData.save sanitizes it.
      */
-    @ReactMethod
-    fun syncWidgetData(
-        todayFocusMin: Double,
-        streak: Double,
-        subscribed: Boolean,
-        lastPackages: ReadableArray?,
-        sessionActive: Boolean,
-        strictActive: Boolean,
-        activeTaskName: String?,
-        giveInsToday: Double,
-        promise: Promise
-    ) {
-        syncWidgetDataInternal(
-            todayFocusMin, streak, subscribed, lastPackages,
-            sessionActive, strictActive, activeTaskName, giveInsToday,
-            null, promise
-        )
-    }
-
     @ReactMethod
     fun syncWidgetData(
         todayFocusMin: Double,
@@ -594,7 +737,7 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "syncWidgetData failed", e)
             try {
-                promise.reject("SYNC_WIDGET_FAILED", e.message, e)
+                promise.resolve(false)
             } catch (_: Exception) {
             }
         }

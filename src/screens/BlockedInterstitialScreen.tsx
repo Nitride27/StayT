@@ -15,6 +15,7 @@ import { typography, spacing, radius, layout, colors, darkColors } from '../them
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { store, MAX_DAILY_OVERRIDES } from '../storage/store';
+import { isEffectiveStrict } from '../types';
 import { syncWidgetNow } from '../widget/widgetSync';
 import { tap } from '../haptics';
 
@@ -26,12 +27,15 @@ type Props = {
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 export default function BlockedInterstitialScreen({ navigation, route }: Props) {
-  const { packageName, taskId } = route.params;
+  // Params always ride the navigate() call in App.tsx, but a process-death
+  // restore can recreate this screen without them — default so the screen
+  // fail-closes (taskLoaded gate hides escapes) instead of throwing on read.
+  const { packageName = '', taskId = '' } = route.params ?? {};
   const { isDark } = useTheme();
   const [taskName, setTaskName] = useState<string | null>(null);
   // Label travels with the event/deep link — read live from params (not
   // useState) so a param merge into this mounted instance never goes stale.
-  const appLabel = route.params.appLabel ?? packageName;
+  const appLabel = route.params?.appLabel ?? packageName;
   const [overridesLeft, setOverridesLeft] = useState(MAX_DAILY_OVERRIDES);
   const [taskStrict, setTaskStrict] = useState(false);
   // M3 fail-closed: while the task lookup is in flight (taskId non-empty),
@@ -51,12 +55,19 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   // overrides stay hidden via the existing taskStrict guard below).
   const [frictionEnabled, setFrictionEnabled] = useState(false);
   const [frictionRemaining, setFrictionRemaining] = useState(0);
+  // Dumbphone forces strict: same locked UI as Task.strict, still
+  // non-consequential (no consume, no logging — gated separately below).
+  // Resolved from the TASK's dumbphoneMode, never global prefs.
+  const [dumfound, setDumfound] = useState(false);
+  const effectiveStrict = isEffectiveStrict(taskStrict, dumfound);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     let live = true;
     // Single-surface rule: the native overlay draws over everything,
     // including StayT. Dismiss it now so only this screen shows.
+    // Deps include packageName: a replace() with a new package reuses this
+    // mounted instance, and the previous block's overlay must drop too.
     AppBlocker.dismissBlockedOverlay().catch(() => {});
     store.getTasks()
       .then(ts => {
@@ -64,6 +75,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
         const t = ts.find(x => x.id === taskId);
         setTaskName(t?.name ?? null);
         setTaskStrict(t?.strict === true);
+        setDumfound(t?.dumbphoneMode === true);
         setTaskLoaded(true);
       })
       .catch(() => { if (live) setTaskLoaded(true); });
@@ -87,7 +99,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
       })
       .catch(() => {});
     return () => { live = false; };
-  }, [taskId]);
+  }, [taskId, packageName]);
 
   // Live override countdown (M:SS) while it is still locked.
   useEffect(() => {
@@ -180,20 +192,26 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     // Single consume path: atomic check-and-increment. A double-tap (or a
     // concurrent overlay tap) can never burn two units or exceed the cap.
     // M3: strict tasks never reach here (buttons hidden + this guard).
-    if (countdown > 0 || busy || taskStrict) return;
+    if (countdown > 0 || busy || effectiveStrict) return;
     tap();
     setBusy(true);
     let left = overridesLeft;
-    try {
-      const consumed = await store.tryConsumeOverride();
-      if (consumed.result === 'exhausted') {
-        setOverridesLeft(0);
-        setBusy(false);
-        return;
+    // Dumfound: the escape still pauses blocking below, but consumes no
+    // override unit and logs nothing (non-consequential). There is also no
+    // entry give_in to replace (App.tsx skips it), so logging here would
+    // corrupt an unrelated earlier row via deleteLatestGiveIn.
+    if (!dumfound) {
+      try {
+        const consumed = await store.tryConsumeOverride();
+        if (consumed.result === 'exhausted') {
+          setOverridesLeft(0);
+          setBusy(false);
+          return;
+        }
+        left = consumed.left;
+      } catch {
+        // Best-effort counting must never trap the user on this screen.
       }
-      left = consumed.left;
-    } catch {
-      // Best-effort counting must never trap the user on this screen.
     }
     setOverridesLeft(left);
     try {
@@ -201,18 +219,20 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     } catch {
       // Best-effort; the break still counts locally below.
     }
-    try {
-      // M1: the entry give_in for this block becomes the override record.
-      await store.deleteLatestGiveIn(packageName).catch(() => {});
-      await store.saveBlockedAttempt({
-        id: `blocked-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        packageName,
-        taskId,
-        timestamp: Date.now(),
-        action: 'override',
-      });
-    } catch {
-      // Best-effort logging must never trap the user on this screen.
+    if (!dumfound) {
+      try {
+        // M1: the entry give_in for this block becomes the override record.
+        await store.deleteLatestGiveIn(packageName).catch(() => {});
+        await store.saveBlockedAttempt({
+          id: `blocked-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          packageName,
+          taskId,
+          timestamp: Date.now(),
+          action: 'override',
+        });
+      } catch {
+        // Best-effort logging must never trap the user on this screen.
+      }
     }
     // B1: the budget changed — re-push the tile/widget mirror.
     syncWidgetNow().catch(() => {});
@@ -225,20 +245,23 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   // tasks never reach here (form hidden). Breaks skip the escalating
   // friction wait by design — only the instant override waits it out.
   const handleStartBreak = async () => {
-    if (busy || taskStrict) return;
+    if (busy || effectiveStrict) return;
     tap('medium');
     setBusy(true);
     let left = overridesLeft;
-    try {
-      const consumed = await store.tryConsumeOverride();
-      if (consumed.result === 'exhausted') {
-        setOverridesLeft(0);
-        setBusy(false);
-        return;
+    // Dumfound: same non-consequential rule as the instant override above.
+    if (!dumfound) {
+      try {
+        const consumed = await store.tryConsumeOverride();
+        if (consumed.result === 'exhausted') {
+          setOverridesLeft(0);
+          setBusy(false);
+          return;
+        }
+        left = consumed.left;
+      } catch {
+        // Best-effort counting must never trap the user on this screen.
       }
-      left = consumed.left;
-    } catch {
-      // Best-effort counting must never trap the user on this screen.
     }
     setOverridesLeft(left);
     try {
@@ -246,20 +269,22 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     } catch {
       // Best-effort; the break still counts locally below.
     }
-    try {
-      // M1: the entry give_in for this block becomes the break record.
-      await store.deleteLatestGiveIn(packageName).catch(() => {});
-      await store.saveBlockedAttempt({
-        id: `blocked-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        packageName,
-        taskId,
-        timestamp: Date.now(),
-        action: 'break',
-        intention: intention.trim() || undefined,
-        breakMinutes,
-      });
-    } catch {
-      // Best-effort logging must never trap the user on this screen.
+    if (!dumfound) {
+      try {
+        // M1: the entry give_in for this block becomes the break record.
+        await store.deleteLatestGiveIn(packageName).catch(() => {});
+        await store.saveBlockedAttempt({
+          id: `blocked-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          packageName,
+          taskId,
+          timestamp: Date.now(),
+          action: 'break',
+          intention: intention.trim() || undefined,
+          breakMinutes,
+        });
+      } catch {
+        // Best-effort logging must never trap the user on this screen.
+      }
     }
     // B1: the budget changed — re-push the tile/widget mirror.
     syncWidgetNow().catch(() => {});
@@ -373,7 +398,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
           </Text>
         </AnimatedTouchable>
 
-        {taskStrict ? (
+        {effectiveStrict ? (
           <Animated.View style={[styles.strictBox, button2AnimStyle, { borderColor: outlineText }]}>
             <Text style={[typography.cta, { color: outlineText, textAlign: 'center' }]}>
               STRICT MODE: NO OVERRIDES

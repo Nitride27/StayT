@@ -370,11 +370,11 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   restoreButton: {
-    paddingVertical: spacing.lg,
+    paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     borderWidth: 2,
     backgroundColor: 'transparent',
     marginTop: spacing.md,

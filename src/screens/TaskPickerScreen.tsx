@@ -301,6 +301,9 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
             <Text style={[typography.bodyStrong, { color: muted, textAlign: 'center', maxWidth: 280, alignSelf: 'center' }]}>
               No tasks yet.
             </Text>
+            <Text style={[typography.caption, { color: muted, textAlign: 'center', maxWidth: 280, alignSelf: 'center' }]}>
+              Tap NEW TASK below to block your first app.
+            </Text>
           </View>
         ) : (
           <ScrollView
@@ -357,7 +360,7 @@ const styles = StyleSheet.create({
   },
   gearButton: {
     minWidth: 38,
-    minHeight: 42,
+    minHeight: 44,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderWidth: 2,
@@ -376,12 +379,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.ectoGreen,
     borderBottomWidth: 2,
     borderBottomColor: colors.ectoGreenDark,
-    minHeight: 38,
+    minHeight: 44,
   },
   streakCount: {
     ...typography.cta,
-    fontSize: 18,
-    lineHeight: 22,
     color: colors.midnight,
   },
   clockBox: {

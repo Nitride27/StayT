@@ -8,6 +8,7 @@ import {
   Alert,
   AppState,
   AppStateStatus,
+  Linking,
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
@@ -65,6 +66,39 @@ function getOEMTip(): string | null {
 // so the generic path is always visible, with an OEM-specific line on top.
 const GENERIC_BATTERY_TIP =
   'Keep StayT running: Settings > Apps > StayT > Battery > Unrestricted.';
+
+// Last-resort manual path for the restricted-settings toggle, shown only
+// when neither the native app-info intent nor the OS settings page opens.
+const RESTRICTED_MANUAL_PATH =
+  'Settings > Apps > StayT, tap \u22EE (top-right) > Allow restricted settings, then turn StayT on in Accessibility.';
+
+// Sideloaded APKs (Android 13+) can be silently refused at the accessibility
+// toggle — worst on HyperOS/MIUI and some Samsung builds. OEM-specific path
+// to the app-info ⋮ > Allow restricted settings toggle.
+function getRestrictedSettingsSteps(): string[] {
+  if (Platform.OS !== 'android') return [];
+  const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
+  const manufacturer =
+    (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
+  const hay = `${manufacturer} ${model}`;
+  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
+    return [
+      'Open StayT\u2019s app-info page with the button below.',
+      'Tap \u22EE (top-right) > Allow restricted settings.',
+      'Come back here and tap OPEN SETTINGS again.',
+    ];
+  if (hay.includes('samsung'))
+    return [
+      'Open StayT\u2019s app-info page with the button below.',
+      'Tap \u22EE (top-right) > Allow restricted settings.',
+      'Come back here and tap OPEN SETTINGS again.',
+    ];
+  return [
+    'Open StayT\u2019s app-info page with the button below.',
+    'Tap \u22EE (top-right) > Allow restricted settings, if shown.',
+    'Come back here and tap OPEN SETTINGS again.',
+  ];
+}
 
 // Wave 2C2 per-OEM survival steps (additive, static text, no new
 // permissions). Each brand: recents-lock + Autostart/battery +
@@ -139,6 +173,10 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
   const selfTest = useBlockSelfTest();
   const [testApp, setTestApp] = useState({ packageName: '', appName: '' });
   const notifAsked = useRef(false);
+  // Restricted-settings escape hatch: shown when the user returns from the
+  // accessibility page without the grant (silent sideload refusal).
+  const [showRestricted, setShowRestricted] = useState(false);
+  const a11yAttempts = useRef(0);
 
   // --- Animations ---
   const headerOpacity = useSharedValue(0);
@@ -178,6 +216,13 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
         const acc = await AppBlocker.isAccessibilityServiceEnabled();
         setAccessibilityEnabled(acc);
+        // Returned from system settings without the grant after asking at
+        // least once: surface the restricted-settings escape hatch.
+        if (acc) {
+          setShowRestricted(false);
+        } else if (a11yAttempts.current > 0) {
+          setShowRestricted(true);
+        }
       }
       appState.current = nextState;
     };
@@ -255,6 +300,7 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
 
   const handleGrantAccessibility = async () => {
     tap();
+    a11yAttempts.current += 1;
     try {
       AppBlocker.openAccessibilitySettings();
     } catch {
@@ -262,29 +308,61 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
     }
   };
 
-  // Wave 2C2 OEM survival flow (additive, best-effort, never traps).
-  // Marks oemOnboardingDone on tap; falls back to an Alert with the
-  // generic path when the manufacturer screen cannot open.
-  const handleKeepAlive = async () => {
+  // Restricted-settings escape hatch: native app-info first, OS app
+  // settings second (Linking.openSettings per Expo v57 docs), exact manual
+  // path last — never leave the user guessing.
+  const handleOpenAppInfo = async () => {
+    tap();
+    try {
+      const ok = await AppBlocker.openAppInfoSettings();
+      if (ok) return;
+    } catch {
+      // Fall through to the OS fallback below.
+    }
+    try {
+      await Linking.openSettings();
+    } catch {
+      Alert.alert('Open StayT app info', RESTRICTED_MANUAL_PATH);
+    }
+  };
+
+  // OEM survival flow: each row leads to its exact system screen.
+  // Recents lock has no system page, so it shows text only.
+  // Marks oemOnboardingDone on tap. Falls back to an Alert with the
+  // exact path when a screen cannot open.
+  const markOemDone = async () => {
+    try {
+      const prefs = await store.getPreferences();
+      await store.savePreferences({ ...prefs, oemOnboardingDone: true });
+    } catch {
+      // Best-effort.
+    }
+  };
+
+  const handleOpenManufacturer = async () => {
     tap();
     try {
       const ok = await AppBlocker.openManufacturerSettings();
-      try {
-        const prefs = await store.getPreferences();
-        await store.savePreferences({ ...prefs, oemOnboardingDone: true });
-      } catch {
-        // Best-effort.
-      }
+      await markOemDone();
       if (!ok) {
         Alert.alert('Keep StayT alive', GENERIC_BATTERY_TIP);
       }
     } catch {
-      try {
-        const prefs = await store.getPreferences();
-        await store.savePreferences({ ...prefs, oemOnboardingDone: true });
-      } catch {
-        // Best-effort.
+      await markOemDone();
+      Alert.alert('Keep StayT alive', GENERIC_BATTERY_TIP);
+    }
+  };
+
+  const handleOpenBattery = async () => {
+    tap();
+    try {
+      const ok = await AppBlocker.openBatteryOptimizationSettings();
+      await markOemDone();
+      if (!ok) {
+        Alert.alert('Keep StayT alive', GENERIC_BATTERY_TIP);
       }
+    } catch {
+      await markOemDone();
       Alert.alert('Keep StayT alive', GENERIC_BATTERY_TIP);
     }
   };
@@ -390,29 +468,76 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
           </Animated.View>
         )}
 
-        {/* Wave 2C2 OEM survival flow (additive, below oemCard, no restyle).
-            Static per-brand steps + KEEP STAYT ALIVE deep link. */}
+        {/* OEM survival flow: numbered rows, each with its own OPEN
+            button to the exact system screen. Recents lock has no
+            system page, so it shows text only. */}
         {Platform.OS === 'android' && (
           <View style={[styles.oemKeepCard, { backgroundColor: bg, borderColor: ink }]}>
             <Text style={[typography.cta, { color: ink, textAlign: 'center' }]}>
               KEEP STAYT ALIVE
             </Text>
-            {getOEMSurvivalSteps().map(step => (
-              <Text
-                key={step}
-                style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.xs }]}
-              >
-                {`• ${step}`}
-              </Text>
+            {getOEMSurvivalSteps().map((step, index) => (
+              <View key={step} style={styles.oemStepRow}>
+                <Text style={[typography.caption, { color: muted, flex: 1 }]}>
+                  {`${index + 1}. ${step}`}
+                </Text>
+                {index === 1 && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={handleOpenManufacturer}
+                    style={styles.oemStepOpenButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open manufacturer settings"
+                  >
+                    <Text style={styles.oemStepOpenText}>OPEN</Text>
+                  </TouchableOpacity>
+                )}
+                {index === 2 && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={handleOpenBattery}
+                    style={styles.oemStepOpenButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open battery settings"
+                  >
+                    <Text style={styles.oemStepOpenText}>OPEN</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+        {/* Restricted-settings escape hatch: sideloaded APKs can be silently
+            refused at the accessibility toggle (HyperOS/MIUI, some Samsung).
+            Shown only when the user came back without the grant. */}
+        {Platform.OS === 'android' && showRestricted && !accessibilityEnabled && (
+          <View style={[styles.oemKeepCard, { backgroundColor: bg, borderColor: ink }]}>
+            <Text style={[typography.cta, { color: ink, textAlign: 'center' }]}>
+              ALLOW RESTRICTED SETTINGS
+            </Text>
+            <Text
+              style={[
+                typography.caption,
+                { color: muted, textAlign: 'center', marginTop: spacing.xs },
+              ]}
+            >
+              StayT was installed outside the Play Store, so Android can silently refuse the permission above. Allow it once:
+            </Text>
+            {getRestrictedSettingsSteps().map((step, index) => (
+              <View key={step} style={styles.oemStepRow}>
+                <Text style={[typography.caption, { color: muted, flex: 1 }]}>
+                  {`${index + 1}. ${step}`}
+                </Text>
+              </View>
             ))}
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={handleKeepAlive}
+              onPress={handleOpenAppInfo}
               style={styles.oemKeepButton}
               accessibilityRole="button"
-              accessibilityLabel="Keep StayT alive. Open manufacturer settings"
+              accessibilityLabel="Open StayT app info"
             >
-              <Text style={styles.primaryButtonText}>KEEP STAYT ALIVE</Text>
+              <Text style={styles.oemStepOpenText}>OPEN APP INFO</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -556,6 +681,31 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     marginTop: spacing.md,
     alignItems: 'center',
+  },
+  // Per-step rows: text plus its own OPEN button.
+  oemStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+    alignSelf: 'stretch',
+  },
+  oemStepOpenButton: {
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.ectoGreenDark,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    minWidth: 72,
+  },
+  oemStepOpenText: {
+    ...typography.button,
+    color: colors.midnight,
+    textAlign: 'center',
   },
   oemKeepButton: {
     backgroundColor: colors.ectoGreen,

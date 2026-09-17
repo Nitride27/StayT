@@ -15,6 +15,13 @@ export interface Task {
   /** Hardcore strict mode (Pro): no override or break escape on the interstitial. */
   strict?: boolean;
   /**
+   * Dumbphone Mode (per-task): strict blocking, nothing counts. While on,
+   * task setup greys out every other section and the interstitial + give_in
+   * gate treat the task as strict-but-non-consequential (no logging, no
+   * override consume). Source of truth — prefs.dumfoundMode is deprecated.
+   */
+  dumbphoneMode?: boolean;
+  /**
    * Allowlist mode: when true, ONLY packages in `allowlist` stay usable and
    * everything else is blocked (native handles the inversion). When false or
    * absent, `blockedPackagesOf(task)` is the blocklist. An empty allowlist is
@@ -26,6 +33,19 @@ export interface Task {
 }
 
 /**
+ * Product-clarity model — three things users confuse, three scopes:
+ * - Preset = a seed Task (isPreset) with a blocklist. One tap starts a
+ *   session that blocks those apps NOW. Presets never count toward the free
+ *   task limit; they are still just tasks.
+ * - Schedule = a recurring auto-block window (FocusSchedule) attached to ONE
+ *   task. Fired natively (AlarmManager); needs no session. Pro.
+ * - Budget = a per-app meter (opens/minutes) scoped to ONE task via taskId.
+ *   taskId is optional in the type for legacy rows only — REQUIRED by
+ *   convention for all new rows. Rows without taskId are legacy/inert
+ *   (stored, never pushed, never enforced). Enforcement is task-scoped:
+ *   native receives only tagged budgets via setBudgets on its own path,
+ *   never via startBlocking. limit <= 0 = disabled.
+ *
  * Recurring auto-block window for a task (Pro). Times are minutes since
  * midnight local; days use JS getDay() convention (0 = Sunday).
  */
@@ -43,6 +63,15 @@ export function blockedPackagesOf(task: Task): string[] {
   return task.blockedPackages && task.blockedPackages.length > 0
     ? task.blockedPackages
     : [task.packageName];
+}
+
+/**
+ * Single source for strict gating: Task.strict OR Dumfound on.
+ * Dumfound forces the strict UI (no override/break escapes) while staying
+ * non-consequential (no give_in log, no override consume — gated separately).
+ */
+export function isEffectiveStrict(taskStrict?: boolean, dumfoundMode?: boolean): boolean {
+  return taskStrict === true || dumfoundMode === true;
 }
 
 export interface Session {
@@ -86,6 +115,19 @@ export interface UserPreferences {
   frictionEnabled?: boolean;
   /** Friction delay in seconds. Absent = 10. */
   frictionDelaySeconds?: number;
+  /**
+   * Dumfound mode: blocks stay enforced but non-consequential — no give_in
+   * logging, no override-budget consume, streak + give-ins frozen at the
+   * enable-time snapshots below (store.getStreak/getGiveInsToday return the
+   * snapshots while this is on, so widget/mascot never move). The 30s native
+   * breath countdown still runs; it only delays entry, never records.
+   * Absent = off.
+   */
+  dumfoundMode?: boolean;
+  /** Streak display frozen while dumfoundMode is on (snapshot at enable). */
+  dumfoundStreak?: number;
+  /** Give-ins-today display frozen while dumfoundMode is on (snapshot at enable). */
+  dumfoundGiveIns?: number;
 }
 
 /**
@@ -101,6 +143,14 @@ export interface Budget {
   kind: 'opens' | 'minutes';
   limit: number;
   enabled: boolean;
+  /**
+   * Task scope — REQUIRED by convention for all new rows. Rows without
+   * taskId are legacy/inert: kept in storage (no data loss, no migration)
+   * but never pushed to native and never enforced. Task UI reads via
+   * store.getBudgetsForTask(taskId); enforcement reads tagged rows only
+   * (see store.getEnforceableBudgets).
+   */
+  taskId?: string;
 }
 
 /** Domain blocked at the browser level. `domain` is stored lowercased/trimmed. */

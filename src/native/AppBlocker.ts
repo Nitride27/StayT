@@ -53,7 +53,11 @@ class AppBlockerBridge {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
     }
-    return AppBlocker.isAccessibilityServiceEnabled();
+    try {
+      return await AppBlocker.isAccessibilityServiceEnabled();
+    } catch {
+      return false;
+    }
   }
 
   openAccessibilitySettings(): void {
@@ -95,14 +99,22 @@ class AppBlockerBridge {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
     }
-    return AppBlocker.stopBlocking();
+    try {
+      return await AppBlocker.stopBlocking();
+    } catch {
+      return false;
+    }
   }
 
   async pauseBlocking(seconds: number): Promise<boolean> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
     }
-    return AppBlocker.pauseBlocking(seconds);
+    try {
+      return await AppBlocker.pauseBlocking(seconds);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -130,14 +142,22 @@ class AppBlockerBridge {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
     }
-    return AppBlocker.setSchedules(schedules);
+    try {
+      return await AppBlocker.setSchedules(schedules);
+    } catch {
+      return false;
+    }
   }
 
   async getInstalledApps(): Promise<InstalledApp[]> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return [];
     }
-    return AppBlocker.getInstalledApps();
+    try {
+      return await AppBlocker.getInstalledApps();
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -176,10 +196,9 @@ class AppBlockerBridge {
    * mascotMood} to the SharedPreferences file the home-screen widget reads
    * directly (widgets must work with the app dead). Best-effort: resolves
    * false when native is absent; never throws.
-   * `mascotMood` ('bright'|'steady'|'wilted', derived in widgetSync via
-   * widgetMascotMood) is a nullable trailing param: tries the 9-arg native
-   * overload first, then falls back to the 8-arg shell (same stale-shell
-   * retry pattern as startBlocking) so old builds keep syncing.
+   * `mascotMood` ('bright'|'steady'|'wilted', '' = keep previous) always
+   * rides along. Native exposes a single 9-arg method (TurboModules reject
+   * duplicate JS names, so there is no 8-arg shell to fall back to).
    */
   async syncWidgetData(data: {
     todayFocusMin: number;
@@ -208,22 +227,7 @@ class AppBlockerBridge {
         data.mascotMood ?? '',
       );
     } catch {
-      // Stale native shell (pre-mascotMood bridge): retry the 8-arg arity so
-      // the mirror still syncs instead of dropping the whole push.
-      try {
-        return await AppBlocker.syncWidgetData(
-          data.todayFocusMin,
-          data.streak,
-          data.subscribed,
-          data.lastPackages,
-          data.sessionActive,
-          data.strictActive,
-          data.activeTaskName,
-          data.giveInsToday ?? 0,
-        );
-      } catch {
-        return false;
-      }
+      return false;
     }
   }
 
@@ -338,6 +342,37 @@ class AppBlockerBridge {
     }
     try {
       return await AppBlocker.openManufacturerSettings();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Open the battery optimization screen for StayT (request-ignore with
+   * package URI, then the list, then generic Settings natively).
+   * Best-effort: resolves false when native is absent or rejects; never throws.
+   */
+  async openBatteryOptimizationSettings(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.openBatteryOptimizationSettings) {
+      return false;
+    }
+    try {
+      return await AppBlocker.openBatteryOptimizationSettings();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Open the StayT app info screen (Settings > Apps > StayT path).
+   * Best-effort: resolves false when native is absent or rejects; never throws.
+   */
+  async openAppInfoSettings(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker || !AppBlocker.openAppInfoSettings) {
+      return false;
+    }
+    try {
+      return await AppBlocker.openAppInfoSettings();
     } catch {
       return false;
     }

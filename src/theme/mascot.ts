@@ -58,16 +58,17 @@ export function owlMoodLabel(giveInsToday: number): string {
 }
 
 // Withering sprite sheet (additive). assets/whithering_away.png is a 5-col ×
-// 4-row grid (1536×1024 → ~307×256 cells): row 1 standing→drooping, row 2
-// wilting→collapsed, row 3 leafy mound, row 4 mound→puddle. Single dark-bg
-// sheet, so it renders the same in both themes (framed on midnight).
+// 4-row grid (1536×1024 → exactly 307.2×256 cells, transparent backdrop, no
+// gutters): row 1 standing→drooping, row 2 wilting→collapsed, row 3 leafy
+// mound, row 4 mound→puddle. Transparent, so it composites over the card in
+// both themes; the crop insets live in WitheringOwl (measured from this art).
 // NOTE: filename keeps the repo's existing spelling ("whithering").
 export const witheringSheet: ImageSourcePropType = require('../../assets/whithering_away.png');
 export const WITHERING_COLS = 5;
 export const WITHERING_ROWS = 4;
 export const WITHERING_FRAMES = WITHERING_COLS * WITHERING_ROWS;
-/** Per-frame step while the owl withers/recovers. */
-export const WITHERING_FRAME_MS = 130;
+/** Per-frame step while the owl withers/recovers (brisk tick; the worklet-side smoothstep blend carries the softness). */
+export const WITHERING_FRAME_MS = 110;
 
 /**
  * Target wither frame for today's give-ins: 0 → bright (frame 0), 1 →

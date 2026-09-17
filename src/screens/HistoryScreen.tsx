@@ -148,6 +148,9 @@ export default function HistoryScreen({ navigation }: Props) {
   const [range, setRange] = useState<'today' | 'week' | 'month'>('today');
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [giveInsToday, setGiveInsToday] = useState(0);
+  const [showAllRanking, setShowAllRanking] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const [sessionSort, setSessionSort] = useState<'newest' | 'longest' | 'blocks'>('newest');
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -289,10 +292,36 @@ export default function HistoryScreen({ navigation }: Props) {
     }
     const top = [...attemptCounts.entries()]
       .map(([packageName, count]) => ({ packageName, label: appLabels[packageName] ?? packageName, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+      .sort((a, b) => b.count - a.count);
     return { ranking: top, rankMax: Math.max(1, ...top.map(r => r.count)) };
   }, [attempts, appLabels, isSubscribed, rangeStartMs, todayStartMs]);
+  const displayedRanking = showAllRanking ? ranking : ranking.slice(0, 5);
+
+  const sessionBlockCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of sessions) {
+      const end = s.endedAt ?? Date.now();
+      let n = 0;
+      for (const a of attempts) {
+        if (a.timestamp >= s.startedAt && a.timestamp <= end) n++;
+      }
+      counts.set(s.id, n);
+    }
+    return counts;
+  }, [sessions, attempts]);
+
+  const sortedSessions = useMemo(() => {
+    const list = [...sessions];
+    if (sessionSort === 'longest') {
+      list.sort((a, b) => (b.duration || 0) - (a.duration || 0));
+    } else if (sessionSort === 'blocks') {
+      list.sort((a, b) => (sessionBlockCounts.get(b.id) ?? 0) - (sessionBlockCounts.get(a.id) ?? 0) || b.startedAt - a.startedAt);
+    } else {
+      list.sort((a, b) => b.startedAt - a.startedAt);
+    }
+    return list;
+  }, [sessions, sessionSort, sessionBlockCounts]);
+  const displayedSessions = showAllSessions ? sortedSessions : sortedSessions.slice(0, 5);
 
   // P1-3: intention breaks render distinctly from plain attempts.
   const breaks = useMemo(
@@ -340,8 +369,15 @@ export default function HistoryScreen({ navigation }: Props) {
   }));
 
   const renderItem = useCallback(({ item, index }: { item: HistoryItem; index: number }) => (
-    <SessionCard item={item} index={index} isDark={isDark} />
-  ), [isDark]);
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={() => { tap(); navigation.navigate('SessionDetail', { sessionId: item.id }); }}
+      accessibilityRole="button"
+      accessibilityLabel={`Open session ${item.taskName}`}
+    >
+      <SessionCard item={item} index={index} isDark={isDark} />
+    </TouchableOpacity>
+  ), [isDark, navigation]);
 
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
@@ -355,7 +391,7 @@ export default function HistoryScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
       <FlatList
-        data={sessions}
+        data={displayedSessions}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         initialNumToRender={15}
@@ -364,6 +400,30 @@ export default function HistoryScreen({ navigation }: Props) {
         updateCellsBatchingPeriod={50}
         removeClippedSubviews
         contentContainerStyle={styles.listContent}
+        ListFooterComponent={
+          sortedSessions.length > 5 ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => { tap(); setShowAllSessions(v => !v); }}
+              style={styles.showMoreRow}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showAllSessions }}
+              accessibilityLabel={showAllSessions ? `Session list expanded, ${sortedSessions.length} sessions` : `Session list collapsed, ${sortedSessions.length - 5} more`}
+            >
+              <View style={styles.showMoreText}>
+                <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
+                  {showAllSessions ? `${sortedSessions.length} of ${sortedSessions.length}` : `5 of ${sortedSessions.length}`}
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={1}>
+                  {showAllSessions ? `${sortedSessions.length} sessions` : `${sortedSessions.length - 5} more`}
+                </Text>
+              </View>
+              <View style={{ transform: [{ rotate: showAllSessions ? '90deg' : '0deg' }] }}>
+                <ChevronRightIcon size={20} color={muted} />
+              </View>
+            </TouchableOpacity>
+          ) : null
+        }
         ListHeaderComponent={
           <>
             <Animated.View style={[styles.header, headerAnimStyle]}>
@@ -371,6 +431,9 @@ export default function HistoryScreen({ navigation }: Props) {
                 <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backIcon} accessibilityRole="button" accessibilityLabel="Back">
                   <ChevronLeftIcon size={24} color={ink} />
                 </TouchableOpacity>
+                <Text style={[typography.display, { color: ink }]}>
+                  HISTORY
+                </Text>
                 <View style={{ width: 50 }} />
               </View>
             </Animated.View>
@@ -495,10 +558,13 @@ export default function HistoryScreen({ navigation }: Props) {
             </Animated.View>
             )}
 
-            {/* P1-4 milestone row: earned taps share, locked show progress. */}
+            {/* P1-4 milestone row: always expanded; earned taps share. */}
             {milestones.length > 0 && (
-              <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-                <Text style={[typography.cta, { color: ink }]}>MILESTONES</Text>
+              <>
+                <Text style={[typography.cta, { color: ink, marginBottom: spacing.sm }]}>
+                  MILESTONES
+                </Text>
+                <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mileRow}>
                   {milestones.map(m => {
                     return (
@@ -530,43 +596,70 @@ export default function HistoryScreen({ navigation }: Props) {
                     );
                   })}
                 </ScrollView>
-              </Animated.View>
+                </Animated.View>
+              </>
             )}
 
+            <Text style={[typography.cta, { color: ink, marginBottom: spacing.sm }]}>
+              {isSubscribed ? 'MOST BLOCKED' : "TODAY'S TOP"}
+            </Text>
             <Animated.View style={[styles.statCard, statsAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
               {/* Wave 2C2: free sees today's top only (ranking memo is gated). */}
-              <Text style={[typography.cta, { color: ink }]}>{isSubscribed ? 'MOST BLOCKED' : "TODAY'S TOP"}</Text>
               {ranking.length === 0 ? (
                 <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
                   No blocks yet. Stay focused!
                 </Text>
               ) : (
-                ranking.map((r, i) => (
-                  <View key={r.packageName} style={styles.rankRow}>
-                    <Text style={[typography.bodyMedium, { color: ink, width: 20 }]}>{i + 1}</Text>
-                    {appIcons[r.packageName] ? (
-                      <Image
-                        source={{ uri: `data:image/png;base64,${appIcons[r.packageName]}` }}
-                        style={styles.appIcon}
-                      />
-                    ) : (
-                      <View style={styles.appIconFallback}>
-                        <TaskGlyph name={r.label} size={18} color={colors.midnight} />
-                      </View>
-                    )}
-                    <View style={styles.rankMain}>
-                      <View style={styles.rankTopRow}>
-                        <Text style={[typography.bodyMedium, { color: ink, flex: 1 }]} numberOfLines={1}>
-                          {r.label}
-                        </Text>
-                        <Text style={[typography.caption, { color: muted }]}>{r.count}×</Text>
-                      </View>
-                      <View style={[styles.rankTrack, { backgroundColor: track }]}>
-                        <View style={[styles.rankFill, { width: `${(r.count / rankMax) * 100}%` }]} />
+                <>
+                  {displayedRanking.map((r, i) => (
+                    <View key={r.packageName} style={styles.rankRow}>
+                      <Text style={[typography.bodyMedium, { color: ink, width: 20 }]}>{i + 1}</Text>
+                      {appIcons[r.packageName] ? (
+                        <Image
+                          source={{ uri: `data:image/png;base64,${appIcons[r.packageName]}` }}
+                          style={styles.appIcon}
+                        />
+                      ) : (
+                        <View style={styles.appIconFallback}>
+                          <TaskGlyph name={r.label} size={18} color={colors.midnight} />
+                        </View>
+                      )}
+                      <View style={styles.rankMain}>
+                        <View style={styles.rankTopRow}>
+                          <Text style={[typography.bodyMedium, { color: ink, flex: 1 }]} numberOfLines={1}>
+                            {r.label}
+                          </Text>
+                          <Text style={[typography.caption, { color: muted }]}>{r.count}×</Text>
+                        </View>
+                        <View style={[styles.rankTrack, { backgroundColor: track }]}>
+                          <View style={[styles.rankFill, { width: `${(r.count / rankMax) * 100}%` }]} />
+                        </View>
                       </View>
                     </View>
-                  </View>
-                ))
+                  ))}
+                  {ranking.length > 5 && (
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => { tap(); setShowAllRanking(v => !v); }}
+                      style={styles.showMoreRow}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showAllRanking }}
+                      accessibilityLabel={showAllRanking ? `Blocked list expanded, ${ranking.length} apps` : `Blocked list collapsed, ${ranking.length - 5} more`}
+                    >
+                      <View style={styles.showMoreText}>
+                        <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
+                          {showAllRanking ? `${ranking.length} of ${ranking.length}` : `5 of ${ranking.length}`}
+                        </Text>
+                        <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={1}>
+                          {showAllRanking ? `${ranking.length} apps` : `${ranking.length - 5} more`}
+                        </Text>
+                      </View>
+                      <View style={{ transform: [{ rotate: showAllRanking ? '90deg' : '0deg' }] }}>
+                        <ChevronRightIcon size={20} color={muted} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
             </Animated.View>
 
@@ -575,13 +668,44 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.cta, { color: ink }]}>
                   PAST SESSIONS
                 </Text>
+                <View style={styles.sortRow} accessibilityRole="tablist" accessibilityLabel="Sort past sessions">
+                  {([
+                    { key: 'newest', label: 'NEWEST' },
+                    { key: 'longest', label: 'LONGEST' },
+                    { key: 'blocks', label: 'MOST BLOCKS' },
+                  ] as const).map(opt => {
+                    const active = sessionSort === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        activeOpacity={0.8}
+                        onPress={() => { tap(); setSessionSort(opt.key); }}
+                        style={[
+                          styles.rangeBtn,
+                          { borderColor: border },
+                          active && styles.rangeBtnActive,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Sort sessions by ${opt.label.toLowerCase()}`}
+                        accessibilityState={{ selected: active }}
+                      >
+                        <Text style={[typography.button, { color: active ? colors.midnight : muted, fontSize: 12, lineHeight: 16, textAlign: 'center' }]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </Animated.View>
             )}
 
-            {/* P1-3 intention breaks: distinct section, latest first. */}
+            {/* P1-3 intention breaks: always expanded, latest first. */}
             {breaks.length > 0 && (
+              <>
+                <Text style={[typography.cta, { color: ink, marginBottom: spacing.sm }]}>
+                  INTENTION BREAKS
+                </Text>
               <Animated.View style={[styles.statCard, listAnimStyle, { backgroundColor: cardBg, borderColor: border }]}>
-                <Text style={[typography.h3, { color: ink }]}>INTENTION BREAKS</Text>
                 {breaks.map(b => (
                   <View key={b.id} style={styles.breakRow}>
                     {appIcons[b.packageName] ? (
@@ -605,6 +729,7 @@ export default function HistoryScreen({ navigation }: Props) {
                   </View>
                 ))}
               </Animated.View>
+              </>
             )}
           </>
         }
@@ -799,7 +924,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   mileChipEarned: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.paperCard,
     borderColor: colors.ectoGreenDark,
   },
   breakRow: {
@@ -812,6 +937,22 @@ const styles = StyleSheet.create({
   },
   listLabelWrap: {
     marginBottom: spacing.sm,
+  },
+  sortRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  showMoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  showMoreText: {
+    flex: 1,
   },
   sessionCard: {
     flexDirection: 'row',

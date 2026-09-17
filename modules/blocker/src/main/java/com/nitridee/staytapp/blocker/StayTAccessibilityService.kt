@@ -34,6 +34,24 @@ import com.nitridee.staytapp.R
 import java.util.concurrent.ConcurrentHashMap
 
 class StayTAccessibilityService : AccessibilityService() {
+    // Rule models live at class level (not in companion): AppBlockerModule
+    // addresses them as StayTAccessibilityService.BudgetRule/FeedRule, which
+    // does not resolve through Companion.
+    data class BudgetRule(
+        val packageName: String,
+        val kind: String,
+        val limit: Int,
+        val enabled: Boolean
+    )
+
+    data class FeedRule(
+        val packageName: String,
+        val hideReels: Boolean,
+        val hideExplore: Boolean,
+        val hideComments: Boolean,
+        val enabled: Boolean
+    )
+
     companion object {
         private const val TAG = "StayTAccessibility"
         private const val BLOCK_COOLDOWN_MS = 1000L
@@ -194,14 +212,10 @@ class StayTAccessibilityService : AccessibilityService() {
         private const val BUDGET_KEY_RULES = "rules_json"
         private const val BUDGET_KEY_USAGE = "usage_json"
 
-        data class BudgetRule(
-            val packageName: String,
-            val kind: String,
-            val limit: Int,
-            val enabled: Boolean
-        )
-
-        private val budgetRules: MutableList<BudgetRule> = java.util.Collections.synchronizedList(mutableListOf())
+        // CopyOnWrite: iterated on every accessibility event, rewritten only
+        // on bridge pushes — synchronizedList would need manual sync for
+        // iteration and could throw CME mid-event (caught, but drops metering).
+        private val budgetRules: MutableList<BudgetRule> = java.util.concurrent.CopyOnWriteArrayList()
         private data class Usage(var opens: Int = 0, var ms: Long = 0L)
         private val budgetUsage: MutableMap<String, Usage> = ConcurrentHashMap()
         @Volatile
@@ -220,15 +234,8 @@ class StayTAccessibilityService : AccessibilityService() {
         private const val FEED_PREFS = "stayt_feed_filters"
         private const val FEED_KEY_JSON = "filters_json"
 
-        data class FeedRule(
-            val packageName: String,
-            val hideReels: Boolean,
-            val hideExplore: Boolean,
-            val hideComments: Boolean,
-            val enabled: Boolean
-        )
-
-        private val feedRules: MutableList<FeedRule> = java.util.Collections.synchronizedList(mutableListOf())
+        // CopyOnWrite: same iteration-vs-write profile as budgetRules above.
+        private val feedRules: MutableList<FeedRule> = java.util.concurrent.CopyOnWriteArrayList()
         private val lastFeedBackAt: MutableMap<String, Long> = ConcurrentHashMap()
         private const val FEED_BACK_COOLDOWN_MS = 10_000L
 
@@ -303,14 +310,21 @@ class StayTAccessibilityService : AccessibilityService() {
          */
         fun setBlocking(blocking: Boolean, blocked: List<String> = emptyList(), taskName: String? = null, allowlist: List<String>? = null) {
             isBlocking = blocking
-            blockingTaskName = if (blocking) taskName?.takeIf { it.isNotBlank() } else null
+            blockingTaskName = if (blocking) taskName?.takeIf { it.isNotBlank() }?.take(128) else null
+            // Defense in depth (bridge already cleans): drop blanks/oversize
+            // and cap size so the durable prefs mirror can't bloat unbounded.
+            val cleanBlocked = try {
+                blocked.asSequence().filter { it.isNotBlank() && it.length <= 256 }.distinct().take(1000).toList()
+            } catch (_: Exception) {
+                emptyList()
+            }
             blockedPackages.clear()
-            blockedPackages.addAll(blocked)
+            blockedPackages.addAll(cleanBlocked)
             if (allowlist != null) {
                 try {
                     allowlistMode = true
                     allowlistPackages.clear()
-                    allowlistPackages.addAll(allowlist.filter { it.isNotBlank() }.distinct())
+                    allowlistPackages.addAll(allowlist.asSequence().filter { it.isNotBlank() && it.length <= 256 }.distinct().take(1000).toList())
                 } catch (e: Exception) {
                     Log.w(TAG, "allowlist apply failed", e)
                 }
@@ -331,7 +345,10 @@ class StayTAccessibilityService : AccessibilityService() {
         }
 
         fun pauseBlocking(seconds: Long) {
-            Log.d(TAG, "Pausing blocking for $seconds seconds")
+            // Service-side backstop (bridge already clamps): a raw caller can
+            // never park blocking off beyond 60 min via one call.
+            val s = seconds.coerceIn(0L, 3600L)
+            Log.d(TAG, "Pausing blocking for $s seconds")
             isBlocking = false
             // Fail-closed: the durable intent keeps the last setBlocking(true),
             // so a process death mid-break re-arms blocking on reconnect.
@@ -355,7 +372,7 @@ class StayTAccessibilityService : AccessibilityService() {
                 isBlocking = true
                 Log.d(TAG, "Blocking resumed after pause")
             }
-            handler.postDelayed(pauseRunnable!!, seconds * 1000)
+            handler.postDelayed(pauseRunnable!!, s * 1000)
         }
 
         /** N-1: cancel every posted block note we know about. Never throws. */
@@ -679,6 +696,10 @@ class StayTAccessibilityService : AccessibilityService() {
                 feedRules.clear()
                 feedRules.addAll(clean)
                 try {
+                    Log.d(TAG, "feed rules pushed: ${clean.size} pkgs, ${clean.count { it.enabled }} enabled")
+                } catch (_: Exception) {
+                }
+                try {
                     val ctx = instance
                     if (ctx != null) {
                         val arr = org.json.JSONArray()
@@ -725,6 +746,10 @@ class StayTAccessibilityService : AccessibilityService() {
                     } catch (_: Exception) {
                     }
                 }
+                try {
+                    Log.d(TAG, "feed rules re-armed: ${feedRules.size} pkgs")
+                } catch (_: Exception) {
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "loadFeedRules failed", e)
             }
@@ -770,45 +795,30 @@ class StayTAccessibilityService : AccessibilityService() {
         }
 
         /**
-         * Budget gate: counts this open, then returns true when the pkg has
-         * an enabled budget and is still under limit on every matching
-         * rule's own kind (caller allows silently). False = take the normal
-         * block path (no budget, or opens>=limit / minutes>=limit). The
-         * increment happens before the compare, so open #limit blocks.
-         * Never throws.
+         * Budget meter: counts this open for the getBudgetUsage telemetry
+         * (opens/minutes per pkg, rolled over daily). Telemetry ONLY — it
+         * never allows the open: hard blocks always win, so the caller takes
+         * the normal block path unconditionally after this returns. The
+         * increment happens on every qualifying open (post-cooldown), so the
+         * counters stay exact. Never throws.
          */
-        fun budgetAllowsSilently(pkg: String, today: String): Boolean {
+        fun countBudgetOpen(pkg: String, today: String) {
             try {
                 rollBudgetsIfStale(today)
-                val rules = try {
-                    budgetRules.filter { it.packageName == pkg && it.enabled && it.limit > 0 }
+                val wanted = try {
+                    budgetRules.any { it.packageName == pkg && it.enabled && it.limit > 0 }
                 } catch (_: Exception) {
-                    return false
+                    return
                 }
-                if (rules.isEmpty()) return false
-                val u = try {
-                    budgetUsage.getOrPut(pkg) { Usage() }
-                } catch (_: Exception) {
-                    return false
-                }
-                u.opens += 1
-                var over = false
+                if (!wanted) return
                 try {
-                    for (r in rules) {
-                        val used = if (r.kind == "minutes") (u.ms / 60_000L).toInt() else u.opens
-                        if (used >= r.limit) {
-                            over = true
-                            break
-                        }
-                    }
+                    budgetUsage.getOrPut(pkg) { Usage() }.opens += 1
                 } catch (_: Exception) {
-                    over = false
+                    return
                 }
                 persistBudgetUsage()
-                return !over
             } catch (e: Exception) {
-                Log.w(TAG, "budgetAllowsSilently failed", e)
-                return false
+                Log.w(TAG, "countBudgetOpen failed", e)
             }
         }
 
@@ -879,7 +889,9 @@ class StayTAccessibilityService : AccessibilityService() {
         }
     }
 
+    @Volatile
     private var overlayView: View? = null
+    @Volatile
     private var overlayBlockedPackage: String? = null
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var overlayTimeoutRunnable: Runnable? = null
@@ -991,11 +1003,8 @@ class StayTAccessibilityService : AccessibilityService() {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 100
-            // canRetrieveWindowContent mirrors the XML config (required for
-            // event.getSource() in the feed-shield EditText guard — without
-            // it the source is always null). Set in both places so neither
-            // a stale XML nor a serviceInfo reset silently kills the guard.
-            canRetrieveWindowContent = true
+            // canRetrieveWindowContent lives in the XML config only: the
+            // platform exposes a getter with no setter.
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
                     AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
         }
@@ -1051,20 +1060,11 @@ class StayTAccessibilityService : AccessibilityService() {
             ""
         }
 
-        // Feed shield (allowed apps included — it hardens feeds, it never
-        // blocks): GLOBAL_ACTION_BACK once per pkg per 10s, never while the
-        // focused node is an EditText. Falls through to block evaluation.
-        try {
-            maybeFeedShield(openedPackage, event, haystack, now)
-        } catch (e: Exception) {
-            Log.w(TAG, "feed shield failed for $openedPackage", e)
-        }
-
-        // Blocked-target decision. Blocklist mode = membership (empty set =
-        // nothing blocked, as before). Allowlist mode = everything not
-        // listed and not safelisted (empty allowlist = block-all-
-        // except-safelist). A blocked-domain hit forces the block path
-        // regardless of list membership.
+        // Blocked-target decision FIRST (hard block wins): blocklist mode =
+        // membership (empty set = nothing blocked, as before). Allowlist mode
+        // = everything not listed and not safelisted (empty allowlist =
+        // block-all-except-safelist). A blocked-domain hit forces the block
+        // path regardless of list membership.
         val domainHit = try {
             matchBlockedDomain(haystack)
         } catch (_: Exception) {
@@ -1081,13 +1081,25 @@ class StayTAccessibilityService : AccessibilityService() {
         } catch (_: Exception) {
             false
         }
-        if (!target) return
+        if (!target) {
+            // Feed shield runs ONLY for allowed apps: it hardens feeds, it
+            // never blocks. Skipped for block targets by design — a shield
+            // BACK racing the block-path HOME bounce double-fires navigation
+            // and reads as the blocked app crashing.
+            try {
+                maybeFeedShield(openedPackage, event, haystack, now)
+            } catch (e: Exception) {
+                Log.w(TAG, "feed shield failed for $openedPackage", e)
+            }
+            return
+        }
 
         // Per-package cooldown: WINDOW_STATE_CHANGED fires in bursts.
         // Evaluated BEFORE any counting, so bursts inflate neither the
         // budget opens meter nor the friction escalation counter.
-        // Order on a qualifying open: cooldown -> budget count -> budget
-        // gate -> friction -> normal block path.
+        // Order on a qualifying open: cooldown -> budget count (telemetry
+        // only, never allows) -> friction -> HOME bounce + emit +
+        // notification + overlay. Hard blocks always win.
         val last = lastBlockedAt[openedPackage] ?: 0L
         if (now - last < BLOCK_COOLDOWN_MS) return
         lastBlockedAt[openedPackage] = now
@@ -1098,19 +1110,17 @@ class StayTAccessibilityService : AccessibilityService() {
         // Resolve the display label once — shared by emit, notification, deep link.
         val appLabel = appLabel(this, openedPackage)
 
-        // Budget gate (list-based targets only — an explicit domain ban
-        // always enforces): counts this open, then opens>=limit or
-        // minutes>=limit on the rule's own kind takes the normal block
-        // path, else the open is allowed silently (no bounce, no overlay,
-        // no emit — the user stays in the app).
+        // Budget meter (list-based targets only — an explicit domain ban
+        // skips it): counts this open for the getBudgetUsage telemetry.
+        // Hard blocks always win — there is no silent-allow path: every
+        // qualifying open continues to the HOME bounce + emit +
+        // notification + overlay below, over or under budget.
         if (domainHit == null) {
-            val allowedSilently = try {
-                budgetAllowsSilently(openedPackage, dayKey(now))
+            try {
+                countBudgetOpen(openedPackage, dayKey(now))
             } catch (e: Exception) {
-                Log.w(TAG, "budget gate failed for $openedPackage", e)
-                false
+                Log.w(TAG, "budget meter failed for $openedPackage", e)
             }
-            if (allowedSilently) return
         }
 
         // Friction: breath overlay + countdown, then the normal interstitial
@@ -1128,11 +1138,22 @@ class StayTAccessibilityService : AccessibilityService() {
         // Package is blocked - bounce to HOME. If the bounce is denied or
         // throttled, do NOT silently return: the overlay below swallows
         // touches and becomes the enforcement surface instead.
-        // Runs AFTER the budget gate by design: allowed opens never bounce.
+        // Every qualifying open bounces: the budget meter above counts
+        // only and never exempts.
+        //
+        // Safe block pattern: at most ONE GLOBAL_ACTION_HOME per debounced
+        // open. HOME only backgrounds the target process (it never kills or
+        // crashes it); the overlay is the enforcement surface. A redundant
+        // bounce while our own same-package overlay is already up would yank
+        // the foreground on every cooldown window — which reads as the
+        // blocked app crashing — so it is skipped.
         Log.d(TAG, "Blocked app: $openedPackage")
+        val overlayEnforcing = overlayView != null && overlayBlockedPackage == openedPackage
         // Throwable (not just Exception): this service shares StayT's process,
         // so anything escaping here kills the whole app, not just the block.
-        val bounced = try {
+        val bounced = if (overlayEnforcing) {
+            true
+        } else try {
             performGlobalAction(GLOBAL_ACTION_HOME)
         } catch (t: Throwable) {
             Log.w(TAG, "performGlobalAction threw for $openedPackage - overlay will enforce", t)
@@ -1140,7 +1161,10 @@ class StayTAccessibilityService : AccessibilityService() {
         }
         if (!bounced) {
             Log.w(TAG, "performGlobalAction denied/throttled for $openedPackage - overlay will enforce")
-            lastBlockedAt.remove(openedPackage)
+            // Deliberately KEEP the per-package cooldown entry: the overlay
+            // is enforcing, and dropping it would let the next burst of
+            // window events re-enter immediately — re-counting budget opens
+            // and friction, re-emitting to JS — instead of debouncing.
         }
 
         // Emit event to React Native (label travels with it — no per-block
@@ -1312,8 +1336,9 @@ class StayTAccessibilityService : AccessibilityService() {
      * Feed shield: when the event text contains an enabled keyword for this
      * pkg (reels/explore/comments mapped from the three toggles), press BACK
      * once per pkg per 10s. Skipped when the focused node is an EditText so
-     * typing is never hijacked. Best-effort: never blocks, never throws —
-     * the caller always falls through to block evaluation.
+     * typing is never hijacked. Caller runs this for allowed apps only (hard
+     * block wins — see onAccessibilityEvent). Best-effort: never blocks,
+     * never throws.
      */
     private fun maybeFeedShield(openedPackage: String, event: AccessibilityEvent, haystack: String, now: Long) {
         try {

@@ -23,18 +23,18 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "extra": {
-      "eas": {
-        "projectId": "8573d825-7b21-4187-b7b7-aed3f71cf841"
-      }
-    },
-    "owner": "nitrideeee",
+    "owner": "samridha",
     "plugins": [
       "./modules/blocker/plugin",
       "expo-font",
       "expo-splash-screen",
       "expo-iap",
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "52bc0820-3bfb-4449-916e-d600b46a3dd0"
+      }
+    }
   }
 }

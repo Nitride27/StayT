@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, useWindowDimensions, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, useWindowDimensions, Platform, ActivityIndicator } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withDelay,
   withSpring,
+  cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { Session, Task, UserPreferences, blockedPackagesOf } from '../types';
+import { Session, Task, UserPreferences, blockedPackagesOf, isEffectiveStrict } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
@@ -23,7 +25,10 @@ import { tap } from '../haptics';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveSession'>;
-  route: { params: { task: Task; session: Session } };
+  // Params are always supplied at entry (TaskPicker resets with them), but a
+  // process death / restore can recreate this screen without them — read
+  // defensively and re-hydrate from the store on focus (see below).
+  route: { params?: { task: Task; session: Session } };
 };
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -48,8 +53,10 @@ function buildSessionOpts(prefs: UserPreferences, task: Task): SessionOpts {
   };
 }
 
-// Push friction + global budgets/domains/filters, all best-effort. Prefs are
-// read fresh on every call — never cached across re-applies.
+// Push friction + task-scoped budgets/domains/filters, all best-effort. Prefs
+// are read fresh on every call — never cached across re-applies. Budgets are
+// task-only: only the ACTIVE task's tagged rows are pushed (untagged legacy
+// rows are inert — never pushed, never enforced).
 async function pushSessionConfig(task: Task): Promise<SessionOpts> {
   const fallback: SessionOpts = {
     friction: { enabled: false, delaySeconds: 10, escalate: false },
@@ -60,7 +67,7 @@ async function pushSessionConfig(task: Task): Promise<SessionOpts> {
     const opts = buildSessionOpts(prefs, task);
     await AppBlocker.setFriction(opts.friction).catch(() => {});
     const [budgets, domains, filters] = await Promise.all([
-      store.getBudgets(),
+      store.getBudgetsForTask(task.id),
       store.getBlockedDomains(),
       store.getFeedFilters(),
     ]);
@@ -112,13 +119,26 @@ function getSessionOEMTip(): string | null {
 }
 
 export default function ActiveSessionScreen({ navigation, route }: Props) {
-  const { task, session } = route.params;
+  // Entry snapshot: TaskPicker.reset supplies these, but they go stale the
+  // moment the app is backgrounded (task edited, session superseded) or the
+  // process dies. They are the fallback — the store is the source of truth
+  // after the focus hydration below runs.
+  const routeTask = route.params?.task ?? null;
+  const routeSession = route.params?.session ?? null;
   const { isDark } = useTheme();
-  const [elapsed, setElapsed] = useState(session.startedAt ? Date.now() - session.startedAt : 0);
+  const [task, setTask] = useState<Task | null>(routeTask);
+  const [session, setSession] = useState<Session | null>(routeSession);
+  // Hydration gate: nothing below renders until the store has been consulted
+  // at least once — the screen is loading, live, or ended. Never half-drawn.
+  const [hydrated, setHydrated] = useState(false);
+  const [elapsed, setElapsed] = useState(routeSession?.startedAt ? Date.now() - routeSession.startedAt : 0);
   // False when the service is off or startBlocking fails — blocking silently
   // doing nothing is the worst outcome, so the banner below says so loudly.
   const [blockingOk, setBlockingOk] = useState(true);
   const blockingOkRef = React.useRef(true);
+  // Dumfound forces the strict session UI (same lock as Task.strict).
+  const [dumfound, setDumfound] = useState(false);
+  const effectiveStrict = isEffectiveStrict(task?.strict, dumfound);
   // Dynamic to screen size: fixed 220px mascots push the buttons off small screens.
   const { height: winH } = useWindowDimensions();
   const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.24)));
@@ -141,22 +161,71 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     buttonOpacity.value = withDelay(550, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
-  // Timer tick
+  // Re-hydrate from the store on every focus: returning mid-session (back
+  // from the interstitial, app backgrounded, process restarted) re-reads the
+  // live session + task instead of trusting the entry snapshot. When the
+  // store has no active session the snapshot is kept — the screen never
+  // blanks to a half state. Single async body, live-guarded, no timer here.
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      (async () => {
+        try {
+          const active = await store.getActiveSession();
+          if (!live) return;
+          if (active) {
+            const tasks = await store.getTasks();
+            if (!live) return;
+            const fresh = tasks.find(t => t.id === active.taskId) ?? null;
+            if (fresh) setTask(fresh);
+            setSession(active);
+            // Task-based Dumbphone Mode (not the deprecated global pref).
+            setDumfound(fresh?.dumbphoneMode === true);
+          }
+        } catch {
+          // Best-effort: the entry snapshot stays on screen.
+        } finally {
+          if (live) setHydrated(true);
+        }
+      })();
+      return () => {
+        live = false;
+      };
+    }, []),
+  );
+
+  // Timer tick — keyed on the live startedAt (not the entry snapshot).
+  // Single interval per startedAt value, always cleared, so
+  // background/return cycles can never stack ticks.
+  const startedAt = session?.startedAt ?? 0;
   useEffect(() => {
+    if (!startedAt) return;
+    setElapsed(Date.now() - startedAt);
     const interval = setInterval(() => {
-      if (session.startedAt) {
-        setElapsed(Date.now() - session.startedAt);
-      }
+      setElapsed(Date.now() - startedAt);
     }, 1000);
     return () => clearInterval(interval);
-  }, [session.startedAt]);
+  }, [startedAt]);
 
   // Start blocking when session begins; always release on unmount
   // so a gesture-back can't leave blocking on with no session.
   // Verifies the service is actually up: without it there is no blocking
   // and no blocked screen, so show the banner instead of failing silently.
   // Polls every 5s — the OS/OEM can kill the service mid-session.
+  //
+  // Keyed on the hydrated task/session ids plus the effective block set (not
+  // object identity — focus re-hydration allocates fresh objects): pushes once
+  // per session and re-pushes when the underlying task content actually
+  // changed (edited block list / allowlist while this session is live — the
+  // old id-only key kept enforcing the stale list). The poll + unmount
+  // cleanup are owned by this one effect, so exactly one poll ever runs.
+  const blockingKey = `${task?.id ?? ''}:${session?.id ?? ''}:${task ? blockedPackagesOf(task).join(',') : ''}:${task?.allowlistMode === true ? (task.allowlist ?? []).join(',') : ''}`;
   useEffect(() => {
+    if (!hydrated || !task || !session) return;
+    // Narrowed copies for the async closures below (narrowing does not
+    // survive into callbacks).
+    const liveTask = task;
+    const liveSession = session;
     let live = true;
     const mark = (ok: boolean) => {
       blockingOkRef.current = ok;
@@ -169,13 +238,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         mark(false);
         return;
       }
-      const { allowlist } = await pushSessionConfig(task);
+      const { allowlist } = await pushSessionConfig(liveTask);
       if (!live) return;
-      const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name, { allowlist }).catch(() => false);
+      const ok = await AppBlocker.startBlocking(blockedPackagesOf(liveTask), liveTask.name, { allowlist }).catch(() => false);
       mark(ok !== false);
     })();
     // P2-1: push today's totals + last-task packages to the widget mirror.
-    syncWidgetNow(task).catch(() => {});
+    syncWidgetNow(liveTask).catch(() => {});
     // A daily nudge scheduled while the app was killed could fire mid-session
     // — cancel it on mount; handleEndSession re-pairs it on the way out.
     cancelDailyReminder().catch(() => {});
@@ -190,9 +259,9 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       // in-memory so a kill/re-enable loses it. Only call when we were
       // previously down to avoid re-pushing every 5s.
       if (!blockingOkRef.current) {
-        const { allowlist } = await pushSessionConfig(task);
+        const { allowlist } = await pushSessionConfig(liveTask);
         if (!live) return;
-        const ok = await AppBlocker.startBlocking(blockedPackagesOf(task), task.name, { allowlist }).catch(() => false);
+        const ok = await AppBlocker.startBlocking(blockedPackagesOf(liveTask), liveTask.name, { allowlist }).catch(() => false);
         mark(ok !== false);
       }
     }, 5000);
@@ -201,11 +270,14 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       clearInterval(poll);
       AppBlocker.stopBlocking().catch(() => {});
     };
-  }, []);
+  }, [hydrated, blockingKey]);
 
   const finishSession = async () => {
+    const s = session;
     try {
-      await store.saveSession({ ...session, status: 'completed', endedAt: Date.now(), duration: Date.now() - session.startedAt });
+      if (s) {
+        await store.saveSession({ ...s, status: 'completed', endedAt: Date.now(), duration: Date.now() - s.startedAt });
+      }
     } finally {
       // Blocking must release even if the save failed — never trap the user.
       await AppBlocker.stopBlocking().catch(() => {});
@@ -267,6 +339,27 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     transform: [{ scale: buttonScale.value }],
   }));
 
+  // Blur cleanup: leaving mid-entry (interstitial pushed over us) cancels the
+  // in-flight entry timings and snaps values to their end state, so returning
+  // can never reveal half-mounted reanimated views. Mount effect above owns
+  // the forward run; this owns only the blur tail.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        cancelAnimation(headerOpacity);
+        cancelAnimation(headerTranslateY);
+        cancelAnimation(timerOpacity);
+        cancelAnimation(timerScale);
+        cancelAnimation(buttonOpacity);
+        headerOpacity.value = 1;
+        headerTranslateY.value = 0;
+        timerOpacity.value = 1;
+        timerScale.value = 1;
+        buttonOpacity.value = 1;
+      };
+    }, [headerOpacity, headerTranslateY, timerOpacity, timerScale, buttonOpacity]),
+  );
+
   const handlePressIn = () => {
     buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
   };
@@ -278,10 +371,44 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
   const muted = isDark ? darkColors.inkMuted : colors.inkMuted;
-  const endBg = isDark ? '#1a1a1a' : colors.midnight;
-  const endText = '#ffffff';
+  const endBg = isDark ? darkColors.paperCard : colors.midnight;
+  const endText = darkColors.ink;
   // Wave 2C2: brand line for the banner below (null on non-matching OEMs).
   const oemTip = getSessionOEMTip();
+
+  // Full-state gates (never a half screen): hydration pending → spinner;
+  // hydrated but no task/session (params lost + store empty, e.g. session
+  // ended elsewhere while away) → ended card with a way home.
+  if (!hydrated) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: bg }]}>
+        <ActivityIndicator size="large" color={colors.ectoGreen} accessibilityLabel="Loading session" />
+      </View>
+    );
+  }
+  if (!task || !session) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: bg }]}>
+        <Text style={[typography.display, { color: ink, textAlign: 'center' }]}>
+          SESSION ENDED
+        </Text>
+        <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
+          This session is no longer active.
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => navigation.replace('TaskPicker')}
+          style={[styles.endButton, { backgroundColor: endBg, marginTop: spacing.xl, alignSelf: 'stretch' }]}
+          accessibilityRole="button"
+          accessibilityLabel="Back to tasks"
+        >
+          <Text style={[typography.cta, { color: endText, textAlign: 'center' }]}>
+            BACK TO TASKS
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
@@ -334,7 +461,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         <Text style={[typography.display, { color: ink, textAlign: 'center', marginTop: spacing.lg }]}>
           {task.name.toUpperCase()}
         </Text>
-        {task.strict === true && (
+        {effectiveStrict && (
           <View style={styles.strictBadge} accessibilityRole="text" accessibilityLabel="Strict mode on">
             <Text style={[typography.label, { color: colors.midnight }]}>STRICT</Text>
           </View>
@@ -380,6 +507,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screenPaddingH,
     paddingTop: layout.headerPaddingTop,
     paddingBottom: layout.safeAreaBottom,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     alignItems: 'center',
@@ -430,7 +561,7 @@ const styles = StyleSheet.create({
   },
   endButton: {
     borderBottomWidth: 3,
-    borderBottomColor: '#000000',
+    borderBottomColor: darkColors.paper,
     borderRadius: radius.xl,
     paddingVertical: 18,
     marginHorizontal: spacing.md,
