@@ -604,9 +604,9 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
      * the size so a buggy caller can't bloat the durable prefs mirror.
      * Never throws.
      */
-    private fun cleanPackages(raw: ArrayList<Any>): List<String> {
+    private fun cleanPackages(raw: ArrayList<Any?>): List<String> {
         return try {
-            raw.asSequence().map { it.toString() }
+            raw.asSequence().mapNotNull { it?.toString() }
                 .filter { it.isNotBlank() && it.length <= 256 }
                 .distinct().take(1000).toList()
         } catch (_: Exception) {
