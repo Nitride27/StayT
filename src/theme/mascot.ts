@@ -65,10 +65,10 @@ export function owlMoodLabel(giveInsToday: number): string {
 // Withering animation: 56 frames in narrative order; frame i simply plays
 // after frame i-1 (no grid math — files are individual).
 export const WITHERING_FRAMES = 56;
-/** Per-frame step while the owl withers/recovers: 33ms ≈ 30fps. Rendering
- * is every vsync regardless; this sets the sweep pace (~1.8s full arc).
+/** Per-frame step while the owl withers/recovers: 17ms ≈ 60fps. Rendering
+ * is every vsync regardless; this sets the sweep pace (~0.95s full arc).
  * The in-out easing on the sweep preserves the end-pose holds. */
-export const WITHERING_FRAME_MS = 33;
+export const WITHERING_FRAME_MS = 17;
 // Withering frames as INDIVIDUAL files (no spritesheet math): each file is
 // a finished sprite, so no frame can show another's art. All are 193×174,
 // hence identical sizes below. Do not hand-edit; re-export from the art.
