@@ -180,6 +180,15 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     buttonOpacity.value = 1;
   }, [headerOpacity, headerTranslateY, timerOpacity, timerScale, buttonOpacity]);
 
+  // Safety net for notification-tap returns: a backgrounded mount can lose
+  // the delayed entry runs above with no foreground transition to recover
+  // on — snap to the end state shortly after mount. Healthy runs are
+  // unaffected (1 → 1, no flash).
+  useEffect(() => {
+    const t = setTimeout(snapEntries, 1100);
+    return () => clearTimeout(t);
+  }, [snapEntries]);
+
   // Re-hydrate from the store on every focus: returning mid-session (back
   // from the interstitial, app backgrounded, process restarted) re-reads the
   // live session + task instead of trusting the entry snapshot. When the

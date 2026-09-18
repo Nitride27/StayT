@@ -203,6 +203,17 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     button2Opacity.value = withDelay(1050, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
+  // Safety net for notification-tap returns: a mount (or entry run) that
+  // happens while backgrounded can lose the delayed runs above to a
+  // suspended UI runtime, and AppState may never deliver the transition
+  // useOnForeground waits on — the screen would stick half-painted
+  // forever. A plain timeout always fires on return and snaps to the end
+  // state; healthy runs are unaffected (1 → 1, no flash).
+  useEffect(() => {
+    const t = setTimeout(snapEntries, 1600);
+    return () => clearTimeout(t);
+  }, [snapEntries]);
+
   const mascotAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: mascotScale.value }],
     opacity: mascotOpacity.value,
