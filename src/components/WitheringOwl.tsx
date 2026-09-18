@@ -200,6 +200,13 @@ export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHE
 
   const styleA = fit(pair.a);
   const styleB = fit(pair.b);
+  // Base layer: the static target frame for today's give-ins, always
+  // mounted under the crossfade pair. If a pair frame isn't decoded yet
+  // when the sweep reaches it (slow decode after the warm-up timeout), the
+  // correct owl shows through instead of a blank flash — the owl can never
+  // intermittently disappear mid-run. Costs one small static image.
+  const targetFrame = witheringTargetFrame(giveInsToday);
+  const styleT = fit(targetFrame);
 
   return (
     <View
@@ -207,6 +214,16 @@ export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHE
       accessibilityRole="image"
       accessibilityLabel={owlMoodLabel(giveInsToday)}
     >
+      <View style={[styles.layer, styleT]} accessible={false}>
+        <Image
+          source={WITHERING_FRAMES_LIST[targetFrame]}
+          onError={() => setFailed(true)}
+          style={{ width: styleT.width, height: styleT.height }}
+          resizeMode="stretch"
+          fadeDuration={0}
+          accessible={false}
+        />
+      </View>
       <Animated.View style={[styles.layer, styleA, opacityA]}>
         <Animated.Image
           source={WITHERING_FRAMES_LIST[pair.a]}
