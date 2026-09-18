@@ -55,7 +55,10 @@ class StayTAccessibilityService : AccessibilityService() {
         private const val SESSION_CHANNEL_NAME = "Ongoing session"
         private const val SESSION_NOTIFICATION_ID = 57001
         private const val SESSION_TAP_REQ = 7001
-        private const val SESSION_TICK_MS = 60_000L
+        // 5s refresh: the note carries live HRS/MINS/SECS boxes (a per-minute
+        // tick froze SECS at :00 and read as a stuck counter). Silent same-ID
+        // updates, no sound/vibration — comparable to any timer app.
+        private const val SESSION_TICK_MS = 5_000L
         // ectoGreen accent for the small icon (mirrors theme tokens).
         // Signed decimal for 0xFF58CC02 — a raw 0xFF… literal overflows
         // Kotlin Int and will not compile.
@@ -63,6 +66,13 @@ class StayTAccessibilityService : AccessibilityService() {
         @Volatile
         private var sessionStartMs: Long = 0L
         private var sessionTick: Runnable? = null
+        // Note-lifecycle flag, independent of isBlocking: an intention
+        // break pauses enforcement but the SESSION continues, so the note +
+        // ticker must survive pauseBlocking (which flips isBlocking false and
+        // used to starve the ticker dead — frozen 00:00 until the next
+        // setBlocking). Only cancelSessionNotification clears this.
+        @Volatile
+        private var sessionNoteOn = false
         @Volatile
         private var appCtx: Context? = null
         // BlockedContract mirror (src/native/blockedContract.ts): single
@@ -352,6 +362,8 @@ class StayTAccessibilityService : AccessibilityService() {
             // so a process death mid-break re-arms blocking on reconnect.
             // The break/override tray note would lie ("tap to return") while
             // the user is legitimately inside the app — drop it.
+            // The SESSION note intentionally survives breaks (sessionNoteOn
+            // stays true, ticker keeps running): the session never ended.
             cancelBlockNotifications()
 
             // No-overlay (ADR-0005): dismiss is a no-op shim kept for the JS seam.
@@ -368,6 +380,9 @@ class StayTAccessibilityService : AccessibilityService() {
             pauseRunnable = Runnable {
                 isBlocking = true
                 Log.d(TAG, "Blocking resumed after pause")
+                // The session note survives breaks (session never ended) —
+                // refresh immediately so no stale text lingers.
+                refreshSessionNotification()
             }
             handler.postDelayed(pauseRunnable!!, s * 1000)
         }
@@ -406,16 +421,17 @@ class StayTAccessibilityService : AccessibilityService() {
                     }
                 }
                 buildAndNotifySession(c, now)
+                sessionNoteOn = true
                 startSessionTicker()
             } catch (e: Exception) {
                 Log.w(TAG, "postSessionNotification failed", e)
             }
         }
 
-        /** Silent per-minute elapsed refresh of the session note. Never throws. */
+        /** Silent elapsed refresh of the session note. Never throws. */
         fun refreshSessionNotification() {
             try {
-                if (!isBlocking) return
+                if (!sessionNoteOn) return
                 val c = instance ?: appCtx ?: return
                 if (!canPostNotifications(c)) return
                 buildAndNotifySession(c, System.currentTimeMillis())
@@ -432,6 +448,7 @@ class StayTAccessibilityService : AccessibilityService() {
                 } catch (_: Exception) {
                 }
                 sessionTick = null
+                sessionNoteOn = false
                 sessionStartMs = 0L
                 val c = instance ?: appCtx ?: return
                 try {
@@ -484,6 +501,27 @@ class StayTAccessibilityService : AccessibilityService() {
             }
             // Small icon MUST be a white alpha silhouette (Play-compliant) —
             // the tile bolt vector is exactly that, reused, no new asset.
+            // Rich card (icon tile + HRS/MINS/SECS boxes): custom content on
+            // N+ via DecoratedCustomViewStyle; title/text below double as the
+            // fallback, lockscreen line, and accessibility text. Lockscreen is
+            // covered by VISIBILITY_PUBLIC here + on the channel.
+            val (eh, em, es) = sessionElapsedParts(now)
+            val pad2 = { v: Long -> v.toString().padStart(2, '0') }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    val card = android.widget.RemoteViews(ctx.packageName, R.layout.session_note)
+                    try { card.setTextViewText(R.id.session_title, "StayT · $task") } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_sub, sessionElapsedText(now)) } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_hrs, pad2(eh)) } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_mins, pad2(em)) } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_secs, pad2(es)) } catch (_: Exception) { }
+                    builder.setStyle(Notification.DecoratedCustomViewStyle())
+                    builder.setCustomContentView(card)
+                    builder.setCustomBigContentView(card)
+                } catch (e: Exception) {
+                    Log.w(TAG, "session card failed, standard template", e)
+                }
+            }
             builder
                 .setContentTitle("StayT · $task")
                 .setContentText(sessionElapsedText(now))
@@ -527,13 +565,19 @@ class StayTAccessibilityService : AccessibilityService() {
             }
         }
 
-        private fun sessionElapsedText(now: Long): String {
+        private fun sessionElapsedParts(now: Long): Triple<Long, Long, Long> {
             return try {
                 val base = if (sessionStartMs > 0L) sessionStartMs else now
                 val totalSec = maxOf(0L, (now - base) / 1000L)
-                val h = totalSec / 3600
-                val m = (totalSec % 3600) / 60
-                val s = totalSec % 60
+                Triple(totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
+            } catch (_: Exception) {
+                Triple(0L, 0L, 0L)
+            }
+        }
+
+        private fun sessionElapsedText(now: Long): String {
+            return try {
+                val (h, m, s) = sessionElapsedParts(now)
                 val fmt = if (h > 0) "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
                     else "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
                 "$fmt in focus · tap to return"
@@ -552,14 +596,15 @@ class StayTAccessibilityService : AccessibilityService() {
                     override fun run() {
                         try {
                             // Stopped meanwhile: do not reschedule — the
-                            // cancel path owns teardown.
-                            if (!isBlocking) return
+                            // cancel path owns teardown. Gated on the note
+                            // flag (not isBlocking) so breaks don't kill it.
+                            if (!sessionNoteOn) return
                             refreshSessionNotification()
                         } catch (e: Exception) {
                             Log.w(TAG, "session tick failed", e)
                         } finally {
                             try {
-                                if (isBlocking) handler.postDelayed(this, SESSION_TICK_MS)
+                                if (sessionNoteOn) handler.postDelayed(this, SESSION_TICK_MS)
                             } catch (_: Exception) {
                             }
                         }
