@@ -497,7 +497,10 @@ class StayTAccessibilityService : AccessibilityService() {
                 .setCategory(Notification.CATEGORY_STATUS)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                try { builder.priority = Notification.PRIORITY_LOW } catch (_: Exception) { }
+                // Explicit setPriority call (not Kotlin property syntax):
+                // the synthetic `priority` accessor does not resolve
+                // against this deprecated Java setter and breaks the build.
+                try { builder.setPriority(Notification.PRIORITY_LOW) } catch (_: Exception) { }
             }
             try {
                 val launch = try {
