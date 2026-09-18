@@ -509,10 +509,6 @@ export default function HistoryScreen({ navigation }: Props) {
                 >
                   <WitheringOwl giveInsToday={giveInsToday} width={200} />
                 </View>
-                {/* TEMP-OWL-DEBUG: which frames are mounted + bundle proof. Remove after owl saga. */}
-                <Text style={[typography.caption, { color: muted, textAlign: 'center' }]}>
-                  {`owl dbg giveins=${giveInsToday} build=frames30`}
-                </Text>
               </View>
               {/* Wave 2C2 owl mood line (additive, same helper as TaskPicker). */}
               <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
