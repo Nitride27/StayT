@@ -57,23 +57,64 @@ export function owlMoodLabel(giveInsToday: number): string {
   return 'Owl is sharp today.';
 }
 
-// Withering sprite sheet (additive). assets/whithering_away.png is a 5-col ×
-// 4-row grid (1536×1024 → exactly 307.2×256 cells, transparent backdrop, no
-// gutters): row 1 standing→drooping, row 2 wilting→collapsed, row 3 leafy
-// mound, row 4 mound→puddle. Transparent, so it composites over the card in
-// both themes; the crop insets live in WitheringOwl (measured from this art).
-// NOTE: filename keeps the repo's existing spelling ("whithering").
-export const witheringSheet: ImageSourcePropType = require('../../assets/whithering_away.png');
+// Withering frames (additive). assets/whilting_away.png is 1536×1024,
+// 5 cols × 6 rows = 30 frames on a uniform grid (no separator strips —
+// the glow background is continuous): col edges [0,307,614,922,1229,1536],
+// row edges [0,171,341,512,683,853,1024]. NOTE: filename keeps the source
+// art's spelling ("whilting").
+// Frames live in assets/owl/frame_XX.png as tight bg-removed crops (black
+// body paint is identical to the dark glow, so flood-fill can't split
+// them — extraction is anchor-based: white/green accents locate the
+// subject, dark regions are kept near those anchors, neighbor-cell bleed
+// is dropped). Do not hand-edit; re-export from the art.
+// The old spritesheets (whithering_away.png, whithering_30.png) are retired.
+// Withering sheet: 30 frames, 5 cols × 6 rows.
 export const WITHERING_COLS = 5;
-export const WITHERING_ROWS = 4;
-export const WITHERING_FRAMES = WITHERING_COLS * WITHERING_ROWS;
+export const WITHERING_ROWS = 6;
+export const WITHERING_FRAMES = WITHERING_COLS * WITHERING_ROWS; // 30
 /** Per-frame step while the owl withers/recovers (brisk tick; the worklet-side smoothstep blend carries the softness). */
 export const WITHERING_FRAME_MS = 110;
+// Withering frames as INDIVIDUAL files (no spritesheet math): each file is
+// its frame's tight bg-removed crop, so no frame can show another's art.
+// Machine-exported 2026-09-18 from assets/whilting_away.png — do not
+// hand-edit, re-export from the art.
+export const WITHERING_FRAMES_LIST: ImageSourcePropType[] = [
+  require('../../assets/owl/frame_00.png'), require('../../assets/owl/frame_01.png'),
+  require('../../assets/owl/frame_02.png'), require('../../assets/owl/frame_03.png'),
+  require('../../assets/owl/frame_04.png'), require('../../assets/owl/frame_05.png'),
+  require('../../assets/owl/frame_06.png'), require('../../assets/owl/frame_07.png'),
+  require('../../assets/owl/frame_08.png'), require('../../assets/owl/frame_09.png'),
+  require('../../assets/owl/frame_10.png'), require('../../assets/owl/frame_11.png'),
+  require('../../assets/owl/frame_12.png'), require('../../assets/owl/frame_13.png'),
+  require('../../assets/owl/frame_14.png'), require('../../assets/owl/frame_15.png'),
+  require('../../assets/owl/frame_16.png'), require('../../assets/owl/frame_17.png'),
+  require('../../assets/owl/frame_18.png'), require('../../assets/owl/frame_19.png'),
+  require('../../assets/owl/frame_20.png'), require('../../assets/owl/frame_21.png'),
+  require('../../assets/owl/frame_22.png'), require('../../assets/owl/frame_23.png'),
+  require('../../assets/owl/frame_24.png'), require('../../assets/owl/frame_25.png'),
+  require('../../assets/owl/frame_26.png'), require('../../assets/owl/frame_27.png'),
+  require('../../assets/owl/frame_28.png'), require('../../assets/owl/frame_29.png'),
+];
+/** Native pixel sizes matching WITHERING_FRAMES_LIST order. */
+export const WITHERING_FRAME_SIZES: ReadonlyArray<readonly [number, number]> = [
+  [194, 144], [160, 135], [155, 125], [152, 106], [158, 81],
+  [199, 119], [192, 120], [187, 117], [190, 117], [192, 117],
+  [170, 170], [169, 169], [165, 166], [173, 166], [133, 166],
+  [174, 161], [183, 159], [189, 171], [220, 164], [193, 161],
+  [180, 170], [183, 170], [158, 170], [206, 170], [201, 170],
+  [185, 113], [154, 85], [139, 64], [148, 46], [148, 88],
+];
+/** Fixed stage all crops play on (source px): max tight-crop size — every
+ * crop is contain-fit into it (smaller frames scale up), centered,
+ * transparent padding elsewhere, zero layout shift. */
+export const WITHERING_STAGE_W = 220;
+export const WITHERING_STAGE_H = 171;
 
 /**
- * Target wither frame for today's give-ins: 0 → bright (frame 0), 1 →
- * droopy (end of row 1), 2 → slumped (row 2), 3 → mound (row 3), 4+ → full
- * puddle (last frame). Mirrors the mascotMood/owlMoodLabel thresholds.
+ * Target wither frame for today's give-ins across the 30-frame arc: 0 →
+ * bright (frame 0), 1 → end of row 1, 2 → end of row 2, 3 → end of row 3,
+ * 4+ → full puddle (last frame). The sweep passes through every frame in
+ * between. Mirrors the mascotMood/owlMoodLabel thresholds.
  */
 export function witheringTargetFrame(giveInsToday: number): number {
   const n = typeof giveInsToday === 'number' && Number.isFinite(giveInsToday) ? Math.max(0, Math.floor(giveInsToday)) : 0;

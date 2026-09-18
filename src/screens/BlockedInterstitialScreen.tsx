@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { StackActions, useFocusEffect } from '@react-navigation/native';
 import { View, Text, Image, TouchableOpacity, StyleSheet, TextInput, ScrollView, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -6,16 +7,18 @@ import Animated, {
   withTiming,
   withDelay,
   withSpring,
+  cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
+import { useOnForeground } from '../hooks/useOnForeground';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import AppBlocker from '../native/AppBlocker';
 import { store, MAX_DAILY_OVERRIDES } from '../storage/store';
-import { isEffectiveStrict } from '../types';
+import { Task, isEffectiveStrict } from '../types';
 import { syncWidgetNow } from '../widget/widgetSync';
 import { tap } from '../haptics';
 
@@ -61,9 +64,14 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const [dumfound, setDumfound] = useState(false);
   const effectiveStrict = isEffectiveStrict(taskStrict, dumfound);
   const scrollRef = useRef<ScrollView>(null);
+  // Orders overlapping data refreshes (replace() + foreground can overlap).
+  const refreshVersion = useRef(0);
 
-  useEffect(() => {
-    let live = true;
+  // Store reads for this block: task gate, override budget, escalating wait,
+  // friction prefs. Returning to this screen (recents, override used in
+  // another instance) must re-read — never trust the mount snapshot.
+  const refresh = useCallback(() => {
+    const v = ++refreshVersion.current;
     // No-overlay (ADR-0005): native no-op shim — kept so this seam never
     // breaks; resolves true with zero native side effects.
     // Deps include packageName: a replace() with a new package reuses this
@@ -71,35 +79,43 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     AppBlocker.dismissBlockedOverlay().catch(() => {});
     store.getTasks()
       .then(ts => {
-        if (!live) return;
+        if (v !== refreshVersion.current) return;
         const t = ts.find(x => x.id === taskId);
         setTaskName(t?.name ?? null);
         setTaskStrict(t?.strict === true);
         setDumfound(t?.dumbphoneMode === true);
         setTaskLoaded(true);
       })
-      .catch(() => { if (live) setTaskLoaded(true); });
+      .catch(() => { if (v === refreshVersion.current) setTaskLoaded(true); });
     store.getOverridesUsedToday()
-      .then(used => { if (live) setOverridesLeft(Math.max(0, MAX_DAILY_OVERRIDES - used)); })
+      .then(used => { if (v === refreshVersion.current) setOverridesLeft(Math.max(0, MAX_DAILY_OVERRIDES - used)); })
       .catch(() => {});
     store.getOverrideWaitSeconds()
-      .then(wait => { if (live) setCountdown(wait); })
+      .then(wait => { if (v === refreshVersion.current) setCountdown(wait); })
       .catch(() => {});
     // Wave 2C2: friction prefs read (best-effort, never traps). Enabled +
     // delay > 0 → breathe gate; delay 0 or read failure → no friction UI.
     // Absent delay defaults to 10 (matches UserPreferences contract).
     store.getPreferences()
       .then(p => {
-        if (!live) return;
+        if (v !== refreshVersion.current) return;
         const delay = p.frictionDelaySeconds ?? 10;
         if (p.frictionEnabled === true && delay > 0) {
           setFrictionEnabled(true);
           setFrictionRemaining(delay);
+        } else {
+          // A return must also CLEAR a stale gate (toggle switched off or
+          // delay zeroed while away) — mount-only set could never unset.
+          setFrictionEnabled(false);
+          setFrictionRemaining(0);
         }
       })
       .catch(() => {});
-    return () => { live = false; };
   }, [taskId, packageName]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   // Live override countdown (M:SS) while it is still locked.
   useEffect(() => {
@@ -133,6 +149,46 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
   const buttonOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
   const button2Opacity = useSharedValue(0);
+
+  // Snap every entry animation to its end state. A replace() with a new
+  // package reuses this mounted instance, and a home/recents return never
+  // re-runs the mount effect below — without this, returning can reveal
+  // frozen half-mounted views. Mount owns the forward run; blur + foreground
+  // share this tail.
+  const snapEntries = useCallback(() => {
+    cancelAnimation(mascotScale);
+    cancelAnimation(mascotOpacity);
+    cancelAnimation(titleOpacity);
+    cancelAnimation(titleTranslateY);
+    cancelAnimation(subtitleOpacity);
+    cancelAnimation(buttonOpacity);
+    cancelAnimation(buttonScale);
+    cancelAnimation(button2Opacity);
+    mascotScale.value = 1;
+    mascotOpacity.value = 1;
+    titleOpacity.value = 1;
+    titleTranslateY.value = 0;
+    subtitleOpacity.value = 1;
+    buttonOpacity.value = 1;
+    buttonScale.value = 1;
+    button2Opacity.value = 1;
+  }, [mascotScale, mascotOpacity, titleOpacity, titleTranslateY, subtitleOpacity, buttonOpacity, buttonScale, button2Opacity]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        snapEntries();
+      };
+    }, [snapEntries]),
+  );
+
+  // Foreground return (recents after an override/break in the blocked app):
+  // the budget and waits changed while away — re-read, and snap entries so
+  // the paint is never a frozen half-state.
+  useOnForeground(() => {
+    snapEntries();
+    refresh();
+  });
 
   useEffect(() => {
     mascotScale.value = withDelay(200, withSpring(1, { damping: 16, stiffness: 150 }));
@@ -175,7 +231,45 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     // Wave 2C2 note: BlockedAttempt.action 'friction_pass' is owned by the
     // backend agent (types.ts). Logging is intentionally skipped here rather
     // than cast defensively — see return notes.
-    navigation.goBack();
+    //
+    // Session-aware landing: a plain goBack() trusts the stack order, but the
+    // interstitial can sit over TaskPicker/History (blocked event while
+    // browsing, cold-start deep link) with the live session buried elsewhere
+    // or missing entirely — BACK would then strand the user away from the
+    // running session. The store is the source of truth: pop back to the
+    // buried session screen when present (its focus hydration refreshes the
+    // stale snapshot), resurrect it via replace when the record is live but
+    // the screen is gone, and only fall back to goBack with no live session.
+    (async () => {
+      try {
+        const active = await store.getActiveSession();
+        if (active) {
+          const state = navigation.getState();
+          const idx = state.routes.findIndex(r => r.name === 'ActiveSession');
+          if (idx >= 0 && idx < state.routes.length - 1) {
+            navigation.dispatch(StackActions.pop(state.routes.length - 1 - idx));
+            return;
+          }
+          if (idx < 0) {
+            const tasks = await store.getTasks().catch(() => [] as Task[]);
+            const t = tasks.find(x => x.id === active.taskId);
+            if (t) {
+              navigation.replace('ActiveSession', { task: t, session: active });
+              return;
+            }
+          }
+        }
+      } catch {
+        // Best-effort; the goBack below is the safe fallback.
+      }
+      if (navigation.canGoBack()) navigation.goBack();
+    })().catch(() => {
+      try {
+        if (navigation.canGoBack()) navigation.goBack();
+      } catch {
+        // Never trap the user on this screen.
+      }
+    });
   };
 
   const handleSwitchTask = () => {

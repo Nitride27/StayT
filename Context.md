@@ -1,0 +1,171 @@
+Objective
+- Build StayT, a task-aware Android app blocker, using React Native (Expo with custom native modules) + native Kotlin. Currently completing typography overhaul finalization, fixing architecture issues, and ensuring everything compiles clean before commit/push/EAS build/install on Samsung M52.
+Important Details
+- Framework: Expo with custom native modules (not bare CLI). Local Expo module in modules/blocker/.
+- Device: User testing on Samsung M52. Accessibility service detecting correctly after OEM-specific fix.
+- Milestone 1 is VERIFIED — user confirmed on real device. Do not re-verify.
+- Design direction: Pure black (#000000) dark mode, white light mode, green accent (#58cc02), cute penguin/bird mascot, large bold headers, minimal line icons, geometric indicators, zero emojis. Duolingo-inspired gamification.
+- User redesign directives: Remove emojis, remove AI slop, add unique animations, ask for decisions not assumptions, use agents /bmad-ux-designer and @Frontend Developer.
+- Permission requirement: App must ask permissions then-and-there at runtime, not require user to navigate to settings manually. Accessibility services can't be auto-enabled (Android restriction), but flow should auto-open settings and detect return. Notifications can use Notifications.requestPermissionsAsync().
+- Skills loaded: ui-ux-pro-max (79 styles, 192 palettes, 119 UX guidelines, GSAP presets), design-taste-frontend (anti-slop, brief inference, visual decision framework).
+- react-native-reanimated INSTALLED — SDK 57 compatible, 14 packages added.
+- expo-font INSTALLED — config plugin added, npx expo install expo-font completed successfully.
+- expo-splash-screen INSTALLED — added via npx expo install expo-splash-screen, config plugin auto-added.
+- Expo version: v57.0.0. Android package name: com.nitridee.staytapp
+- EAS Build: Project ID 0ee6556d-649e-43b6-9200-6eb321c6306d, account nitridee.
+- GitHub repo: https://github.com/Nitride27/StayT.git (local branch master tracks remote main)
+- Git repo location: Inside stayt-app/ subdirectory (not project root /mnt/hdd/HDD/Codes/StayT/)
+- Samsung accessibility config: accessibility_service_config.xml has android:accessibilityEventTypes="typeWindowStateChanged", android:canRetrieveWindowContent="false", android:settingsActivity="com.nitridee.staytapp.MainActivity". Samsung One UI path: Settings → Accessibility → Installed apps → StayT → Enable.
+- HyperOS/MIUI accessibility quirks: Settings path Additional settings → Accessibility → Downloaded apps. Sideloaded apps need Allow restricted settings in app info ⋮ menu. ADB: adb shell appops set com.nitridee.staytapp ACCESS_RESTRICTED_SETTINGS allow.
+- Android SDK: /home/nitride/android-sdk (symlink). Platforms: android-35, android-36. Build-tools: 35.0.0, 36.0.0.
+- ADB path: /home/nitride/android-sdk/platform-tools/adb
+- Root disk at 91% (100G/117G). Moved .gradle → /mnt/hdd/.gradle, android-sdk → /mnt/hdd/android-sdk, both with symlinks.
+- Build environment: Java 17 (/usr/bin/java, OpenJDK 17.0.20). Gradle 9.3.1. --no-daemon. Local gradle builds die — EAS build is more reliable.
+- Graphify graph: stayt-app/graphify-out/graph.json — 254 nodes, 454 links, 13 communities, 31 source files. God nodes: App.tsx (35 edges), ActiveSessionScreen (23), TaskPickerScreen (23), TaskSetupScreen (23), HistoryScreen (21), ThemeContext (21), package.json (20), PermissionSetupScreen (20), useTheme() (19), tokens.ts (19). Note: graphify_query_graph MCP tool loaded wrong graph (Jarvis project). Must read stayt-app/graphify-out/graph.json directly for StayT context queries.
+- Blocking model: blockedPackages set — apps IN the set get intercepted and sent home. Apps NOT in set pass through.
+- Plugin (modules/blocker/plugin.js): Copies Kotlin files, handles manifest/strings.xml injection, does NOT rename the module.
+- Current Task model: Task has single packageName/appName (one app per task).
+- EAS CLI path: /home/nitride/.npm/_npx/e25a38a8cc65d08e/node_modules/.bin/eas (v23.2.0). Global install failed (permissions).
+- hasOnboarded flag: Added to UserPreferences type and store default. Set to true on Continue press in PermissionSetupScreen via handleContinue.
+- expo-device installed. PermissionSetupScreen OEM detection uses Device.manufacturer from expo-device.
+- Colors type exported from tokens.ts as typeof colors. Used in ThemeContext.tsx for the context value type. Dark mode spread uses as unknown as Colors double-cast.
+- Paywall state: isSubscribed: boolean added to UserPreferences in types.ts. Default false in store.ts. Paywall gate in TaskSetupScreen counts tasks vs freeTaskLimit (default 1).
+- Error state detection: ActiveSessionScreen now polls AppBlocker.isAccessibilityServiceEnabled() every 5s. If service dies, shows warning banner with "Re-enable Service" button.
+- App icon: Variant 2 selected (white shield outline + green heartbeat on midnight blue). Resized 2048→1024, RGBA→RGB with midnight blue #042c60 background.
+- graphify-out/: Added to .gitignore, committed as 45db430.
+- Samsung fix: PermissionSetupScreen.tsx — isOemDevice replaced with separate isXiaomi/isSamsung flags. OEM-specific note cards show Samsung One UI instructions on Samsung, MIUI/HyperOS instructions on Xiaomi.
+- Design tokens (tokens.ts): Exports colors, darkColors, Colors type, typography, spacing, radius, buttons, gamification, shadows, layout.
+- Native module bridge: AppBlocker.ts exports isAccessibilityServiceEnabled(), pauseBlocking(seconds), getInstalledApps(), requestNotificationPermission(), isNotificationPermissionGranted(). AppBlockerModule.kt has emitBlockedAttempt() static method for native→JS events. StayTAccessibilityService.kt has companion object with setBlocking(), pauseBlocking(seconds) using Handler/Looper.
+- Architecture review score: 6/10 — critical thread safety on blockedPackages (mutableSetOf() → ConcurrentHashMap.newKeySet()), wrong lifecycle for listener registration in AppBlockerPackage.kt, companion object singletons without lifecycle cleanup.
+- Typography hierarchy (user-provided, implemented in tokens.ts):
+- Anton: displayXL (72px), display (48px) — only for big moments, brutalist personality.
+- Space Grotesk: h1 (32px), h2 (24px), h3 (18px), button (15px), label (12px), timer (48px).
+- Inter: body (16px/400), bodyMedium (16px/500), bodyStrong (16px/600), bodyBold (alias for bodyStrong), caption (13px).
+- Color+type: Black primary display, White dark-mode display, #58CC02 green only for key words/streak/active/actions, Gray secondary.
+- Green = typographic punctuation, not screen-filling.
+- Tight line-heights: Display 0.85-0.9, Body 1.4.
+- Negative tracking on headings (-0.01em to -0.04em).
+- Font files on disk — 9 TTF files in assets/fonts/: Anton-Regular.ttf, SpaceGrotesk-{Regular,Medium,SemiBold,Bold}.ttf, Inter-{Regular,Medium,SemiBold,Bold}.ttf.
+- Font family names in tokens.ts: Anton, SpaceGrotesk-Bold, SpaceGrotesk-SemiBold, SpaceGrotesk-Medium, Inter-Regular, Inter-Medium, Inter-SemiBold.
+- Font registration in App.tsx: useFonts() hook loads all 9 fonts with exact names matching tokens.ts. SplashScreen.preventAutoHideAsync() at module level. Splash hide logic: useEffect calls SplashScreen.hideAsync() when fontsLoaded && !loading.
+- darkColors updated in tokens.ts to pure black palette: paper: '#000000', paperCard: '#111111', paperBorder: '#222222', ink: '#ffffff'.
+Work State
+Completed
+- Scaffolded Expo project, installed all deps, ran npx expo prebuild
+- Created StayTAccessibilityService.kt, AppBlockerModule.kt, AppBlockerPackage.kt
+- Created accessibility_service_config.xml, res/values/strings.xml
+- Updated AndroidManifest.xml, MainApplication.kt
+- Created src/types.ts, src/storage/store.ts, src/native/AppBlocker.ts
+- Created Expo config plugin at modules/blocker/plugin.js
+- Registered plugin in app.json, removed /android from .gitignore
+- Ran npx expo prebuild --clean --platform android
+- Committed and pushed initial commit 0646cef
+- First EAS build 6cf4c9fe finished → stayt-dev-v2.apk (190MB)
+- User installed v2 APK on POCO X3 Pro — app opens, accessibility service shows in Settings
+- Fixed native-to-JS event wiring bug, committed dcb14af, pushed
+- Ran graphify extraction: 254 nodes, 454 edges, 25 communities
+- Fixed native module name mismatch: AppBlockerModule.getName() returns "AppBlocker"
+- Implemented getInstalledApps in AppBlockerModule.kt
+- Fixed inverted blocking logic: renamed allowedPackages → blockedPackages
+- Committed all fixes as 065c920, pushed
+- Created design token system (src/theme/tokens.ts)
+- Created ThemeContext provider (src/theme/ThemeContext.tsx)
+- Wired ThemeProvider into App.tsx with StatusBar, History + PermissionSetup routes
+- Added BlockedAttempt CRUD + getStreak() to store.ts
+- Rewrote all 6 screens with design tokens + dark mode + gamification accents
+- Committed screen rewrites as 7c19e90, pushed
+- Triggered EAS build 27b4e37d (preview profile)
+- Ran code review via subagent — found 3 critical + 5 medium bugs
+- Fixed all 6 files and committed as 02159b6, pushed
+- EAS build 8bb7fff3 (commit 02159b6, preview profile)
+- Created src/screens/WelcomeScreen.tsx
+- Updated src/types.ts — hasOnboarded, isSubscribed, freeTaskLimit in UserPreferences
+- Updated src/storage/store.ts — defaults + seedPresetTasks()
+- Rewrote App.tsx — Welcome + Paywall routes, async launch routing
+- Fixed tokens.ts letterSpacing — string values to numbers
+- Fixed OEM detection — installed expo-device, Device.manufacturer
+- Fixed HistoryScreen.tsx — missing headerRow style
+- Fixed TaskPickerScreen.tsx — navigation.navigate('TaskSetup', {})
+- Fixed ThemeContext.tsx — Colors type import, as unknown as Colors double-cast
+- Verified zero TS errors — npx tsc --noEmit clean
+- Committed Milestone 3 changes — commit 82617fb, pushed
+- Implemented pauseBlocking(seconds) in AppBlockerModule.kt → StayTAccessibilityService.kt
+- Added pauseBlocking(seconds: number) bridge to src/native/AppBlocker.ts
+- Wired override button in BlockedInterstitialScreen.tsx — AppBlocker.pauseBlocking(300) (5 min)
+- Added Paywall flow, subscription state, paywall gate
+- Fixed 3 TS errors in PaywallScreen.tsx
+- Verified zero TS errors, committed as 3502b18, pushed
+- Added serviceAlive polling in ActiveSessionScreen.tsx
+- Committed error state + task limit fix as badbd69, pushed
+- Generated app icon variants via Higgsfield MCP, selected variant 2
+- Committed icon as 4cf5425, pushed
+- Committed graphify-out/ gitignore as 45db430, pushed
+- EAS build f321017f finished → stayt-v3.apk (79MB), installed on Samsung M52
+- Samsung accessibility fix committed as ad3922b, pushed
+- Installed react-native-reanimated — SDK 57 compatible
+- First redesign pass: All 8 screens rewritten with reanimated animations, zero emojis, staggered fade-ins, geometric indicators
+- TS fixes: TaskPickerScreen.tsx (manual Session creation), BlockedInterstitialScreen.tsx (route types aligned)
+- Verified npx tsc --noEmit — zero errors
+- Committed first redesign as 07e0760 — 11 files, 1671 insertions, 1048 deletions
+- Pushed 07e0760 to GitHub (master → main)
+- EAS Build ce62cfd9 completed — build ID ce62cfd9-9fc5-4977-b33b-e96b86e0e721
+- Downloaded stayt-v4.apk (89MB) from https://expo.dev/artifacts/eas/T3-aPAa8kqRB9PjLrpljDaYKp-io1iTXSZtLtfNEhvU.apk
+- Installed stayt-v4.apk on Samsung M52 via ADB — Success
+- Second redesign pass — Frontend Developer completed: All 8 screens redesigned — pure black #000000 containers, #111111 card backgrounds, #222222 borders, ectoGreen CTAs, styled View dots replacing checkmark text, reanimated staggered fade-in animations across all 8 screens. Zero emojis, zero hardcoded old dark colors.
+- Backend Architect completed: Wired onBlockedAttempt event listener in App.tsx (navigates to BlockedInterstitial), added installed-app picker in TaskSetupScreen.tsx (searchable dropdown from getInstalledApps()). Added requestNotificationPermission() and isNotificationPermissionGranted() to AppBlocker.ts using expo-notifications. PermissionSetupScreen.tsx has AppState listener for auto-detecting return from settings, auto-requests notification permission, auto-advances when both permissions granted.
+- Software Architect completed: Architecture review — Score: 6/10. Critical issues: (1) Thread safety on blockedPackages, (2) Wrong lifecycle for listener registration, (3) Companion object singleton leaks. Review only, no files modified yet.
+- Verified all 8 screen files on disk — confirmed second redesign landed
+- Verified Backend Architect work on disk — runtime permission flow IS implemented
+- Downloaded 9 font files to stayt-app/assets/fonts/
+- Installed expo-font — npx expo install expo-font completed, config plugin added
+- Rewrote tokens.ts typography — full hierarchy with fontFamily: Anton (displayXL, display), Space Grotesk (h1, h2, h3, button, label, timer), Inter (body, bodyMedium, bodyStrong, bodyBold alias, caption). Tight line-heights and negative tracking applied.
+- Updated darkColors in tokens.ts to pure black palette (#000000/#111111/#222222)
+- Updated gamification streak numberFont to use fontFamily: 'Anton'
+- Registered fonts in App.tsx — useFonts() hook with all 9 font files, SplashScreen.preventAutoHideAsync() at module level
+- Installed expo-splash-screen — npx expo install expo-splash-screen completed, config plugin auto-added
+- Added splash hide logic in AppNavigator — useEffect calls SplashScreen.hideAsync() when fontsLoaded && !loading
+- Verified TS clean — npx tsc --noEmit zero errors after typography + splash changes
+- Queried local StayT graph — 254 nodes, 454 links, 13 communities, 31 source files. God nodes: App.tsx (35), ActiveSessionScreen (23), TaskPickerScreen (23), TaskSetupScreen (23), HistoryScreen (21), ThemeContext (21)
+Active
+- Architecture fixes needed — Not yet applied: (1) Thread safety mutableSetOf() → ConcurrentHashMap.newKeySet() in StayTAccessibilityService.kt, (2) Add invalidate() to AppBlockerModule.kt to clear singleton, (3) Remove phantom startListening()/stopListening() calls from AppBlockerPackage.kt
+Blocked
+- EAS API auth error: expo_build_list and expo_build_info MCP tools return "Entity not authorized" — EAS token expired. Local CLI works for builds.
+- graphify_query_graph MCP tool loaded wrong project graph (Jarvis instead of StayT). Must use local stayt-app/graphify-out/graph.json file directly.
+Next Move
+1. Apply architecture fixes: (a) Thread safety in StayTAccessibilityService.kt — mutableSetOf() → ConcurrentHashMap.newKeySet(), (b) Add invalidate() to AppBlockerModule.kt, (c) Remove phantom calls from AppBlockerPackage.kt
+2. Commit typography overhaul + architecture fixes, push to GitHub
+3. EAS build, download APK, install on Samsung M52
+4. Verify fonts render correctly on device
+Relevant Files
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/ — Expo project root (git repo)
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/app.json — Expo config with plugins: ["./modules/blocker/plugin"]
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/eas.json — EAS build config
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/package.json — deps includes react-native-reanimated, expo-font, expo-splash-screen
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/App.tsx — Navigation stack. Has font registration via useFonts (9 fonts), SplashScreen.preventAutoHideAsync(), splash hide useEffect when fontsLoaded && loading. onBlockedAttempt event listener wired. Routes: Welcome → PermissionSetup → Paywall → TaskPicker → TaskSetup/ActiveSession/BlockedInterstitial/History.
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/types.ts — Task, Session, BlockedAttempt, UserPreferences (hasOnboarded, isSubscribed, freeTaskLimit)
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/storage/store.ts — AsyncStorage CRUD, seedPresetTasks(), getStreak()
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/native/AppBlocker.ts — TS bridge: all native methods including requestNotificationPermission(), isNotificationPermissionGranted()
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/theme/tokens.ts — typography with fontFamily for all 3 font families (Anton/Space Grotesk/Inter), darkColors pure black palette, gamification streak uses Anton. Keys: displayXL, display, h1, h2, h3, button, label, timer, body, bodyMedium, bodyStrong, bodyBold, caption.
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/theme/ThemeContext.tsx — Theme provider with dark mode double-cast
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/assets/fonts/ — 9 TTF font files (Anton-Regular, SpaceGrotesk-{Regular,Medium,SemiBold,Bold}, Inter-{Regular,Medium,SemiBold,Bold})
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/WelcomeScreen.tsx — Uses typography.h1, typography.bodyMedium, typography.label, typography.caption
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/PermissionSetupScreen.tsx — Uses typography.h1, typography.bodyMedium, typography.bodyBold, typography.body, typography.label, typography.caption
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/TaskPickerScreen.tsx — Uses typography.h1, typography.bodyMedium, typography.caption
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/TaskSetupScreen.tsx — Uses typography.h1, typography.bodyMedium, typography.caption, typography.label
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/ActiveSessionScreen.tsx — Uses typography.h1, typography.h2, typography.bodyMedium, typography.label, typography.caption
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/BlockedInterstitialScreen.tsx — Uses typography.h1, typography.bodyMedium, typography.label, typography.caption
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/HistoryScreen.tsx — Uses typography.h1, typography.h2, typography.bodyMedium, typography.caption
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/src/screens/PaywallScreen.tsx — Uses typography.h1, typography.h2, typography.bodyMedium, typography.label, typography.caption
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/assets/icon.png — App icon (variant 2, 1024x1024)
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/assets/android-icon-foreground.png — Adaptive icon foreground (511x512)
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/assets/splash-icon.png — Splash icon
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/plugin.js — Expo config plugin
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/res/xml/accessibility_service_config.xml — Accessibility service XML config
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/StayTAccessibilityService.kt — Needs blockedPackages thread safety fix (mutableSetOf() → ConcurrentHashMap.newKeySet()). Needs singleton cleanup in onDestroy.
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/AppBlockerModule.kt — Needs invalidate() method to clear singleton instance.
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/AppBlockerPackage.kt — Needs removal of phantom startListening()/stopListening() calls.
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/graphify-out/graph.json — StayT codebase graph (254 nodes, 454 links, 13 communities). Read directly, don't use MCP tool.
+- /mnt/hdd/HDD/Codes/StayT/IMPLEMENTATION.md — Full milestone spec
+- EAS CLI: /home/nitride/.npm/_npx/e25a38a8cc65d08e/node_modules/.bin/eas (v23.2.0)
+- ADB: /home/nitride/android-sdk/platform-tools/adb
+

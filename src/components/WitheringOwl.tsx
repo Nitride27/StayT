@@ -3,19 +3,22 @@ import { View, Image, StyleSheet, PixelRatio } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
   withTiming,
   cancelAnimation,
   useReducedMotion,
   Easing,
+  runOnJS,
 } from 'react-native-reanimated';
 import { useTheme } from '../theme/ThemeContext';
 import {
-  witheringSheet,
   mascotMood,
   owlMoodLabel,
   witheringTargetFrame,
-  WITHERING_COLS,
-  WITHERING_ROWS,
+  WITHERING_FRAMES_LIST,
+  WITHERING_FRAME_SIZES,
+  WITHERING_STAGE_W,
+  WITHERING_STAGE_H,
   WITHERING_FRAME_MS,
   WITHERING_FRAMES,
 } from '../theme/mascot';
@@ -23,72 +26,62 @@ import {
 type Props = {
   /** Today's give-in count — drives the wither target frame. */
   giveInsToday: number;
-  /** Display width of one frame; height follows the sheet cell ratio. */
+  /** Display width of the fixed stage; height follows the stage ratio. */
   width?: number;
   /** ms per frame step. Defaults to WITHERING_FRAME_MS. */
   frameMs?: number;
 };
 
-// True sheet geometry (measured from assets/whithering_away.png): 1536×1024,
-// 5 cols × 4 rows → exactly 307.2 × 256 cells, transparent backdrop, no
-// gutters. Neighbor art overlaps the ideal grid: battery icons + the sparkle
-// burst end 1–4 src px before the right seam, green feet/leaves straddle the
-// horizontal seams by up to ~5 src px; everywhere else the seam band is
-// transparent or black-on-black (an invisible cut).
-//
-// Per-edge trim, as a fraction of one cell, sized from those measurements:
-// large enough to cover overlap + bilinear fringe at any display width,
-// small enough to keep every hard sprite part (feet, batteries, mound tops)
-// inside the window. All four edges take the full guard: the old thin right
-// guard (≈3 src px) still showed a bilinear fringe at small widths.
-const INSET_L = 0.0195; // ≈6 src px
-const INSET_R = 0.0195; // ≈6 src px
-const INSET_T = 0.0195; // ≈5 src px
-const INSET_B = 0.0195; // ≈5 src px
-
-// Window aspect follows the source cell (307.2:256) minus the trims, so the
-// sheet maps undistorted at any width. Derived, not magic, so it can't drift
-// from the insets above.
-const CELL_RATIO = (256 / 307.2) * ((1 - INSET_T - INSET_B) / (1 - INSET_L - INSET_R));
+// Individual-frame animation: 30 files, one per frame, each bg-cleaned, so
+// no frame can ever show another's art — there is no sheet math left. Both
+// layers contain-fit their frame into the fixed transparent stage (max frame
+// size), centered: zero layout shift, morph stays put.
+const STAGE_RATIO = WITHERING_STAGE_H / WITHERING_STAGE_W;
 
 /**
- * Animated loss-state owl: walks the whithering_away sprite sheet from frame
- * 0 toward the give-ins target (and back when the user recovers — retargeting
- * reassigns the same shared value, so tomorrow's fresh owl perks back up).
- * Holds the target frame when reached: no looping timers, no battery drain.
- * A failed sheet load falls back to the static mascotMood expression.
+ * Animated loss-state owl: walks the 30 wither frames from 0 toward the
+ * give-ins target (and back when the user recovers). Holds the target frame
+ * when reached: no looping timers, no battery drain. While warming up (or
+ * when a pair load fails) it holds the target OWL frame statically — the
+ * static mascotMood expression is only a last resort if the frame art
+ * itself fails to decode.
  *
  * Smoothness: a single `progress` shared value animates 0 → target on the UI
- * thread (one withTiming, linear for uniform step cadence). Two stacked sheet
- * layers derive their cell offset (transform only, never left/top) and a
- * smoothstep crossfade — each frame holds, then dissolves briskly instead of
- * lingering as a 50/50 ghost of two owls — from that value in worklets: zero
- * setState per frame, zero layout passes. `fadeDuration={0}` stops Android's
- * loader fade fighting the blend. Crop offsets snap to device pixels, so
- * small widths can't fringe a neighbour cell in.
- * The sheet is decode-warmed behind the static fallback before `ready` flips,
- * so the animation never starts on a cold texture. Reduced-motion users snap
- * straight to the target frame.
+ * thread (one withTiming, linear for uniform step cadence). Image SOURCES
+ * swap on the JS thread only when the integer frame changes (a few updates
+ * per animation, via runOnJS); per-vsync work is opacity-only smoothstep
+ * crossfade — each frame holds, then dissolves briskly instead of lingering
+ * as a 50/50 ghost. Geometry snaps to device pixels. All 30 frames are
+ * decode-warmed behind the static fallback before `ready` flips (with a
+ * timeout escape so one slow file can't hang the owl). Reduced-motion users
+ * snap straight to the target frame.
  */
 export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHERING_FRAME_MS }: Props) {
   const { isDark } = useTheme();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [frameFailed, setFrameFailed] = useState(false);
+  const [warmed, setWarmed] = useState(0);
+  const [pair, setPair] = useState({ a: 0, b: 0 });
   const reduceMotion = useReducedMotion();
-  // Window + sheet geometry, snapped to device pixels: the crop offsets below
-  // land on physical pixels, so the bilinear sampler can't fringe a neighbour
-  // cell in. Multiples stay exact (sheet = cell × cols/rows), so the grid
-  // can't drift; CELL_RATIO still owns the aspect.
   const devicePx = Math.max(1, PixelRatio.get() || 1);
-  const height = PixelRatio.roundToNearestPixel(width * CELL_RATIO);
+  const height = PixelRatio.roundToNearestPixel(width * STAGE_RATIO);
   const progress = useSharedValue(0);
+  const seenPair = useSharedValue(0);
 
-  // Scaled sheet geometry for the inset crop: the visible window (width ×
-  // height) shows one cell minus the per-edge trims (L left, T top).
-  const cellW = PixelRatio.roundToNearestPixel(width / (1 - INSET_L - INSET_R));
-  const cellH = PixelRatio.roundToNearestPixel(height / (1 - INSET_T - INSET_B));
-  const sheetW = cellW * WITHERING_COLS;
-  const sheetH = cellH * WITHERING_ROWS;
+  // Display px per stage px.
+  const s0 = width / WITHERING_STAGE_W;
+  const snap = (v: number) => Math.round(v * devicePx) / devicePx;
+
+  // Warm every frame up front; timeout escape so a slow file can't hang us.
+  useEffect(() => {
+    if (ready) return;
+    const t = setTimeout(() => setReady(true), 2500);
+    return () => clearTimeout(t);
+  }, [ready]);
+  useEffect(() => {
+    if (warmed >= WITHERING_FRAMES_LIST.length) setReady(true);
+  }, [warmed]);
 
   useEffect(() => {
     if (!ready || failed) return;
@@ -104,40 +97,52 @@ export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHE
     return () => cancelAnimation(progress);
   }, [giveInsToday, frameMs, ready, failed, reduceMotion, progress]);
 
-  // Floor layer: shows frame ⌊progress⌋, fading out as we leave it.
-  const styleA = useAnimatedStyle(() => {
-    const i = Math.max(0, Math.min(WITHERING_FRAMES - 1, Math.floor(progress.value)));
-    const col = i % WITHERING_COLS;
-    const row = Math.floor(i / WITHERING_COLS);
+  // Sync integer frame pair to JS (sources + sizes live here, not in
+  // worklets). Fires only when floor/ceil actually changes.
+  useAnimatedReaction(
+    () => {
+      const a = Math.max(0, Math.min(WITHERING_FRAMES - 1, Math.floor(progress.value)));
+      const b = Math.max(0, Math.min(WITHERING_FRAMES - 1, Math.ceil(progress.value)));
+      return a * 100 + b;
+    },
+    (v) => {
+      if (v !== seenPair.value) {
+        seenPair.value = v;
+        runOnJS(setPair)({ a: Math.floor(v / 100), b: v % 100 });
+      }
+    },
+    [],
+  );
+
+  // Opacity-only worklets: cheap every vsync.
+  const opacityA = useAnimatedStyle(() => {
     const frac = progress.value - Math.floor(progress.value);
     const e = frac * frac * (3 - 2 * frac); // smoothstep: hold, then blend
-    return {
-      transform: [
-        { translateX: Math.round(-(col + INSET_L) * cellW * devicePx) / devicePx },
-        { translateY: Math.round(-(row + INSET_T) * cellH * devicePx) / devicePx },
-      ],
-      opacity: 1 - e,
-    };
+    return { opacity: 1 - e };
   });
-
-  // Ceil layer: shows frame ⌈progress⌉, fading in as we arrive. Identical
-  // size/position to layer A — the crossfade never moves layout.
-  const styleB = useAnimatedStyle(() => {
-    const j = Math.max(0, Math.min(WITHERING_FRAMES - 1, Math.ceil(progress.value)));
-    const col = j % WITHERING_COLS;
-    const row = Math.floor(j / WITHERING_COLS);
+  const opacityB = useAnimatedStyle(() => {
     const frac = progress.value - Math.floor(progress.value);
     const e = frac * frac * (3 - 2 * frac); // smoothstep: hold, then blend
-    return {
-      transform: [
-        { translateX: Math.round(-(col + INSET_L) * cellW * devicePx) / devicePx },
-        { translateY: Math.round(-(row + INSET_T) * cellH * devicePx) / devicePx },
-      ],
-      opacity: e,
-    };
+    return { opacity: e };
   });
 
-  if (failed || !ready) {
+  // Contain-fit a frame's native size into the stage, centered.
+  const fit = (idx: number) => {
+    const fw = WITHERING_FRAME_SIZES[idx][0];
+    const fh = WITHERING_FRAME_SIZES[idx][1];
+    const s = s0 * Math.min(WITHERING_STAGE_W / fw, WITHERING_STAGE_H / fh);
+    const w = fw * s;
+    const h = fh * s;
+    return {
+      width: snap(w),
+      height: snap(h),
+      left: snap((width - w) / 2),
+      top: snap((height - h) / 2),
+    };
+  };
+
+  // Last resort: the owl art itself failed — static mascot expression.
+  if (frameFailed) {
     return (
       <View
         style={[styles.frame, { width, height }]}
@@ -151,20 +156,50 @@ export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHE
           accessibilityRole="image"
           accessibilityLabel={owlMoodLabel(giveInsToday)}
         />
-        {/* Decode warm-up: same cached texture the layers use. No expo-asset
-            in this project, so a 1px hidden Image forces the decode instead. */}
+      </View>
+    );
+  }
+
+  if (failed || !ready) {
+    // Loading / pair-error fallback: the target OWL frame for today's
+    // give-ins (same wither state the animation would hold) — never the
+    // static blocked/working mascot. Decode warm-up runs behind it.
+    const target = witheringTargetFrame(giveInsToday);
+    return (
+      <View
+        style={[styles.frame, { width, height }]}
+        accessibilityRole="image"
+        accessibilityLabel={owlMoodLabel(giveInsToday)}
+      >
+        <Image
+          source={WITHERING_FRAMES_LIST[target]}
+          style={{ width, height }}
+          resizeMode="contain"
+          onError={() => setFrameFailed(true)}
+          accessibilityRole="image"
+          accessibilityLabel={owlMoodLabel(giveInsToday)}
+        />
+        {/* Decode warm-up: 1px hidden frames force the decode instead. */}
         {!failed && !ready && (
-          <Image
-            source={witheringSheet}
-            style={styles.preload}
-            onLoad={() => setReady(true)}
-            onError={() => setFailed(true)}
-            accessible={false}
-          />
+          <View style={styles.preloadWrap} accessible={false}>
+            {WITHERING_FRAMES_LIST.map((src, k) => (
+              <Image
+                key={k}
+                source={src}
+                style={styles.preload}
+                onLoad={() => setWarmed((w) => w + 1)}
+                onError={() => setWarmed((w) => w + 1)}
+                accessible={false}
+              />
+            ))}
+          </View>
         )}
       </View>
     );
   }
+
+  const styleA = fit(pair.a);
+  const styleB = fit(pair.b);
 
   return (
     <View
@@ -172,46 +207,53 @@ export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHE
       accessibilityRole="image"
       accessibilityLabel={owlMoodLabel(giveInsToday)}
     >
-      <Animated.Image
-        source={witheringSheet}
-        onError={() => setFailed(true)}
-        style={[{ width: sheetW, height: sheetH }, styles.sheet, styleA]}
-        resizeMode="stretch"
-        fadeDuration={0}
-        accessible={false}
-      />
-      <Animated.Image
-        source={witheringSheet}
-        onError={() => setFailed(true)}
-        style={[{ width: sheetW, height: sheetH }, styles.sheet, styleB]}
-        resizeMode="stretch"
-        fadeDuration={0}
-        accessible={false}
-      />
+      <Animated.View style={[styles.layer, styleA, opacityA]}>
+        <Animated.Image
+          source={WITHERING_FRAMES_LIST[pair.a]}
+          onError={() => setFailed(true)}
+          style={{ width: styleA.width, height: styleA.height }}
+          resizeMode="stretch"
+          fadeDuration={0}
+          accessible={false}
+        />
+      </Animated.View>
+      <Animated.View style={[styles.layer, styleB, opacityB]}>
+        <Animated.Image
+          source={WITHERING_FRAMES_LIST[pair.b]}
+          onError={() => setFailed(true)}
+          style={{ width: styleB.width, height: styleB.height }}
+          resizeMode="stretch"
+          fadeDuration={0}
+          accessible={false}
+        />
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Transparent crop window: the sheet's own pixels (transparent backdrop)
-  // composite over whatever card sits behind — no midnight/blue box, in
-  // either theme. No radius: a rounded box would still read as a backdrop.
+  // Transparent fixed stage: frames composite over the screen bg in either
+  // theme. No radius: a rounded box would still read as a backdrop.
   frame: {
     overflow: 'hidden',
     backgroundColor: 'transparent',
   },
-  // Both crossfade layers share this box: absolute, identical size, moved
-  // only by UI-thread transforms so frames never shift layout.
-  sheet: {
+  // Crossfade layers: absolute, contain-fit sized, centered. Opacity comes
+  // from the animated styles; geometry is static per render.
+  layer: {
     position: 'absolute',
-    left: 0,
-    top: 0,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
   // Off-screen decode warm-up; never participates in layout.
-  preload: {
+  preloadWrap: {
     position: 'absolute',
     width: 1,
     height: 1,
     opacity: 0,
+  },
+  preload: {
+    width: 1,
+    height: 1,
   },
 });

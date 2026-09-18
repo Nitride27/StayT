@@ -51,10 +51,20 @@ function newBlockedId(): string {
   return `blocked-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// Session-survival bound: a boot-time `active` session younger than this is
+// treated as a live session the user never stopped (process kill, OS
+// reclaim) and is resumed, not closed. Older than this is a dead remnant and
+// is completed so History never renders phantom rows. Focus sessions run
+// minutes-to-hours; 12h is comfortably beyond any legitimate one.
+const STALE_SESSION_MS = 12 * 60 * 60 * 1000;
+
 function AppNavigator() {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Welcome');
+  // Boot-resume target for a live session that survived a process death
+  // (feeds ActiveSession/PermissionSetup initialParams below).
+  const [resumeParams, setResumeParams] = useState<{ task: Task; session: Session } | null>(null);
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
   // Blocked entry runs through the BlockedEntryCoordinator seam
@@ -108,20 +118,34 @@ function AppNavigator() {
       try {
         const prefs = await store.getPreferences();
 
-        // Reconcile zombie sessions left `active` by a process kill:
-        // close them so History never renders phantom 0m rows.
+        // Reconcile zombie sessions left `active` by a process kill — but
+        // ONLY stale ones. A fresh active means the session never ended (the
+        // user never pressed END/SWITCH): closing it here would silently end
+        // a live session on every OS reclaim. Fresh actives are kept and the
+        // boot below resumes straight into them (process-death restore).
+        let resume: { task: Task; session: Session } | null = null;
         try {
           const sessions = await store.getSessions();
           const now = Date.now();
           for (const s of sessions) {
-            if (s.status === 'active') {
+            if (s.status === 'active' && now - s.startedAt > STALE_SESSION_MS) {
               const duration = Math.max(0, now - s.startedAt);
               await store.saveSession({ ...s, status: 'completed', endedAt: now, duration });
             }
           }
+          const remaining = await store.getSessions();
+          const active = remaining.find(s => s.status === 'active') ?? null;
+          if (active) {
+            const tasks = await store.getTasks().catch(() => [] as Task[]);
+            const t = tasks.find(x => x.id === active.taskId) ?? null;
+            // Deleted task = nothing to resume into; the orphan stays for the
+            // next explicit start to supersede (existing TaskPicker rule).
+            if (t) resume = { task: t, session: active };
+          }
         } catch {
           // Best-effort; a failed reconcile must not block boot.
         }
+        if (resume) setResumeParams(resume);
 
         if (!prefs.hasOnboarded) {
           setInitialRoute('Welcome');
@@ -129,6 +153,10 @@ function AppNavigator() {
           const accessGranted = await AppBlocker.isAccessibilityServiceEnabled();
           if (!accessGranted) {
             setInitialRoute('PermissionSetup');
+          } else if (resume) {
+            // Process-death restore: land on the live session intact — the
+            // screen hydrates from the store and re-pushes blocking.
+            setInitialRoute('ActiveSession');
           } else {
             setInitialRoute('TaskPicker');
           }
@@ -286,6 +314,10 @@ function AppNavigator() {
             name="PermissionSetup"
             component={PermissionSetupScreen}
             options={{ headerShown: false }}
+            // Boot-resume with the service off: granting resumes this exact
+            // task via the existing pendingTaskId → autoStartTaskId flow
+            // (which supersedes the unprotected session with a fresh start).
+            initialParams={resumeParams ? { pendingTaskId: resumeParams.task.id } : undefined}
           />
           <Stack.Screen
             name="Paywall"
@@ -306,6 +338,9 @@ function AppNavigator() {
             name="ActiveSession"
             component={ActiveSessionScreen}
             options={{ headerShown: false }}
+            // Process-death restore target (initialRoute above). The screen
+            // treats params as a fallback and hydrates from the store.
+            initialParams={resumeParams ?? undefined}
           />
           <Stack.Screen
             name="BlockedInterstitial"
