@@ -47,7 +47,8 @@ const STAGE_RATIO = WITHERING_STAGE_H / WITHERING_STAGE_W;
  * itself fails to decode.
  *
  * Smoothness: a single `progress` shared value animates 0 → target on the UI
- * thread (one withTiming, linear for uniform step cadence). Image SOURCES
+ * thread (one withTiming, eased in-out so key poses hold and middles pass
+ * quickly). Image SOURCES
  * swap on the JS thread only when the integer frame changes (a few updates
  * per animation, via runOnJS); per-vsync work is opacity-only smoothstep
  * crossfade — each frame holds, then dissolves briskly instead of lingering
@@ -93,7 +94,11 @@ export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHE
     }
     const effFrameMs = Math.max(30, frameMs);
     const duration = reduceMotion ? 1 : Math.max(1, Math.abs(target - current) * effFrameMs);
-    progress.value = withTiming(target, { duration, easing: Easing.linear });
+    // Eased (not linear) pacing: the sweep lingers on the start/end poses
+    // and hurries through the middle frames — the classic hold-key-poses
+    // trick, so 5-frames-per-stage reads as smooth motion. Average pace is
+    // unchanged (duration still scales with frame distance).
+    progress.value = withTiming(target, { duration, easing: Easing.inOut(Easing.quad) });
     return () => cancelAnimation(progress);
   }, [giveInsToday, frameMs, ready, failed, reduceMotion, progress]);
 
