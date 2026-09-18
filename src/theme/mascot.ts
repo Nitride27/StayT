@@ -70,8 +70,11 @@ export function owlMoodLabel(giveInsToday: number): string {
 export const WITHERING_COLS = 5;
 export const WITHERING_ROWS = 6;
 export const WITHERING_FRAMES = WITHERING_COLS * WITHERING_ROWS; // 30
-/** Per-frame step while the owl withers/recovers (brisk tick; the worklet-side smoothstep blend carries the softness). */
-export const WITHERING_FRAME_MS = 110;
+/** Per-frame step while the owl withers/recovers: ~1s for the full 0→29
+ * arc (60 slots at 60fps with each frame doubled). Rendering is every
+ * vsync regardless; this sets the sweep pace. The in-out easing on the
+ * sweep preserves the end-pose holds. */
+export const WITHERING_FRAME_MS = 33;
 // Withering frames as INDIVIDUAL files (no spritesheet math): each file is
 // a finished sprite, so no frame can show another's art. All are 234×171,
 // hence identical sizes below. Do not hand-edit; re-export from the art.
