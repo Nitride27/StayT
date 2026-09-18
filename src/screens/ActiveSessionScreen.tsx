@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
+import { useOnForeground } from '../hooks/useOnForeground';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Session, Task, UserPreferences, blockedPackagesOf, isEffectiveStrict } from '../types';
@@ -161,38 +162,83 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     buttonOpacity.value = withDelay(550, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
 
+  // Snap every entry animation to its end state. Leaving mid-entry (an
+  // interstitial pushed over us, home/recents backgrounding) can otherwise
+  // reveal half-mounted reanimated views on return — the UI thread may have
+  // suspended mid-timing. Called from the blur tail AND the foreground
+  // return below; the mount effect above owns only the forward run.
+  const snapEntries = useCallback(() => {
+    cancelAnimation(headerOpacity);
+    cancelAnimation(headerTranslateY);
+    cancelAnimation(timerOpacity);
+    cancelAnimation(timerScale);
+    cancelAnimation(buttonOpacity);
+    headerOpacity.value = 1;
+    headerTranslateY.value = 0;
+    timerOpacity.value = 1;
+    timerScale.value = 1;
+    buttonOpacity.value = 1;
+  }, [headerOpacity, headerTranslateY, timerOpacity, timerScale, buttonOpacity]);
+
+  // Safety net for notification-tap returns: a backgrounded mount can lose
+  // the delayed entry runs above with no foreground transition to recover
+  // on — snap to the end state shortly after mount. Healthy runs are
+  // unaffected (1 → 1, no flash).
+  useEffect(() => {
+    const t = setTimeout(snapEntries, 1100);
+    return () => clearTimeout(t);
+  }, [snapEntries]);
+
   // Re-hydrate from the store on every focus: returning mid-session (back
   // from the interstitial, app backgrounded, process restarted) re-reads the
   // live session + task instead of trusting the entry snapshot. When the
   // store has no active session the snapshot is kept — the screen never
-  // blanks to a half state. Single async body, live-guarded, no timer here.
+  // blanks to a half state. Version-guarded: overlapping invocations (focus
+  // + foreground firing together) resolve in order, last writer wins, and a
+  // stale winner never paints. Resolves the live session for callers.
+  const hydrateVersion = React.useRef(0);
+  const hydrate = useCallback(async (): Promise<Session | null> => {
+    const v = ++hydrateVersion.current;
+    let live: Session | null = null;
+    try {
+      const active = await store.getActiveSession();
+      if (v !== hydrateVersion.current) return active;
+      live = active;
+      if (active) {
+        const tasks = await store.getTasks();
+        if (v !== hydrateVersion.current) return active;
+        const fresh = tasks.find(t => t.id === active.taskId) ?? null;
+        if (fresh) setTask(fresh);
+        setSession(active);
+        // Task-based Dumbphone Mode (not the deprecated global pref).
+        setDumfound(fresh?.dumbphoneMode === true);
+      }
+    } catch {
+      // Best-effort: the entry snapshot stays on screen.
+    } finally {
+      if (v === hydrateVersion.current) setHydrated(true);
+    }
+    return live;
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let live = true;
-      (async () => {
-        try {
-          const active = await store.getActiveSession();
-          if (!live) return;
-          if (active) {
-            const tasks = await store.getTasks();
-            if (!live) return;
-            const fresh = tasks.find(t => t.id === active.taskId) ?? null;
-            if (fresh) setTask(fresh);
-            setSession(active);
-            // Task-based Dumbphone Mode (not the deprecated global pref).
-            setDumfound(fresh?.dumbphoneMode === true);
-          }
-        } catch {
-          // Best-effort: the entry snapshot stays on screen.
-        } finally {
-          if (live) setHydrated(true);
-        }
-      })();
-      return () => {
-        live = false;
-      };
-    }, []),
+      hydrate().catch(() => {});
+    }, [hydrate]),
   );
+
+  // Foreground return (home/recents — focus never changes there, so the
+  // effect above does not re-run): snap animations first for an instant
+  // correct paint, then re-hydrate and re-seat the timer on the live
+  // startedAt so no stale tick lingers from the background.
+  useOnForeground(() => {
+    snapEntries();
+    hydrate()
+      .then(s => {
+        if (s) setElapsed(Date.now() - s.startedAt);
+      })
+      .catch(() => {});
+  });
 
   // Timer tick — keyed on the live startedAt (not the entry snapshot).
   // Single interval per startedAt value, always cleared, so
@@ -340,24 +386,15 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   }));
 
   // Blur cleanup: leaving mid-entry (interstitial pushed over us) cancels the
-  // in-flight entry timings and snaps values to their end state, so returning
-  // can never reveal half-mounted reanimated views. Mount effect above owns
+  // in-flight entry timings via the shared snap above — returning can never
+  // reveal half-mounted reanimated views. Mount effect above owns
   // the forward run; this owns only the blur tail.
   useFocusEffect(
     useCallback(() => {
       return () => {
-        cancelAnimation(headerOpacity);
-        cancelAnimation(headerTranslateY);
-        cancelAnimation(timerOpacity);
-        cancelAnimation(timerScale);
-        cancelAnimation(buttonOpacity);
-        headerOpacity.value = 1;
-        headerTranslateY.value = 0;
-        timerOpacity.value = 1;
-        timerScale.value = 1;
-        buttonOpacity.value = 1;
+        snapEntries();
       };
-    }, [headerOpacity, headerTranslateY, timerOpacity, timerScale, buttonOpacity]),
+    }, [snapEntries]),
   );
 
   const handlePressIn = () => {

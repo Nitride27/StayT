@@ -114,14 +114,58 @@ const SessionCard = React.memo(function SessionCard({ item, index, isDark }: { i
   return <AnimatedSessionCard item={item} index={index} isDark={isDark} />;
 });
 
+// Quiet load-more control shared by MOST BLOCKED + PAST SESSIONS: a progress
+// hint ("Showing 5 of 12") over a full-width outline button ("Show 7 more" /
+// "Show less"). The button is the single 48px target; the hint is text only.
+function LoadMoreControl(props: {
+  shown: number;
+  total: number;
+  expanded: boolean;
+  onToggle: () => void;
+  track: string;
+  ink: string;
+  muted: string;
+  kind: 'sessions' | 'apps';
+}) {
+  const remaining = props.total - props.shown;
+  const unit = props.kind === 'sessions' ? 'sessions' : 'apps';
+  return (
+    <View style={[styles.loadMoreWrap, { borderTopColor: props.track }]}>
+      <Text style={[typography.caption, { color: props.muted, textAlign: 'center' }]}>
+        {props.expanded ? `Showing ${props.total} of ${props.total}` : `Showing ${props.shown} of ${props.total}`}
+      </Text>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={props.onToggle}
+        style={[styles.loadMoreBtn, { borderColor: props.track }]}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: props.expanded }}
+        accessibilityLabel={
+          props.expanded
+            ? `${props.kind === 'sessions' ? 'Session' : 'Blocked'} list expanded, ${props.total} ${unit}`
+            : remaining === 1
+              ? `Show more ${unit}, showing ${props.shown} of ${props.total}`
+              : `Show ${remaining} more ${unit}, showing ${props.shown} of ${props.total}`
+        }
+      >
+        <Text style={[typography.button, { color: props.ink, fontSize: 14, lineHeight: 18, textAlign: 'center' }]}>
+          {props.expanded ? 'Show less' : remaining === 1 ? 'Show more' : `Show ${remaining} more`}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // Installed-app labels/icons: the query renders an icon per app, so repeat
 // visits reuse a short-lived module cache instead of blocking the paint.
 let appMetaCache: { at: number; labels: Record<string, string>; icons: Record<string, string> } | null = null;
 const APP_META_TTL_MS = 5 * 60 * 1000;
 
-// Per-milestone badge art, cut from assets/milestones.png into
-// assets/badges/. Earned = full color, locked = dimmed.
-const MILESTONE_ART: Record<string, ImageSourcePropType> = {
+// Per-milestone badge art in assets/badges/. Two variants per badge:
+// dark-theme originals + light-theme set (achromatic black↔white swapped,
+// saturated accent hues kept) in assets/badges/light/. Earned = full color,
+// locked = dimmed.
+const MILESTONE_ART_DARK: Record<string, ImageSourcePropType> = {
   'focus-10': require('../../assets/badges/focus-10.png'),
   'focus-100': require('../../assets/badges/focus-100.png'),
   'focus-500': require('../../assets/badges/focus-500.png'),
@@ -130,6 +174,16 @@ const MILESTONE_ART: Record<string, ImageSourcePropType> = {
   'streak-100': require('../../assets/badges/streak-100.png'),
   'resist-100': require('../../assets/badges/resist-100.png'),
   'resist-1000': require('../../assets/badges/resist-1000.png'),
+};
+const MILESTONE_ART_LIGHT: Record<string, ImageSourcePropType> = {
+  'focus-10': require('../../assets/badges/light/focus-10.png'),
+  'focus-100': require('../../assets/badges/light/focus-100.png'),
+  'focus-500': require('../../assets/badges/light/focus-500.png'),
+  'streak-7': require('../../assets/badges/light/streak-7.png'),
+  'streak-30': require('../../assets/badges/light/streak-30.png'),
+  'streak-100': require('../../assets/badges/light/streak-100.png'),
+  'resist-100': require('../../assets/badges/light/resist-100.png'),
+  'resist-1000': require('../../assets/badges/light/resist-1000.png'),
 };
 
 export default function HistoryScreen({ navigation }: Props) {
@@ -402,26 +456,16 @@ export default function HistoryScreen({ navigation }: Props) {
         contentContainerStyle={styles.listContent}
         ListFooterComponent={
           sortedSessions.length > 5 ? (
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => { tap(); setShowAllSessions(v => !v); }}
-              style={[styles.showMoreRow, { borderTopColor: track }]}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: showAllSessions }}
-              accessibilityLabel={showAllSessions ? `Session list expanded, ${sortedSessions.length} sessions` : `Session list collapsed, ${sortedSessions.length - 5} more`}
-            >
-              <View style={styles.showMoreText}>
-                <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
-                  {showAllSessions ? `${sortedSessions.length} of ${sortedSessions.length}` : `5 of ${sortedSessions.length}`}
-                </Text>
-                <Text style={[typography.label, { color: muted, marginTop: 2 }]} numberOfLines={1}>
-                  {showAllSessions ? `${sortedSessions.length} SESSIONS` : `${sortedSessions.length - 5} MORE`}
-                </Text>
-              </View>
-              <View style={[styles.showMoreChevron, { borderColor: track, transform: [{ rotate: showAllSessions ? '90deg' : '0deg' }] }]}>
-                <ChevronRightIcon size={20} color={muted} />
-              </View>
-            </TouchableOpacity>
+            <LoadMoreControl
+              shown={5}
+              total={sortedSessions.length}
+              expanded={showAllSessions}
+              onToggle={() => { tap(); setShowAllSessions(v => !v); }}
+              track={track}
+              ink={ink}
+              muted={muted}
+              kind="sessions"
+            />
           ) : null
         }
         ListHeaderComponent={
@@ -445,9 +489,26 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
               </View>
               <Text style={[typography.display, { color: streakGreen, textAlign: 'center', marginTop: spacing.xs }]}>DAY STREAK!</Text>
-              {/* Withering owl: transparent, no card — today's loss-state at hero size. */}
+              {/* Withering owl: dark themes composite transparency straight
+                  onto the screen; light theme gets a deliberate midnight tile
+                  (black art needs a dark stage — floating it on white reads
+                  as a blob). */}
               <View style={{ alignItems: 'center', marginTop: spacing.md }}>
-                <WitheringOwl giveInsToday={giveInsToday} width={120} />
+                <View
+                  style={
+                    isDark
+                      ? undefined
+                      : {
+                          backgroundColor: colors.midnight,
+                          borderRadius: radius.xl,
+                          padding: spacing.md,
+                          borderWidth: 2,
+                          borderColor: colors.ectoGreenDark,
+                        }
+                  }
+                >
+                  <WitheringOwl giveInsToday={giveInsToday} width={200} />
+                </View>
               </View>
               {/* Wave 2C2 owl mood line (additive, same helper as TaskPicker). */}
               <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>
@@ -576,23 +637,19 @@ export default function HistoryScreen({ navigation }: Props) {
                         styles.mileChip,
                         { borderColor: border },
                         m.earned && styles.mileChipEarned,
-                        // Theme-aware earned fill: the static paperCard white
-                        // melts into the light card (white-on-white), so use
-                        // pale green in light mode. Dark keeps paperCard.
-                        m.earned && { backgroundColor: isDark ? colors.paperCard : colors.ectoGreenLight },
                       ]}
                       accessibilityRole={m.earned ? 'button' : 'text'}
                       accessibilityLabel={m.earned ? `${m.label} earned. Share.` : `${m.label}, ${Math.floor(m.progress)} of ${m.target}`}
                     >
                         <Image
-                          source={MILESTONE_ART[m.id]}
+                          source={(isDark ? MILESTONE_ART_DARK : MILESTONE_ART_LIGHT)[m.id]}
                           style={[styles.badgeImage, { opacity: m.earned ? 1 : 0.35 }]}
                           resizeMode="cover"
                         />
-                        <Text style={[typography.bodyMedium, { color: m.earned ? colors.midnight : ink, textAlign: 'center' }]} numberOfLines={2}>
+                        <Text style={[typography.bodyMedium, { color: ink, textAlign: 'center' }]} numberOfLines={2}>
                           {m.label.toUpperCase()}
                         </Text>
-                        <Text style={[typography.caption, { color: m.earned ? colors.midnight : muted, textAlign: 'center', marginTop: 2 }]}>
+                        <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: 2 }]}>
                           {m.earned ? 'TAP TO SHARE' : `${Math.floor(m.progress)}/${m.target}`}
                         </Text>
                       </TouchableOpacity>
@@ -641,26 +698,16 @@ export default function HistoryScreen({ navigation }: Props) {
                     </View>
                   ))}
                   {ranking.length > 5 && (
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      onPress={() => { tap(); setShowAllRanking(v => !v); }}
-                      style={[styles.showMoreRow, { borderTopColor: track }]}
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: showAllRanking }}
-                      accessibilityLabel={showAllRanking ? `Blocked list expanded, ${ranking.length} apps` : `Blocked list collapsed, ${ranking.length - 5} more`}
-                    >
-                      <View style={styles.showMoreText}>
-                        <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1}>
-                          {showAllRanking ? `${ranking.length} of ${ranking.length}` : `5 of ${ranking.length}`}
-                        </Text>
-                        <Text style={[typography.label, { color: muted, marginTop: 2 }]} numberOfLines={1}>
-                          {showAllRanking ? `${ranking.length} APPS` : `${ranking.length - 5} MORE`}
-                        </Text>
-                      </View>
-                      <View style={[styles.showMoreChevron, { borderColor: track, transform: [{ rotate: showAllRanking ? '90deg' : '0deg' }] }]}>
-                        <ChevronRightIcon size={20} color={muted} />
-                      </View>
-                    </TouchableOpacity>
+                    <LoadMoreControl
+                      shown={5}
+                      total={ranking.length}
+                      expanded={showAllRanking}
+                      onToggle={() => { tap(); setShowAllRanking(v => !v); }}
+                      track={track}
+                      ink={ink}
+                      muted={muted}
+                      kind="apps"
+                    />
                   )}
                 </>
               )}
@@ -924,15 +971,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    borderWidth: 2,
-    borderColor: colors.ectoGreenDark,
     marginBottom: spacing.sm,
-    // Contrasting medallion behind the art: several badges carry white
-    // line art to the circle edge (white-on-white on a light card), so the
-    // transparent pixels resolve to midnight in both themes. Opaque badge
-    // pixels cover it; white rings pop against it. The green ring keeps the
-    // circle edge legible even where opaque art covers the medallion.
-    backgroundColor: colors.midnight,
+    // Per-theme art (dark set / light set) carries its own contrast, so the
+    // medallion is plain transparent — no midnight fill, no ring workarounds.
+    backgroundColor: 'transparent',
   },
   mileChipEarned: {
     borderColor: colors.ectoGreenDark,
@@ -953,29 +995,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  // Count-subtitle chevron row: hairline rule on top (color set inline per
-  // theme), semibold count, muted subtitle, chevron in a ring. One style
-  // serves MOST BLOCKED + PAST SESSIONS; the whole row stays the 44px target.
-  showMoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
+  // Quiet load-more: centered progress hint over a full-width outline
+  // button. The button is the single 48px target; the hint is text only.
+  loadMoreWrap: {
     marginTop: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: spacing.sm,
   },
-  showMoreChevron: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
+  loadMoreBtn: {
+    borderWidth: 2,
+    borderRadius: radius.md,
+    minHeight: 48,
     alignItems: 'center',
-  },
-  showMoreText: {
-    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   sessionCard: {
     flexDirection: 'row',

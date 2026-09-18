@@ -17,6 +17,7 @@ import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.nitridee.staytapp.R
 import java.util.concurrent.ConcurrentHashMap
 
 class StayTAccessibilityService : AccessibilityService() {
@@ -43,6 +44,37 @@ class StayTAccessibilityService : AccessibilityService() {
         private const val BLOCK_COOLDOWN_MS = 1000L
         private const val BLOCK_CHANNEL_ID = "stayt_blocked"
         private const val BLOCK_CHANNEL_NAME = "Blocked apps"
+        // Ongoing session note (ADR-0007): plain NotificationManager note,
+        // NOT a foreground service — no startForeground, no
+        // FOREGROUND_SERVICE permission/type, no manifest change. Posted on
+        // setBlocking(true), cancelled on setBlocking(false), so it mirrors
+        // enforcement exactly. Own channel (LOW: silent, persistent) + own
+        // fixed ID so it coexists with — and is never swept by — the
+        // per-block heads-up notes above.
+        private const val SESSION_CHANNEL_ID = "stayt_session"
+        private const val SESSION_CHANNEL_NAME = "Ongoing session"
+        private const val SESSION_NOTIFICATION_ID = 57001
+        private const val SESSION_TAP_REQ = 7001
+        // 5s refresh: the note carries live HRS/MINS/SECS boxes (a per-minute
+        // tick froze SECS at :00 and read as a stuck counter). Silent same-ID
+        // updates, no sound/vibration — comparable to any timer app.
+        private const val SESSION_TICK_MS = 5_000L
+        // ectoGreen accent for the small icon (mirrors theme tokens).
+        // Signed decimal for 0xFF58CC02 — a raw 0xFF… literal overflows
+        // Kotlin Int and will not compile.
+        private const val SESSION_ACCENT = -10957822
+        @Volatile
+        private var sessionStartMs: Long = 0L
+        private var sessionTick: Runnable? = null
+        // Note-lifecycle flag, independent of isBlocking: an intention
+        // break pauses enforcement but the SESSION continues, so the note +
+        // ticker must survive pauseBlocking (which flips isBlocking false and
+        // used to starve the ticker dead — frozen 00:00 until the next
+        // setBlocking). Only cancelSessionNotification clears this.
+        @Volatile
+        private var sessionNoteOn = false
+        @Volatile
+        private var appCtx: Context? = null
         // BlockedContract mirror (src/native/blockedContract.ts): single
         // source for deep-link shape on the native side. Change both together.
         private const val BLOCKED_SCHEME = "exp+stayt-app"
@@ -307,6 +339,11 @@ class StayTAccessibilityService : AccessibilityService() {
             pauseRunnable?.let { handler.removeCallbacks(it) }
             pauseRunnable = null
             if (!blocking) cancelBlockNotifications()
+            // Ongoing session note (ADR-0007): mirrors enforcement — up
+            // while blocking, gone the moment it stops. pauseBlocking
+            // deliberately leaves it posted (a break is still an active
+            // session; only setBlocking(false) ends enforcement).
+            if (!blocking) cancelSessionNotification() else postSessionNotification(instance)
             // No-overlay (ADR-0005): dismiss is a no-op shim kept for the JS seam.
             try {
                 instance?.dismissBlockedOverlay()
@@ -325,6 +362,8 @@ class StayTAccessibilityService : AccessibilityService() {
             // so a process death mid-break re-arms blocking on reconnect.
             // The break/override tray note would lie ("tap to return") while
             // the user is legitimately inside the app — drop it.
+            // The SESSION note intentionally survives breaks (sessionNoteOn
+            // stays true, ticker keeps running): the session never ended.
             cancelBlockNotifications()
 
             // No-overlay (ADR-0005): dismiss is a no-op shim kept for the JS seam.
@@ -341,6 +380,9 @@ class StayTAccessibilityService : AccessibilityService() {
             pauseRunnable = Runnable {
                 isBlocking = true
                 Log.d(TAG, "Blocking resumed after pause")
+                // The session note survives breaks (session never ended) —
+                // refresh immediately so no stale text lingers.
+                refreshSessionNotification()
             }
             handler.postDelayed(pauseRunnable!!, s * 1000)
         }
@@ -351,6 +393,227 @@ class StayTAccessibilityService : AccessibilityService() {
                 instance?.cancelAllBlockNotes()
             } catch (e: Exception) {
                 Log.w(TAG, "cancelBlockNotifications failed", e)
+            }
+        }
+
+        /**
+         * Ongoing session note, music-player style (ADR-0007): persistent,
+         * non-dismissible (ongoing) status note while blocking is enforced —
+         * "StayT · <task>" + live elapsed — whose tap resumes the app on the
+         * session screen. Plain NotificationManager.post, so POST_NOTIFICATIONS
+         * denial (API 33+) silently skips via [canPostNotifications] and no
+         * foreground-service permission/type is ever needed. Never throws.
+         */
+        fun postSessionNotification(ctx: Context?) {
+            try {
+                val c = ctx ?: appCtx ?: return
+                if (!canPostNotifications(c)) return
+                ensureSessionChannel(c)
+                val now = System.currentTimeMillis()
+                // Elapsed base: the persisted blocking-start survives process
+                // death, so a re-armed note keeps counting the same session.
+                if (sessionStartMs <= 0L) {
+                    sessionStartMs = try {
+                        c.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                            .getLong(STATE_KEY_AT, 0L).takeIf { it > 0L } ?: now
+                    } catch (_: Exception) {
+                        now
+                    }
+                }
+                buildAndNotifySession(c, now)
+                sessionNoteOn = true
+                startSessionTicker()
+            } catch (e: Exception) {
+                Log.w(TAG, "postSessionNotification failed", e)
+            }
+        }
+
+        /** Silent elapsed refresh of the session note. Never throws. */
+        fun refreshSessionNotification() {
+            try {
+                if (!sessionNoteOn) return
+                val c = instance ?: appCtx ?: return
+                if (!canPostNotifications(c)) return
+                buildAndNotifySession(c, System.currentTimeMillis())
+            } catch (e: Exception) {
+                Log.w(TAG, "refreshSessionNotification failed", e)
+            }
+        }
+
+        /** Drop the session note + ticker. Idempotent. Never throws. */
+        fun cancelSessionNotification() {
+            try {
+                try {
+                    sessionTick?.let { handler.removeCallbacks(it) }
+                } catch (_: Exception) {
+                }
+                sessionTick = null
+                sessionNoteOn = false
+                sessionStartMs = 0L
+                val c = instance ?: appCtx ?: return
+                try {
+                    c.getSystemService(NotificationManager::class.java)?.cancel(SESSION_NOTIFICATION_ID)
+                } catch (_: Exception) {
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "cancelSessionNotification failed", e)
+            }
+        }
+
+        /** Session channel: LOW (silent, persistent) + upgrade sweep. Never throws. */
+        private fun ensureSessionChannel(ctx: Context) {
+            try {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+                val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+                try {
+                    val existing = nm.getNotificationChannel(SESSION_CHANNEL_ID)
+                    if (existing != null && existing.importance != NotificationManager.IMPORTANCE_NONE &&
+                        existing.importance != NotificationManager.IMPORTANCE_LOW
+                    ) {
+                        try { nm.deleteNotificationChannel(SESSION_CHANNEL_ID) } catch (_: Exception) { }
+                    }
+                } catch (_: Exception) { }
+                val channel = NotificationChannel(
+                    SESSION_CHANNEL_ID,
+                    SESSION_CHANNEL_NAME,
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    try { description = "StayT focus session status. Tap to return to your session." } catch (_: Exception) { }
+                    try { enableVibration(false) } catch (_: Exception) { }
+                    try { setSound(null, null) } catch (_: Exception) { }
+                    try { setShowBadge(false) } catch (_: Exception) { }
+                    try { lockscreenVisibility = Notification.VISIBILITY_PUBLIC } catch (_: Exception) { }
+                }
+                try { nm.createNotificationChannel(channel) } catch (_: Exception) { }
+            } catch (e: Exception) {
+                Log.w(TAG, "session channel setup failed", e)
+            }
+        }
+
+        @Suppress("DEPRECATION")
+        private fun buildAndNotifySession(ctx: Context, now: Long) {
+            val task = try { blockingTaskName?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+                ?: "Focus"
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(ctx, SESSION_CHANNEL_ID)
+            } else {
+                Notification.Builder(ctx)
+            }
+            // Small icon MUST be a white alpha silhouette (Play-compliant) —
+            // the tile bolt vector is exactly that, reused, no new asset.
+            // Rich card (icon tile + HRS/MINS/SECS boxes): custom content on
+            // N+ via DecoratedCustomViewStyle; title/text below double as the
+            // fallback, lockscreen line, and accessibility text. Lockscreen is
+            // covered by VISIBILITY_PUBLIC here + on the channel.
+            val (eh, em, es) = sessionElapsedParts(now)
+            val pad2 = { v: Long -> v.toString().padStart(2, '0') }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    val card = android.widget.RemoteViews(ctx.packageName, R.layout.session_note)
+                    try { card.setTextViewText(R.id.session_title, "StayT · $task") } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_sub, sessionElapsedText(now)) } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_hrs, pad2(eh)) } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_mins, pad2(em)) } catch (_: Exception) { }
+                    try { card.setTextViewText(R.id.session_secs, pad2(es)) } catch (_: Exception) { }
+                    builder.setStyle(Notification.DecoratedCustomViewStyle())
+                    builder.setCustomContentView(card)
+                    builder.setCustomBigContentView(card)
+                } catch (e: Exception) {
+                    Log.w(TAG, "session card failed, standard template", e)
+                }
+            }
+            builder
+                .setContentTitle("StayT · $task")
+                .setContentText(sessionElapsedText(now))
+                .setSmallIcon(R.drawable.ic_stayt_tile)
+                .setColor(SESSION_ACCENT)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setOnlyAlertOnce(true)
+                .setWhen(sessionStartMs)
+                .setShowWhen(false)
+                .setCategory(Notification.CATEGORY_STATUS)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                // Explicit setPriority call (not Kotlin property syntax):
+                // the synthetic `priority` accessor does not resolve
+                // against this deprecated Java setter and breaks the build.
+                try { builder.setPriority(Notification.PRIORITY_LOW) } catch (_: Exception) { }
+            }
+            try {
+                val launch = try {
+                    ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+                } catch (_: Exception) {
+                    null
+                }
+                if (launch != null) {
+                    builder.setContentIntent(
+                        PendingIntent.getActivity(
+                            ctx, SESSION_TAP_REQ, launch,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "session tap intent failed", e)
+            }
+            try {
+                ctx.getSystemService(NotificationManager::class.java)
+                    ?.notify(SESSION_NOTIFICATION_ID, builder.build())
+            } catch (e: Exception) {
+                Log.w(TAG, "session notify failed", e)
+            }
+        }
+
+        private fun sessionElapsedParts(now: Long): Triple<Long, Long, Long> {
+            return try {
+                val base = if (sessionStartMs > 0L) sessionStartMs else now
+                val totalSec = maxOf(0L, (now - base) / 1000L)
+                Triple(totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
+            } catch (_: Exception) {
+                Triple(0L, 0L, 0L)
+            }
+        }
+
+        private fun sessionElapsedText(now: Long): String {
+            return try {
+                val (h, m, s) = sessionElapsedParts(now)
+                val fmt = if (h > 0) "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+                    else "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+                "$fmt in focus · tap to return"
+            } catch (_: Exception) {
+                "In focus · tap to return"
+            }
+        }
+
+        private fun startSessionTicker() {
+            try {
+                try {
+                    sessionTick?.let { handler.removeCallbacks(it) }
+                } catch (_: Exception) {
+                }
+                val r = object : Runnable {
+                    override fun run() {
+                        try {
+                            // Stopped meanwhile: do not reschedule — the
+                            // cancel path owns teardown. Gated on the note
+                            // flag (not isBlocking) so breaks don't kill it.
+                            if (!sessionNoteOn) return
+                            refreshSessionNotification()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "session tick failed", e)
+                        } finally {
+                            try {
+                                if (sessionNoteOn) handler.postDelayed(this, SESSION_TICK_MS)
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }
+                }
+                sessionTick = r
+                handler.postDelayed(r, SESSION_TICK_MS)
+            } catch (e: Exception) {
+                Log.w(TAG, "startSessionTicker failed", e)
             }
         }
 
@@ -870,14 +1133,39 @@ class StayTAccessibilityService : AccessibilityService() {
         instance = this
         Log.d(TAG, "Accessibility service connected")
 
-        // Channel for the Play-safe tap-to-return blocked notification.
+        // Heads-up tap-to-return channel (ADR-0006): IMPORTANCE_HIGH + sound/
+        // vibration peeks full-bleed top. Channels are immutable after first
+        // create — an old install stuck below HIGH would silently lose
+        // heads-up, so delete + recreate when below HIGH. IMPORTANCE_NONE
+        // (user-disabled) is respected: bounce + emit remain enforcement.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                BLOCK_CHANNEL_ID,
-                BLOCK_CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+            try {
+                val nm = getSystemService(NotificationManager::class.java)
+                if (nm != null) {
+                    try {
+                        val existing = nm.getNotificationChannel(BLOCK_CHANNEL_ID)
+                        if (existing != null && existing.importance != NotificationManager.IMPORTANCE_NONE &&
+                            existing.importance < NotificationManager.IMPORTANCE_HIGH
+                        ) {
+                            try { nm.deleteNotificationChannel(BLOCK_CHANNEL_ID) } catch (_: Exception) { }
+                        }
+                    } catch (_: Exception) { }
+                    val channel = NotificationChannel(
+                        BLOCK_CHANNEL_ID,
+                        BLOCK_CHANNEL_NAME,
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        try { description = "StayT blocked-app return prompt. Tap to open your task." } catch (_: Exception) { }
+                        try { enableVibration(true) } catch (_: Exception) { }
+                        try { enableLights(true) } catch (_: Exception) { }
+                        try { setShowBadge(true) } catch (_: Exception) { }
+                        try { lockscreenVisibility = Notification.VISIBILITY_PUBLIC } catch (_: Exception) { }
+                    }
+                    try { nm.createNotificationChannel(channel) } catch (_: Exception) { }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "block channel setup failed", e)
+            }
         }
 
         // N-1: a process death between post and cancel leaves a stale tray
@@ -893,6 +1181,13 @@ class StayTAccessibilityService : AccessibilityService() {
             cancelOrphanChannelNotes()
         } catch (e: Exception) {
             Log.w(TAG, "orphan channel sweep failed", e)
+        }
+        // Companion context for session-note post/cancel when the service
+        // instance is not in hand (tile/schedule call sites).
+        try {
+            appCtx = this.applicationContext
+        } catch (e: Exception) {
+            Log.w(TAG, "appCtx stash failed", e)
         }
 
         // Native-M1: statics reset on process death — re-arm the persisted
@@ -919,6 +1214,16 @@ class StayTAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "re-armed blocking for ${pkgs.size} pkgs from durable intent")
             } else {
                 Log.d(TAG, "no durable blocking intent; leaving blocking off")
+            }
+            // Session-note re-arm (ADR-0007): a process death between
+            // setBlocking(true) and (false) leaves a stale ongoing note with
+            // NOBODY owning its ticker (statics are lost on death). Re-post
+            // when enforcement is re-armed (elapsed continues from the
+            // persisted start); otherwise sweep the orphan.
+            try {
+                if (isBlocking) postSessionNotification(this) else cancelSessionNotification()
+            } catch (e: Exception) {
+                Log.w(TAG, "session note re-arm failed", e)
             }
             // Durable allowlist: re-armed alongside the blocklist so the mode
             // survives process death exactly like blockedPackages does.
@@ -1104,16 +1409,26 @@ class StayTAccessibilityService : AccessibilityService() {
         // app-list scan on the JS side).
         AppBlockerModule.emitBlockedAttempt(openedPackage, now, appLabel)
 
-        // Play-safe v1: plain high-priority notification whose tap deep-links
-        // back into StayT (label embedded — JS resolves taskId like App.tsx does).
-        // No SYSTEM_ALERT_WINDOW, no full-screen intent.
+        // Best-effort direct foreground (ADR-0006): same-task/recents edge
+        // only. BAL denies background startActivity on Android 10+ (hardened
+        // 14/15), so denial is the expected path — the notification below
+        // always fires regardless. Never throws, no new permission.
+        try {
+            foregroundBlockedInterstitial(openedPackage, appLabel)
+        } catch (t: Throwable) {
+            Log.w(TAG, "best-effort foreground failed for $openedPackage; notification remains", t)
+        }
+
+        // Play-safe heads-up notification whose tap deep-links back into
+        // StayT (label embedded — JS resolves taskId like App.tsx does).
+        // No SYSTEM_ALERT_WINDOW, no full-screen intent (ADR-0006).
         postBlockedNotification(openedPackage, appLabel)
 
-        // No-overlay (ADR-0005): do NOT auto-foreground StayT here — on
-        // Samsung/OEMs the background start is BAL-denied (or lands late).
-        // The JS interstitial is reached via the onBlockedAttempt emit (live
-        // runtime) or the notification tap above (dead runtime / BAL-denied).
-        // No native window is ever added; no new permissions.
+        // No-overlay (ADR-0005) + heads-up tap path (ADR-0006): the JS
+        // interstitial is reached via the onBlockedAttempt emit (live
+        // runtime), the best-effort foreground above (same-task edge), or
+        // the notification tap (dead runtime / BAL-denied — the reliable
+        // path). No native window is ever added; no new permissions.
     }
 
     private fun postBlockedNotification(openedPackage: String, appLabel: String) {
@@ -1121,10 +1436,14 @@ class StayTAccessibilityService : AccessibilityService() {
             // Native-M3: one seam — silently skip when POST_NOTIFICATIONS
             // (API 33+) is not granted; the HOME bounce + emit remain.
             if (!canPostNotifications(this)) return
+            // Task-aware action text: name the task when known so the tap
+            // target is obvious at a glance in the heads-up peek.
+            val task = try { blockingTaskName?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+            val actionText = if (task != null) "Tap to return to $task" else "Tap to return to your task"
             val deepLink = blockedDeepLink(openedPackage, appLabel)
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             val pending = PendingIntent.getActivity(
                 this,
@@ -1132,17 +1451,30 @@ class StayTAccessibilityService : AccessibilityService() {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nowNote = System.currentTimeMillis()
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, BLOCK_CHANNEL_ID)
             } else {
                 @Suppress("DEPRECATION")
                 Notification.Builder(this)
             }
-                .setContentTitle("Blocked $appLabel")
-                .setContentText("Tap to return to your task")
+            @Suppress("DEPRECATION")
+            val notification = builder
+                .setContentTitle("StayT blocked $appLabel")
+                .setContentText(actionText)
+                .setTicker("StayT blocked $appLabel")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentIntent(pending)
                 .setAutoCancel(true)
+                .setOngoing(false)
+                .setOnlyAlertOnce(false)
+                .setWhen(nowNote)
+                .setShowWhen(false)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .addAction(0, "Return to task", pending)
                 .build()
             getSystemService(NotificationManager::class.java)
                 ?.notify(openedPackage.hashCode(), notification)
@@ -1198,13 +1530,14 @@ class StayTAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * No-overlay (ADR-0005): retained but currently uncalled. Best-effort
+     * No-overlay (ADR-0005) + heads-up tap path (ADR-0006): best-effort
      * foreground of MainActivity (singleTask) with the blocked deep-link URI
-     * so a backgrounded StayT lands straight on the interstitial. Resolves
-     * via the existing exp+stayt-app scheme intent-filter on MainActivity —
-     * no new permissions, no overlay, no full-screen intent. Must never
-     * throw: BAL denials (Android 10+, OEM-specific) fall back to the tap
-     * notification. Kept as the documented deep-link seam.
+     * so a backgrounded StayT lands straight on the interstitial where the
+     * OS still allows it (same-task/recents edge). Resolves via the existing
+     * exp+stayt-app scheme intent-filter on MainActivity — no new
+     * permissions, no overlay, no full-screen intent. Must never throw: BAL
+     * denials (Android 10+, hardened 14/15) are the expected path and fall
+     * back to the tap notification, which always fires alongside this call.
      *
      * Exact URI fired:
      * exp+stayt-app://blocked?packageName=<encoded>&label=<encoded>
@@ -1214,7 +1547,7 @@ class StayTAccessibilityService : AccessibilityService() {
             val deepLink = blockedDeepLink(openedPackage, appLabel)
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             startActivity(intent)
             Log.d(TAG, "Requested foreground interstitial for $openedPackage")
@@ -1237,7 +1570,7 @@ class StayTAccessibilityService : AccessibilityService() {
             val deepLink = Uri.parse(TASKS_DEEP_LINK)
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             startActivity(intent)
             Log.d(TAG, "Requested foreground task picker")
@@ -1347,6 +1680,12 @@ class StayTAccessibilityService : AccessibilityService() {
             cancelAllBlockNotes()
         } catch (e: Exception) {
             Log.w(TAG, "notification cancel on destroy failed", e)
+        }
+        // Ongoing session note must die with enforcement — never orphan it.
+        try {
+            cancelSessionNotification()
+        } catch (e: Exception) {
+            Log.w(TAG, "session note cancel on destroy failed", e)
         }
         instance = null
         isBlocking = false

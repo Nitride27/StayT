@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Session note card (ADR-0007): icon tile + title/task + HRS/MINS/SECS
+     boxes, Travelstart-promo style. RemoteViews allows framework views only.
+     Text colors are inherited (never hardcoded) so the card adapts to the
+     light/dark notification shade AND the lockscreen; fixed colors live
+     only inside the ectoGreen time boxes (dark-on-green) and the midnight
+     icon tile (white owl on midnight) — both always contrasty. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp">
+
+    <FrameLayout
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/session_tile_bg">
+
+        <ImageView
+            android:id="@+id/session_icon"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:src="@drawable/stayt_owl_blocked_white"
+            android:contentDescription="StayT owl" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/session_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="StayT · Focus"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/session_sub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="In focus · tap to return"
+            android:textSize="12sp"
+            android:singleLine="true"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/session_time_box"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp">
+
+            <TextView
+                android:id="@+id/session_hrs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#000437" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="HRS"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:textColor="#000437" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/session_time_box"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp">
+
+            <TextView
+                android:id="@+id/session_mins"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#000437" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="MINS"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:textColor="#000437" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/session_time_box"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp">
+
+            <TextView
+                android:id="@+id/session_secs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#000437" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SECS"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:textColor="#000437" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

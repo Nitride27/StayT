@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
+import { useOnForeground } from '../hooks/useOnForeground';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
 import { Task, blockedPackagesOf } from '../types';
@@ -97,6 +98,8 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
   const [showPaywall, setShowPaywall] = useState(false);
   // Guards the gated-tap resume below against double-fire on re-focus.
   const autoStarting = React.useRef(false);
+  // Orders overlapping store reloads (focus + foreground can fire together).
+  const loadVersion = React.useRef(0);
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -106,11 +109,58 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
   const buttonOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
 
+  // Snap entry values to their end state: backgrounding mid-entry (or a
+  // blur under a pushed screen) must never paint a frozen half-state on
+  // return. Mount effect below owns the forward run; this owns blur + return.
+  const snapEntries = useCallback(() => {
+    headerOpacity.value = 1;
+    headerTranslateY.value = 0;
+    listOpacity.value = 1;
+    listTranslateY.value = 0;
+    buttonOpacity.value = 1;
+  }, [headerOpacity, headerTranslateY, listOpacity, listTranslateY, buttonOpacity]);
+
+  const loadData = useCallback(async () => {
+    const v = ++loadVersion.current;
+    try {
+      const allTasks = await store.getTasks();
+      if (v !== loadVersion.current) return;
+      setTasks(allTasks);
+      const currentStreak = await store.getStreak();
+      if (v !== loadVersion.current) return;
+      setStreak(currentStreak);
+      const prefs = await store.getPreferences();
+      if (v !== loadVersion.current) return;
+      // M6: presets never counted toward the free task limit.
+      const userTasks = allTasks.filter(t => !t.isPreset).length;
+      setShowPaywall(prefs.isSubscribed !== true && userTasks >= FREE_TASK_LIMIT);
+    } catch {
+      if (v === loadVersion.current) setTasks([]);
+    }
+  }, []);
+
   // Reload on focus: goBack()/navigate() would otherwise show stale lists.
+  // Version-guarded inside loadData so overlapping focus + foreground
+  // refreshes resolve in order and a stale winner never paints.
   useFocusEffect(
     useCallback(() => {
       loadData().catch(() => {});
-    }, []),
+    }, [loadData]),
+  );
+
+  // Foreground return (home/recents — focus never changes there): refresh
+  // the list and snap entries so the return paint is never stale or frozen.
+  // Blur tail shares the snap so a pushed-over screen can't leave mid-state.
+  useOnForeground(() => {
+    snapEntries();
+    loadData().catch(() => {});
+  });
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        snapEntries();
+      };
+    }, [snapEntries]),
   );
 
   // Resume a permission-gated tap: handleSelectTask sends the user to
@@ -149,21 +199,6 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
 
     buttonOpacity.value = withDelay(400, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
   }, []);
-
-  const loadData = async () => {
-    try {
-      const allTasks = await store.getTasks();
-      setTasks(allTasks);
-      const currentStreak = await store.getStreak();
-      setStreak(currentStreak);
-      const prefs = await store.getPreferences();
-      // M6: presets never counted toward the free task limit.
-      const userTasks = allTasks.filter(t => !t.isPreset).length;
-      setShowPaywall(prefs.isSubscribed !== true && userTasks >= FREE_TASK_LIMIT);
-    } catch {
-      setTasks([]);
-    }
-  };
 
   const startSessionForTask = useCallback(async (task: Task) => {
     // Supersede any zombie active session (e.g. process kill) before starting new.

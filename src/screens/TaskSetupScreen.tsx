@@ -307,7 +307,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   // Declutter: progressive disclosure — advanced sections collapsed by default.
   // Visibility only; save/store/navigation/push logic below is untouched.
   const [showManualPkg, setShowManualPkg] = useState(false);
-  const [showPresets, setShowPresets] = useState(false);
   const [showBudgets, setShowBudgets] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showDomains, setShowDomains] = useState(false);
@@ -1031,7 +1030,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     ? 'Off'
     : `${enabledFeedCount} app${enabledFeedCount === 1 ? '' : 's'}`;
   const manualSummary = packageName.trim() ? packageName.trim() : 'Off';
-  const presetsSummary = presetNote ?? 'Not applied';
 
   // Single budget-row renderer for this task's rows. Enforcement reads the
   // enforceable set via syncBudgetsToNative.
@@ -1133,8 +1131,9 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             accessibilityLabel="Choose apps to block"
           >
             <Text
-              style={[typography.body, { color: selectedApps.length > 0 ? lockedInk : muted, flex: 1 }]}
+              style={[typography.body, { color: selectedApps.length > 0 ? lockedInk : muted, flex: 1, flexShrink: 1 }]}
               numberOfLines={1}
+              ellipsizeMode="tail"
             >
               {selectedApps.length > 0
                 ? selectedApps.map(a => a.appName).join(', ')
@@ -1152,7 +1151,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                   accessibilityRole="button"
                   accessibilityLabel={`Remove ${a.appName}`}
                 >
-                  <Text style={[typography.caption, { color: lockedInk }]} numberOfLines={1}>
+                  <Text style={[typography.caption, { color: lockedInk, flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">
                     {a.appName}
                   </Text>
                   <Text style={[typography.caption, { color: muted }]}>
@@ -1271,83 +1270,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               />
             </>
           )}
-          <SectionRow
-            open={showPresets}
-            title="QUICK PRESETS"
-            summary={presetsSummary}
-            ink={lockedInk}
-            muted={muted}
-            onPress={() => { tap(); setShowPresets(v => !v); }}
-            label="Schedule shortcuts"
-          />
-          {showPresets && (
-          <>
-          <Text style={[typography.caption, { color: muted, marginBottom: spacing.sm }]}>
-            Shortcuts fill in the schedule below. Nothing is blocked until you save with the schedule on.
-          </Text>
-          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => applySchedulePreset('bedtime')}
-              disabled={presetBusy}
-              style={[styles.presetBtn, { borderColor: border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Apply bedtime preset 11 PM to 7 AM"
-            >
-              <View style={styles.presetBtnText}>
-                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
-                  Bedtime 23:00–07:00
-                </Text>
-                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                  Nightly
-                </Text>
-              </View>
-              <ChevronRightIcon size={20} color={muted} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => applySchedulePreset('work')}
-              disabled={presetBusy}
-              style={[styles.presetBtn, { borderColor: border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Apply work hours preset 9 AM to 5 PM weekdays"
-            >
-              <View style={styles.presetBtnText}>
-                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
-                  Work hours 09:00–17:00 weekdays
-                </Text>
-                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                  Weekdays
-                </Text>
-              </View>
-              <ChevronRightIcon size={20} color={muted} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={applySprintPreset}
-              disabled={presetBusy}
-              style={[styles.presetBtn, { borderColor: border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Start a one-shot 25 minute block from now"
-            >
-              <View style={styles.presetBtnText}>
-                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
-                  Focus sprint · 25 min
-                </Text>
-                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                  Today only
-                </Text>
-              </View>
-              <ChevronRightIcon size={20} color={muted} />
-            </TouchableOpacity>
-            {presetNote && (
-              <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
-                {presetNote}
-              </Text>
-            )}
-          </View>
-          </>
-          )}
           <Text style={[typography.displaySmall, { color: muted, marginTop: spacing.xl, textAlign: 'center' }]}>
             PRO FEATURES
           </Text>
@@ -1406,12 +1328,14 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                   accessibilityRole="button"
                   accessibilityLabel="Choose allowed apps"
                 >
-                  <Text style={[typography.bodyMedium, { color: ink }]}>
-                    {allowlistPkgs.length > 0 ? `${allowlistPkgs.length} app${allowlistPkgs.length === 1 ? '' : 's'} allowed` : 'Choose allowed apps…'}
-                  </Text>
-                  <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={2}>
-                    {allowlistPkgs.length > 0 ? allowlistPkgs.map(appLabelFor).join(', ') : 'No apps chosen yet'}
-                  </Text>
+                  <View style={styles.presetBtnText}>
+                    <Text style={[typography.bodyMedium, { color: ink }]} numberOfLines={1} ellipsizeMode="tail">
+                      {allowlistPkgs.length > 0 ? `${allowlistPkgs.length} app${allowlistPkgs.length === 1 ? '' : 's'} allowed` : 'Choose allowed apps…'}
+                    </Text>
+                    <Text style={[typography.caption, { color: muted, marginTop: 2 }]} numberOfLines={1} ellipsizeMode="tail">
+                      {allowlistPkgs.length > 0 ? allowlistPkgs.map(appLabelFor).join(', ') : 'No apps chosen yet'}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
                 {allowlistMode && allowlistPkgs.length === 0 && (
                   <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
@@ -1487,8 +1411,70 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
               </View>
             </TouchableOpacity>
             {scheduleEnabled && (
-              <>
-                <View style={styles.dayRow}>
+            <>
+            <Text style={[typography.label, { color: muted, marginTop: spacing.md, marginBottom: spacing.sm }]}>
+              PRESETS
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => applySchedulePreset('work')}
+              disabled={presetBusy}
+              style={[styles.presetBtn, { borderColor: border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Apply work hours preset 9 AM to 5 PM weekdays"
+            >
+              <View style={styles.presetBtnText}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
+                  Work hours
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Weekdays · 09:00–17:00
+                </Text>
+              </View>
+              <ChevronRightIcon size={20} color={muted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => applySchedulePreset('bedtime')}
+              disabled={presetBusy}
+              style={[styles.presetBtn, { borderColor: border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Apply bedtime preset 11 PM to 7 AM"
+            >
+              <View style={styles.presetBtnText}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
+                  Bedtime
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Daily · 23:00–07:00
+                </Text>
+              </View>
+              <ChevronRightIcon size={20} color={muted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={applySprintPreset}
+              disabled={presetBusy}
+              style={[styles.presetBtn, { borderColor: border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Start a one-shot 25 minute block from now"
+            >
+              <View style={styles.presetBtnText}>
+                <Text style={[typography.bodyMedium, { color: lockedInk }]}>
+                  Focus sprint
+                </Text>
+                <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
+                  Today · 25 min from now
+                </Text>
+              </View>
+              <ChevronRightIcon size={20} color={muted} />
+            </TouchableOpacity>
+            {presetNote && (
+              <Text style={[typography.caption, { color: muted, marginTop: spacing.sm, marginBottom: spacing.md }]}>
+                {presetNote}
+              </Text>
+            )}
+            <View style={styles.dayRow}>
                   {DAY_ORDER.map((day, i) => {
                     const on = scheduleDays.includes(day);
                     return (
@@ -2130,6 +2116,7 @@ const styles = StyleSheet.create({
   },
   presetBtnText: {
     flex: 1,
+    flexShrink: 1,
   },
   budgetRow: {
     marginTop: spacing.md,
@@ -2178,6 +2165,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     minHeight: 44,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   collisionBadge: {
     borderWidth: 1,
