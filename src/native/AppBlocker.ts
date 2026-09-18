@@ -42,6 +42,7 @@ export interface BlockedDeepLinkCompat {
 
 class AppBlockerBridge {
   private eventEmitter: NativeEventEmitter | null = null;
+  private lastAllowlistDegraded = false;
 
   constructor() {
     if (Platform.OS === 'android' && AppBlocker) {
@@ -77,9 +78,14 @@ class AppBlockerBridge {
       return false;
     }
     const allowlist = opts?.allowlist ?? null;
+    this.lastAllowlistDegraded = false;
     try {
       return await AppBlocker.startBlocking(blockedPackages, taskName ?? null, allowlist);
     } catch {
+      // An allowlist was requested but the shell rejected the 3-arg call:
+      // pre-allowlist native — the retries below engage blocklist-only.
+      // Record it so the UI can say so instead of silently under-blocking.
+      if (allowlist !== null) this.lastAllowlistDegraded = true;
       // Stale native shell (pre-allowlist bridge): the extra arg rejects even
       // with the service on. Retry the taskName arity, then the legacy arity,
       // so blocking still engages instead of showing the re-enable banner.
@@ -93,6 +99,15 @@ class AppBlockerBridge {
         }
       }
     }
+  }
+
+  /**
+   * True when the last startBlocking call had to drop a requested allowlist
+   * (stale pre-allowlist native shell — blocklist-only engaged instead).
+   * Lets the session screen warn instead of silently under-blocking.
+   */
+  wasAllowlistDegraded(): boolean {
+    return this.lastAllowlistDegraded;
   }
 
   async stopBlocking(): Promise<boolean> {

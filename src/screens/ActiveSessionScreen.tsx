@@ -137,6 +137,10 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   // doing nothing is the worst outcome, so the banner below says so loudly.
   const [blockingOk, setBlockingOk] = useState(true);
   const blockingOkRef = React.useRef(true);
+  // True when the last push requested allowlist mode but the installed
+  // native shell rejected it (stale dev build): blocklist-only is engaged,
+  // so the banner below says so instead of silently under-blocking.
+  const [allowlistDegraded, setAllowlistDegraded] = useState(false);
   // Dumfound forces the strict session UI (same lock as Task.strict).
   const [dumfound, setDumfound] = useState(false);
   const effectiveStrict = isEffectiveStrict(task?.strict, dumfound);
@@ -288,6 +292,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       if (!live) return;
       const ok = await AppBlocker.startBlocking(blockedPackagesOf(liveTask), liveTask.name, { allowlist }).catch(() => false);
       mark(ok !== false);
+      if (live) setAllowlistDegraded(allowlist !== null && AppBlocker.wasAllowlistDegraded());
     })();
     // P2-1: push today's totals + last-task packages to the widget mirror.
     syncWidgetNow(liveTask).catch(() => {});
@@ -309,6 +314,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         if (!live) return;
         const ok = await AppBlocker.startBlocking(blockedPackagesOf(liveTask), liveTask.name, { allowlist }).catch(() => false);
         mark(ok !== false);
+        if (live) setAllowlistDegraded(allowlist !== null && AppBlocker.wasAllowlistDegraded());
       }
     }, 5000);
     return () => {
@@ -486,6 +492,16 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
               OPEN OEM SETTINGS
             </Text>
           </TouchableOpacity>
+        </View>
+      )}
+      {allowlistDegraded && blockingOk && (
+        <View style={[styles.blockWarn, { borderColor: ink }]} accessibilityRole="alert">
+          <Text style={[typography.bodyStrong, { color: ink, textAlign: 'center' }]}>
+            Allowed-apps mode needs an app update
+          </Text>
+          <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: 4 }]}>
+            This build can't enforce it — only the blocklist is active. Install the latest dev build for full dumbphone mode.
+          </Text>
         </View>
       )}
       <ScrollView
