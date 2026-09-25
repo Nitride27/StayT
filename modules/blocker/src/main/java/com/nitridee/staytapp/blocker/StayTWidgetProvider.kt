@@ -118,7 +118,7 @@ class StayTWidgetProvider : AppWidgetProvider() {
                 // Active task in accent; a rough day is quiet, not celebratory.
                 val (line, color) = when {
                     focusing && snap.activeTaskName.isNotBlank() -> "Now: ${snap.activeTaskName}" to green
-                    mood == "wilted" -> "Rough day. Rebound tomorrow." to pal.muted
+                    mood == "wilted" -> "Rough day. Bounce back tomorrow." to pal.muted
                     else -> null to pal.muted
                 }
                 if (line != null) {
