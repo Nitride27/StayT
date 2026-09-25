@@ -355,7 +355,7 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
               },
             ]}
           >
-            StayT needs Accessibility permission to see which app is open, so it can block distractions while you work.
+            StayT needs Accessibility permission to see which app is open, read the address of websites you block and spot feeds you shield, so it can block distractions while you work. Nothing it sees leaves your phone.
           </Text>
         </View>
 
