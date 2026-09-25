@@ -20,7 +20,9 @@ export const AD_UNITS = __DEV__
     };
 
 // Hashed ids the SDK logs for our own phones: real units serve test ads there.
-const TEST_DEVICES: string[] = [];
+const TEST_DEVICES: string[] = [
+  "D072954DBE49A27B4504CE9E78A13612", // Samsung M52 (dev phone)
+];
 
 let ready: Promise<boolean> | null = null;
 
