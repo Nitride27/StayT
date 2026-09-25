@@ -1,8 +1,9 @@
 // Quiet in-session native ad: one card in the session's own card language
 // (2px ink border, paper card, calm type). Free tier only; renders nothing
 // until an ad is actually loaded, so no empty frame ever jumps in.
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, View, Text, StyleSheet } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import {
   NativeAd,
   NativeAdView,
@@ -15,27 +16,46 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, colors, darkColors } from '../theme/tokens';
 import { AD_UNITS, showAds } from './ads';
 
+// AdMob pays per impression, not per minute on screen: a fresh ad every
+// 60s while the card is actually visible (focused screen, app in front) is
+// the policy-safe way to earn more from long sessions.
+const REFRESH_MS = 60 * 1000;
+
 export default function SessionAd() {
   const { isDark } = useTheme();
+  const focused = useIsFocused();
   const [ad, setAd] = useState<NativeAd | null>(null);
+  const adRef = useRef<NativeAd | null>(null);
+  const [round, setRound] = useState(0);
+
+  useEffect(() => {
+    if (!focused) return;
+    const t = setInterval(() => {
+      if (AppState.currentState === 'active') setRound(n => n + 1);
+    }, REFRESH_MS);
+    return () => clearInterval(t);
+  }, [focused]);
 
   useEffect(() => {
     let live = true;
-    let loaded: NativeAd | null = null;
     (async () => {
       if (!(await showAds())) return;
-      loaded = await NativeAd.createForAdRequest(AD_UNITS.native, {
+      const next = await NativeAd.createForAdRequest(AD_UNITS.native, {
         aspectRatio: NativeMediaAspectRatio.SQUARE,
         startVideoMuted: true,
       }).catch(() => null);
-      if (live) setAd(loaded);
-      else loaded?.destroy();
+      if (!live || !next) { next?.destroy(); return; }
+      // No fill keeps the current ad; a new one swaps in, then the old one
+      // is released once the view has moved off it.
+      const old = adRef.current;
+      adRef.current = next;
+      setAd(next);
+      if (old) setTimeout(() => old.destroy(), 1000);
     })();
-    return () => {
-      live = false;
-      loaded?.destroy();
-    };
-  }, []);
+    return () => { live = false; };
+  }, [round]);
+
+  useEffect(() => () => adRef.current?.destroy(), []);
 
   if (!ad) return null;
 
@@ -46,7 +66,7 @@ export default function SessionAd() {
 
   return (
     // Border lives on a wrapper: NativeAdView drops border styles.
-    <View style={[styles.frame, { backgroundColor: cardBg, borderColor: border }]}>
+    <View key={ad.responseId} style={[styles.frame, { backgroundColor: cardBg, borderColor: border }]}>
     <NativeAdView nativeAd={ad} style={styles.card}>
       <NativeMediaView style={styles.media} resizeMode="cover" />
       <View style={styles.info}>

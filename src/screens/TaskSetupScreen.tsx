@@ -544,9 +544,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     ]);
   };
 
-  // ── Wave 2C1 A: schedule presets (FREE — bypass the Pro gate) ──
-  const applySchedulePreset = (kind: 'bedtime' | 'work') => {
+  // ── Wave 2C1 A: schedule presets (no-pro: an ad every time) ──
+  const applySchedulePreset = async (kind: 'bedtime' | 'work') => {
     if (presetBusy) return;
+    setPresetBusy(true);
+    const ok = await adGate();
+    setPresetBusy(false);
+    if (!ok) return;
     tap();
     setOnceWindow(null);
     if (kind === 'bedtime') {
@@ -568,9 +572,10 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   // onceStart/onceEnd, so it fires once and never repeats (it used to save
   // as a weekly schedule on today's weekday and block again next week).
   // Crossing midnight is fine: the window is absolute time.
-  const applySprintPreset = () => {
+  const applySprintPreset = async () => {
     if (presetBusy) return;
     setPresetBusy(true);
+    if (!(await adGate())) { setPresetBusy(false); return; }
     tap();
     const start = Date.now();
     const end = start + 25 * 60 * 1000;
@@ -725,7 +730,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       return;
     }
     setDomainError(null);
-    if (!(await adGate())) return;
+    // One website is free; every extra one plays an ad.
+    if (domains.length >= 1 && !(await adGate())) return;
     try {
       await store.saveBlockedDomain({ id: `domain-${Date.now()}`, domain: d, enabled: true });
       setDomains(await store.getBlockedDomains());
@@ -740,7 +746,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     if (!isPro) { showDomainsProGate(); return; }
     const cur = domains.find(x => x.id === id);
     if (!cur) return;
-    if (!cur.enabled && !(await adGate())) return;
+    // Re-enabling is free only while no other site is on (the free one).
+    if (cur.enabled === false && domains.some(x => x.enabled !== false && x.id !== id) && !(await adGate())) return;
     tap();
     try {
       await store.saveBlockedDomain({ ...cur, enabled: !cur.enabled });
