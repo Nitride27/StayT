@@ -314,27 +314,21 @@ export const store = {
     } catch {
       // Fall through to the live computation.
     }
-    const todayAttempts = await this.getBlockedAttemptsToday();
-    if (todayAttempts.length === 0) return 0;
-    
-    let streak = 0;
-    let currentDate = new Date();
+    // A streak stays alive until today ends: with nothing logged yet today
+    // (e.g. just past midnight) it counts back from yesterday instead of 0.
     const allAttempts = await this.getBlockedAttempts();
-    
-    let maxIterations = 365;
-    while (maxIterations-- > 0) {
-      const dayStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime();
-      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-      const hasBlockedAttempt = allAttempts.some(a => a.timestamp >= dayStart && a.timestamp < dayEnd);
-      
-      if (hasBlockedAttempt) {
-        streak++;
-        currentDate.setDate(currentDate.getDate() - 1);
-      } else {
-        break;
-      }
+    const hasActivity = (day: Date) => {
+      const start = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+      const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime();
+      return allAttempts.some(a => a.timestamp >= start && a.timestamp < end);
+    };
+    const day = new Date();
+    if (!hasActivity(day)) day.setDate(day.getDate() - 1);
+    let streak = 0;
+    while (streak < 365 && hasActivity(day)) {
+      streak++;
+      day.setDate(day.getDate() - 1);
     }
-    
     return streak;
   },
 
