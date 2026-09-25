@@ -1243,6 +1243,83 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             </TouchableWithoutFeedback>
           </Modal>
 
+          {/* One website is free, so it sits with the free controls. */}
+          <SectionRow
+            open={showDomains}
+            title="WEBSITES"
+            summary={domainsSummary}
+            ink={lockedInk}
+            muted={muted}
+            onPress={() => { tap(); setShowDomains(v => !v); }}
+            label="Blocked websites"
+          />
+          {domainError && !showDomains && (
+            <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
+              {domainError}
+            </Text>
+          )}
+          {showDomains && (
+          <>
+          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
+            {domains.length === 0 ? (
+              <Text style={[typography.caption, { color: muted }]}>
+                No blocked sites yet.
+              </Text>
+            ) : domains.map(d => (
+              <View key={d.id} style={styles.rowBetween}>
+                <View style={styles.rowMain}>
+                  <Text style={[typography.bodyMedium, { color: lockedInk }]} numberOfLines={1}>
+                    {d.domain}
+                  </Text>
+                </View>
+                <RowSwitch
+                  on={d.enabled}
+                  onPress={() => handleToggleDomain(d.id)}
+                  border={border}
+                  label={`Block ${d.domain} ${d.enabled ? 'enabled' : 'disabled'}`}
+                />
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => handleDeleteDomain(d.id)}
+                  style={styles.deleteTextBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${d.domain}`}
+                >
+                  <Text style={[typography.caption, { color: colors.danger }]}>
+                    DELETE
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TextInput
+              style={[styles.input, { color: lockedInk, backgroundColor: cardBg, borderColor: border, marginTop: spacing.md }]}
+              placeholder="example.com"
+              placeholderTextColor={muted}
+              value={newDomain}
+              editable={!dumb}
+              onChangeText={t => { setNewDomain(t); if (domainError) setDomainError(null); }}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+            {domainError && (
+              <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
+                {domainError}
+              </Text>
+            )}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleAddDomain}
+              style={[styles.presetBtn, { borderColor: border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Add website"
+            >
+              <Text style={[typography.bodyMedium, { color: lockedInk, textAlign: 'center' }]}>
+                ADD WEBSITE
+              </Text>
+            </TouchableOpacity>
+          </View>
+          </>
+          )}
           <SectionRow
             open={showManualPkg}
             title="MANUAL SETUP"
@@ -1616,82 +1693,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             >
               <Text style={[typography.bodyMedium, { color: lockedInk, textAlign: 'center' }]}>
                 ADD BUDGET
-              </Text>
-            </TouchableOpacity>
-          </View>
-          </>
-          )}
-          <SectionRow
-            open={showDomains}
-            title="WEBSITES"
-            summary={domainsSummary}
-            ink={lockedInk}
-            muted={muted}
-            onPress={() => { tap(); setShowDomains(v => !v); }}
-            label="Blocked websites"
-          />
-          {domainError && !showDomains && (
-            <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
-              {domainError}
-            </Text>
-          )}
-          {showDomains && (
-          <>
-          <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
-            {domains.length === 0 ? (
-              <Text style={[typography.caption, { color: muted }]}>
-                No blocked sites yet.
-              </Text>
-            ) : domains.map(d => (
-              <View key={d.id} style={styles.rowBetween}>
-                <View style={styles.rowMain}>
-                  <Text style={[typography.bodyMedium, { color: lockedInk }]} numberOfLines={1}>
-                    {d.domain}
-                  </Text>
-                </View>
-                <RowSwitch
-                  on={d.enabled}
-                  onPress={() => handleToggleDomain(d.id)}
-                  border={border}
-                  label={`Block ${d.domain} ${d.enabled ? 'enabled' : 'disabled'}`}
-                />
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => handleDeleteDomain(d.id)}
-                  style={styles.deleteTextBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Delete ${d.domain}`}
-                >
-                  <Text style={[typography.caption, { color: colors.danger }]}>
-                    DELETE
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-            <TextInput
-              style={[styles.input, { color: lockedInk, backgroundColor: cardBg, borderColor: border, marginTop: spacing.md }]}
-              placeholder="example.com"
-              placeholderTextColor={muted}
-              value={newDomain}
-              editable={!dumb}
-              onChangeText={t => { setNewDomain(t); if (domainError) setDomainError(null); }}
-              autoCapitalize="none"
-              keyboardType="url"
-            />
-            {domainError && (
-              <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
-                {domainError}
-              </Text>
-            )}
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleAddDomain}
-              style={[styles.presetBtn, { borderColor: border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Add website"
-            >
-              <Text style={[typography.bodyMedium, { color: lockedInk, textAlign: 'center' }]}>
-                ADD WEBSITE
               </Text>
             </TouchableOpacity>
           </View>
