@@ -12,7 +12,7 @@ Important Details
 - expo-font INSTALLED — config plugin added, npx expo install expo-font completed successfully.
 - expo-splash-screen INSTALLED — added via npx expo install expo-splash-screen, config plugin auto-added.
 - Expo version: v57.0.0. Android package name: com.nitridee.staytapp
-- EAS Build: Project ID 0ee6556d-649e-43b6-9200-6eb321c6306d, account nitridee.
+- EAS Build: Project ID 52bc0820-3bfb-4449-916e-d600b46a3dd0 (owner samridha, per app.json).
 - GitHub repo: https://github.com/Nitride27/StayT.git (local branch master tracks remote main)
 - Git repo location: Inside stayt-app/ subdirectory (not project root /mnt/hdd/HDD/Codes/StayT/)
 - Samsung accessibility config: accessibility_service_config.xml has android:accessibilityEventTypes="typeWindowStateChanged", android:canRetrieveWindowContent="false", android:settingsActivity="com.nitridee.staytapp.MainActivity". Samsung One UI path: Settings → Accessibility → Installed apps → StayT → Enable.
@@ -127,15 +127,12 @@ Completed
 - Verified TS clean — npx tsc --noEmit zero errors after typography + splash changes
 - Queried local StayT graph — 254 nodes, 454 links, 13 communities, 31 source files. God nodes: App.tsx (35), ActiveSessionScreen (23), TaskPickerScreen (23), TaskSetupScreen (23), HistoryScreen (21), ThemeContext (21)
 Active
-- Architecture fixes needed — Not yet applied: (1) Thread safety mutableSetOf() → ConcurrentHashMap.newKeySet() in StayTAccessibilityService.kt, (2) Add invalidate() to AppBlockerModule.kt to clear singleton, (3) Remove phantom startListening()/stopListening() calls from AppBlockerPackage.kt
+- (2026-09-24) Architecture fixes are done: ConcurrentHashMap/CopyOnWrite rule sets, AppBlockerModule.invalidate() and a clean AppBlockerPackage. Current design: ../ARCHITECTURE.md + docs/adr/. Open items: ../IMPLEMENTATION.md, section "Remaining".
 Blocked
 - EAS API auth error: expo_build_list and expo_build_info MCP tools return "Entity not authorized" — EAS token expired. Local CLI works for builds.
 - graphify_query_graph MCP tool loaded wrong project graph (Jarvis instead of StayT). Must use local stayt-app/graphify-out/graph.json file directly.
 Next Move
-1. Apply architecture fixes: (a) Thread safety in StayTAccessibilityService.kt — mutableSetOf() → ConcurrentHashMap.newKeySet(), (b) Add invalidate() to AppBlockerModule.kt, (c) Remove phantom calls from AppBlockerPackage.kt
-2. Commit typography overhaul + architecture fixes, push to GitHub
-3. EAS build, download APK, install on Samsung M52
-4. Verify fonts render correctly on device
+1. See ../IMPLEMENTATION.md, section "Remaining".
 Relevant Files
 - /mnt/hdd/HDD/Codes/StayT/stayt-app/ — Expo project root (git repo)
 - /mnt/hdd/HDD/Codes/StayT/stayt-app/app.json — Expo config with plugins: ["./modules/blocker/plugin"]
@@ -161,9 +158,9 @@ Relevant Files
 - /mnt/hdd/HDD/Codes/StayT/stayt-app/assets/splash-icon.png — Splash icon
 - /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/plugin.js — Expo config plugin
 - /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/res/xml/accessibility_service_config.xml — Accessibility service XML config
-- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/StayTAccessibilityService.kt — Needs blockedPackages thread safety fix (mutableSetOf() → ConcurrentHashMap.newKeySet()). Needs singleton cleanup in onDestroy.
-- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/AppBlockerModule.kt — Needs invalidate() method to clear singleton instance.
-- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/AppBlockerPackage.kt — Needs removal of phantom startListening()/stopListening() calls.
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/StayTAccessibilityService.kt
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/AppBlockerModule.kt
+- /mnt/hdd/HDD/Codes/StayT/stayt-app/modules/blocker/src/main/java/com/nitridee/staytapp/blocker/AppBlockerPackage.kt
 - /mnt/hdd/HDD/Codes/StayT/stayt-app/graphify-out/graph.json — StayT codebase graph (254 nodes, 454 links, 13 communities). Read directly, don't use MCP tool.
 - /mnt/hdd/HDD/Codes/StayT/IMPLEMENTATION.md — Full milestone spec
 - EAS CLI: /home/nitride/.npm/_npx/e25a38a8cc65d08e/node_modules/.bin/eas (v23.2.0)
