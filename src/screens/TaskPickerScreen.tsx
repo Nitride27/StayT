@@ -365,7 +365,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
           <View style={styles.primaryButtonRow}>
             <PlusIcon size={18} color={colors.midnight} />
             <Text style={styles.primaryButtonText}>
-              {showPaywall ? 'ADD TASK (UPGRADE)' : 'NEW TASK'}
+              {showPaywall ? 'ADD TASK (UNLOCK PRO)' : 'NEW TASK'}
             </Text>
           </View>
         </AnimatedTouchable>

@@ -36,16 +36,16 @@ const SECTIONS: { title: string; body: string }[] = [
     body: 'Reminders are scheduled locally on your device. No notification content is sent to any server.',
   },
   {
-    title: 'Purchases and Pro',
-    body: 'Payments are handled by Google Play Billing. StayT stores only an isSubscribed flag for restore and never sees or stores card data.',
+    title: 'Pro features',
+    body: 'StayT has no purchases. Pro features unlock for 24 hours each time you watch a rewarded ad; the unlock time is stored only on your device.',
   },
   {
     title: 'Ads',
-    body: 'The free plan shows ads from Google AdMob: a quiet card during sessions, an occasional full-screen ad when a session ends, and a short ad before every override or break (Pro included). Pro removes every other ad. To serve, measure and limit ads, AdMob may collect your advertising ID, IP address and basic device and interaction data, under Google\'s privacy policy (policies.google.com/privacy). In the EEA, UK and Switzerland you are asked for consent first and can change it in Settings > Ad privacy choices. You can reset or delete your advertising ID in Android Settings > Privacy > Ads.',
+    body: 'The free plan shows ads from Google AdMob: a quiet card during sessions, an occasional full-screen ad when a session ends, a short ad before every override or break, and a rewarded ad when you unlock Pro features. Ads never switch off. To serve, measure and limit ads, AdMob may collect your advertising ID, IP address and basic device and interaction data, under Google\'s privacy policy (policies.google.com/privacy). In the EEA, UK and Switzerland you are asked for consent first and can change it in Settings > Ad privacy choices. You can reset or delete your advertising ID in Android Settings > Privacy > Ads.',
   },
   {
     title: 'Data sharing',
-    body: 'StayT itself sends nothing off your phone. The only third party is Google: AdMob for ads and Play for payments, which receive the data described above. Your tasks, sessions, blocked apps and history are never shared with anyone, ad partners included.',
+    body: 'StayT itself sends nothing off your phone. The only third party is Google AdMob, which receives the data described above. Your tasks, sessions, blocked apps and history are never shared with anyone, ad partners included.',
   },
   {
     title: 'Retention and deletion',

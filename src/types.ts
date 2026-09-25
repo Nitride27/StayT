@@ -116,6 +116,8 @@ export interface UserPreferences {
   freeTaskLimit: number;
   hasOnboarded: boolean;
   isSubscribed: boolean;
+  /** no-pro build: epoch ms the ad-unlocked Pro pass runs until. */
+  proPassUntil?: number;
   /** True once the OEM battery-optimization onboarding warning was shown. */
   oemOnboardingDone?: boolean;
   /** Escalating-friction toggle for session starts. Absent = disabled. */

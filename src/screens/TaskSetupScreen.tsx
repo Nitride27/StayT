@@ -420,7 +420,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     // Free tier covers ONE app at a time: tapping another app asks whether to
     // replace it (keeps upsell discovery) instead of silently swapping.
     if (!isSubscribed && selectedApps.length >= 1) {
-      Alert.alert(`Block "${app.appName}" instead?`, 'Free: 1 app. Replace it or go Pro.', [
+      Alert.alert(`Block "${app.appName}" instead?`, 'Free: 1 app. Replace it or unlock Pro with an ad.', [
         {
           text: 'Replace',
           onPress: () => {

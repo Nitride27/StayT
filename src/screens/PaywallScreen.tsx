@@ -14,8 +14,9 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import { CheckIcon, CloseIcon } from '../components/icons';
-import { useIAP, type Purchase } from 'expo-iap';
-import { PRO_SKU, grantPro } from '../billing/pro';
+import { grantProPass, PRO_PASS_HOURS } from '../billing/pro';
+import { showRewarded } from '../ads/ads';
+import { store } from '../storage/store';
 import { tap } from '../haptics';
 
 type Props = {
@@ -48,14 +49,13 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
       </View>
       <View style={styles.featureInfo}>
         <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight }]}>{feature.title}</Text>
-        <Text style={[typography.bodyStrong, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
+        <Text style={[typography.caption, { color: isDark ? darkColors.inkSecondary : colors.inkSecondary }]}>{feature.desc}</Text>
       </View>
     </Animated.View>
   );
 }
 
 const features = [
-  { title: 'No Ads', desc: 'Only a short one before an override' },
   { title: 'Unlimited Tasks', desc: 'Block as many apps as you need' },
   { title: 'Scheduling', desc: 'Auto-block during focus hours' },
   { title: 'Advanced Stats', desc: 'Track your productivity over time' },
@@ -69,94 +69,26 @@ const features = [
 export default function PaywallScreen({ navigation }: Props) {
   const { isDark } = useTheme();
   const [busy, setBusy] = useState(false);
-  const [restoring, setRestoring] = useState(false);
-  const [storeError, setStoreError] = useState<string | null>(null);
-
-  const grantAndClose = async (purchase?: Purchase) => {
-    try {
-      // Grant FIRST, then finish: a crash between the two must leave the user
-      // entitled (finish is safe to retry; an unfinished purchase refunds).
-      await grantPro();
-      if (purchase) await finishTransaction({ purchase, isConsumable: false });
-      navigation.goBack();
-    } catch {
-      setStoreError('Purchase went through but activation failed. Tap Restore Purchase.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const {
-    connected,
-    products,
-    availablePurchases,
-    fetchProducts,
-    requestPurchase,
-    getAvailablePurchases,
-    finishTransaction,
-  } = useIAP({
-    onPurchaseSuccess: (purchase) => { void grantAndClose(purchase); },
-    onPurchaseError: (e) => {
-      setBusy(false);
-      if (e.code !== 'user-cancelled') setStoreError(e.message);
-    },
-  });
+  const [adError, setAdError] = useState<string | null>(null);
+  const [passUntil, setPassUntil] = useState(0);
+  const passActive = passUntil > Date.now();
 
   useEffect(() => {
-    if (connected) fetchProducts({ skus: [PRO_SKU], type: 'in-app' }).catch(() => {});
-  }, [connected]);
-
-  // Restore resolves via availablePurchases state after getAvailablePurchases().
-  useEffect(() => {
-    if (!restoring) return;
-    setRestoring(false);
-    setBusy(false);
-    const owned = availablePurchases.find(p => p.productId === PRO_SKU);
-    if (owned) {
-      setBusy(true);
-      void grantAndClose(owned);
-    } else {
-      setStoreError('No previous purchase found for this account.');
-    }
-  }, [availablePurchases]);
-
-  // Play can return the product with a blank displayPrice (no priced offer
-  // in this region/account) — ?? alone would render an empty number.
-  const rawPrice = products.find(p => p.id === PRO_SKU)?.displayPrice;
-  const price = rawPrice && rawPrice.trim() ? rawPrice : '$4.99';
+    store.getPreferences().then(p => setPassUntil(p.proPassUntil ?? 0)).catch(() => {});
+  }, []);
 
   const handleUnlock = async () => {
-    setStoreError(null);
-    if (!connected) {
-      setStoreError('Store unavailable. Check your connection and reopen this screen.');
-      return;
-    }
+    setAdError(null);
     tap('medium');
     setBusy(true);
-    try {
-      await requestPurchase({ request: { google: { skus: [PRO_SKU] } }, type: 'in-app' });
-    } catch (e) {
-      setBusy(false);
-      setStoreError(e instanceof Error ? e.message : 'Purchase could not start.');
-    }
-  };
-
-  const handleRestore = async () => {
-    setStoreError(null);
-    if (!connected) {
-      setStoreError('Store unavailable. Check your connection and reopen this screen.');
+    const result = await showRewarded();
+    if (result === 'earned') {
+      await grantProPass().catch(() => {});
+      navigation.goBack();
       return;
     }
-    tap();
-    setBusy(true);
-    setRestoring(true);
-    try {
-      await getAvailablePurchases();
-    } catch {
-      setRestoring(false);
-      setBusy(false);
-      setStoreError('Restore failed. Check your connection and try again.');
-    }
+    setBusy(false);
+    if (result === 'unavailable') setAdError('No ad is available right now. Check your connection and try again.');
   };
 
   // Entry animations
@@ -233,11 +165,13 @@ export default function PaywallScreen({ navigation }: Props) {
       <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? darkColors.paperCard : colors.paperCard, borderColor: isDark ? darkColors.ink : colors.ink }]}>
         <Text style={[typography.h2, { color: colors.ectoGreen, textAlign: 'center' }]}>Pro</Text>
         <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.xs }]}>
-          One-time purchase
+          {passActive
+            ? `Active until ${new Date(passUntil).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`
+            : 'Free with one short ad'}
         </Text>
         <View style={styles.priceRow}>
-          <Text style={[typography.h1, { color: isDark ? darkColors.ink : colors.midnight }]}>{price}</Text>
-          <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}> forever</Text>
+          <Text style={[typography.h1, { color: isDark ? darkColors.ink : colors.midnight }]}>{PRO_PASS_HOURS} hours</Text>
+          <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}> per ad</Text>
         </View>
       </Animated.View>
 
@@ -248,14 +182,9 @@ export default function PaywallScreen({ navigation }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
-        {!connected && (
-          <Text style={[typography.caption, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginBottom: spacing.md }]}>
-            Connecting to Google Play for live pricing…
-          </Text>
-        )}
-        {storeError && (
+        {adError && (
           <Text style={[typography.caption, { color: colors.danger, textAlign: 'center', marginBottom: spacing.md }]}>
-            {storeError}
+            {adError}
           </Text>
         )}
         <AnimatedTouchable
@@ -267,15 +196,9 @@ export default function PaywallScreen({ navigation }: Props) {
           onPressOut={handlePressOut}
         >
           <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
-            {busy ? 'PROCESSING…' : `UNLOCK PRO ${price}`}
+            {busy ? 'LOADING AD…' : passActive ? `WATCH AD: +${PRO_PASS_HOURS} HOURS` : 'WATCH AD TO UNLOCK'}
           </Text>
         </AnimatedTouchable>
-
-        <TouchableOpacity style={[styles.restoreButton, { borderColor: isDark ? colors.ectoGreen : colors.ectoGreenDark }]} activeOpacity={0.7} onPress={handleRestore} disabled={busy}>
-          <Text style={[typography.cta, { color: isDark ? colors.ectoGreen : colors.ectoGreenDark, textAlign: 'center' }]}>
-            RESTORE PURCHASE
-          </Text>
-        </TouchableOpacity>
       </Animated.View>
       </ScrollView>
     </View>
@@ -369,15 +292,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
-  },
-  restoreButton: {
-    paddingVertical: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-    borderRadius: radius.xl,
-    borderWidth: 2,
-    backgroundColor: 'transparent',
-    marginTop: spacing.md,
   },
 });
