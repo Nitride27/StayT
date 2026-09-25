@@ -464,7 +464,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
 
           {/* Subscription */}
-          <SectionHeader label="SUBSCRIPTION" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
+          <SectionHeader label="PRO" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
           {isSubscribed ? (
             <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <View style={styles.planRow}>

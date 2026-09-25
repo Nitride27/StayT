@@ -96,11 +96,22 @@ export async function preloadInterstitial(): Promise<void> {
   ad.load();
 }
 
-/** Never waits on the network: no ready ad = no ad. */
+/**
+ * Never waits on the network: no ready ad = no ad. When one shows, resolves
+ * only after it closes — navigating under a showing ad mounts screens while
+ * the activity is paused and freezes their entry animations (blank screen).
+ */
 export async function maybeShowInterstitial(): Promise<void> {
-  if (!interstitial || !interstitialLoaded) { preloadInterstitial().catch(() => {}); return; }
+  const ad = interstitial;
+  if (!ad || !interstitialLoaded) { preloadInterstitial().catch(() => {}); return; }
   if (Date.now() - lastInterstitialAt < INTERSTITIAL_GAP_MS) return;
   if (!(await showAds())) return;
   lastInterstitialAt = Date.now();
-  await interstitial.show().catch(() => {});
+  await new Promise<void>(resolve => {
+    const unsubs = [
+      ad.addAdEventListener(AdEventType.CLOSED, () => { unsubs.forEach(u => u()); resolve(); }),
+      ad.addAdEventListener(AdEventType.ERROR, () => { unsubs.forEach(u => u()); resolve(); }),
+    ];
+    ad.show().catch(() => { unsubs.forEach(u => u()); resolve(); });
+  });
 }
