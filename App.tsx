@@ -27,6 +27,7 @@ import {
   ensureDailyReminder,
 } from './src/notifications/reminders';
 import { colors, darkColors } from './src/theme/tokens';
+import { initAds } from './src/ads/ads';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -285,6 +286,8 @@ function AppNavigator() {
   useEffect(() => {
     if ((fontsLoaded || fontError) && !loading) {
       SplashScreen.hideAsync();
+      // UMP consent form (EEA/UK) over the first real screen, then SDK init.
+      initAds().catch(() => {});
     }
   }, [fontsLoaded, fontError, loading]);
 

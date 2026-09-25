@@ -12,6 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
+import { isPro as isProActive } from '../billing/pro';
 import { Task, FocusSchedule, Budget, BlockedDomain, FeedFilter, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
@@ -360,7 +361,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       })
       .catch(() => { if (live && !installedAppsCache) { setInstalledApps([]); setAppsLoaded(true); } });
     store.getPreferences()
-      .then(p => { if (live) setIsSubscribed(p.isSubscribed === true); })
+      .then(p => { if (live) setIsSubscribed(isProActive(p)); })
       .catch(() => {});
     return () => { live = false; };
   }, []);
@@ -390,7 +391,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   useFocusEffect(
     useCallback(() => {
       store.getPreferences()
-        .then(p => setIsSubscribed(p.isSubscribed === true))
+        .then(p => setIsSubscribed(isProActive(p)))
         .catch(() => {});
       refreshWave2Lists();
     }, [refreshWave2Lists]),

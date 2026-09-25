@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useOnForeground } from '../hooks/useOnForeground';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
+import { isPro } from '../billing/pro';
 import { Session, Task, UserPreferences, blockedPackagesOf, isEffectiveStrict } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
@@ -23,6 +24,8 @@ import AppBlocker, { focusElapsed, SessionPause } from '../native/AppBlocker';
 import { syncWidgetNow } from '../widget/widgetSync';
 import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
 import { tap } from '../haptics';
+import SessionAd from '../ads/SessionAd';
+import { maybeShowInterstitial, preloadInterstitial } from '../ads/ads';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveSession'>;
@@ -43,14 +46,14 @@ type SessionOpts = {
 // push identical config. Friction prefs absent = disabled; allowlist [] for
 // non-Pro = null ([] never crosses for free).
 function buildSessionOpts(prefs: UserPreferences, task: Task): SessionOpts {
-  const isPro = prefs.isSubscribed === true;
+  const pro = isPro(prefs);
   return {
     friction: {
       enabled: prefs.frictionEnabled === true,
       delaySeconds: prefs.frictionDelaySeconds ?? 10,
-      escalate: isPro,
+      escalate: pro,
     },
-    allowlist: task.allowlistMode === true && isPro ? (task.allowlist ?? []) : null,
+    allowlist: task.allowlistMode === true && pro ? (task.allowlist ?? []) : null,
   };
 }
 
@@ -329,6 +332,8 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       mark(ok !== false);
       if (live) setAllowlistDegraded(allowlist !== null && AppBlocker.wasAllowlistDegraded());
     })();
+    // Free tier: warm the session-end interstitial while the session runs.
+    preloadInterstitial().catch(() => {});
     // P2-1: push today's totals + last-task packages to the widget mirror.
     syncWidgetNow(liveTask).catch(() => {});
     // A daily nudge scheduled while the app was killed could fire mid-session
@@ -385,6 +390,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const handleSwitchTask = async () => {
     tap();
     await finishSession();
+    await maybeShowInterstitial();
     navigation.reset({ index: 0, routes: [{ name: 'TaskPicker' }] });
   };
 
@@ -394,6 +400,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const handleEndSession = async () => {
     tap('medium');
     await finishSession();
+    await maybeShowInterstitial();
     // reset (not replace): a session restored after process death is the
     // only route, so replace left History alone and BACK closed the app.
     // Always land on TaskPicker -> History so BACK goes to the task list.
@@ -586,6 +593,8 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         )}
       </Animated.View>
+      {/* Free tier only; hidden in split-screen / pop-up windows. */}
+      {!compact && <SessionAd />}
       </ScrollView>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>

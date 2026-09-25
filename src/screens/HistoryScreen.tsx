@@ -11,6 +11,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
+import { isPro } from '../billing/pro';
 import { Session, Task, BlockedAttempt } from '../types';
 import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
@@ -261,7 +262,7 @@ export default function HistoryScreen({ navigation }: Props) {
     // locks WEEK/MONTH on the next visit) + owl mood give-ins. Best-effort.
     try {
       const prefs = await store.getPreferences();
-      setIsSubscribed(prefs.isSubscribed === true);
+      setIsSubscribed(isPro(prefs));
     } catch {
       setIsSubscribed(false);
     }

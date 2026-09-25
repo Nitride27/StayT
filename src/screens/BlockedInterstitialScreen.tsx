@@ -21,6 +21,7 @@ import { store, MAX_DAILY_OVERRIDES } from '../storage/store';
 import { Task, isEffectiveStrict } from '../types';
 import { syncWidgetNow } from '../widget/widgetSync';
 import { tap } from '../haptics';
+import { showRewarded } from '../ads/ads';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BlockedInterstitial'>;
@@ -293,6 +294,10 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     navigation.replace('TaskPicker');
   };
 
+  // Every override/break sits behind a rewarded ad, Pro included. No fill /
+  // offline fails open: the ad is a toll, not enforcement.
+  const passAdGate = async () => overridesLeft > 0 && (await showRewarded()) !== 'dismissed';
+
   const handleTakeBreak = async () => {
     // Single consume path: atomic check-and-increment. A double-tap (or a
     // concurrent overlay tap) can never burn two units or exceed the cap.
@@ -300,6 +305,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     if (countdown > 0 || busy || effectiveStrict) return;
     tap();
     setBusy(true);
+    if (!(await passAdGate())) { setBusy(false); return; }
     let left = overridesLeft;
     // Dumfound: the escape still pauses blocking below, but consumes no
     // override unit and logs nothing (non-consequential). There is also no
@@ -355,6 +361,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     if (busy || effectiveStrict) return;
     tap('medium');
     setBusy(true);
+    if (!(await passAdGate())) { setBusy(false); return; }
     let left = overridesLeft;
     // Dumfound: same non-consequential rule as the instant override above.
     if (!dumfound) {
@@ -528,7 +535,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
                   ? 'OVERRIDES USED UP'
                   : countdown > 0
                     ? `OVERRIDE UNLOCKS IN ${formatCountdown(countdown)}`
-                    : `2-MIN OVERRIDE (${overridesLeft} LEFT)`}
+                    : `WATCH AD: 2-MIN OVERRIDE (${overridesLeft} LEFT)`}
               </Text>
             </AnimatedTouchable>
 
@@ -590,7 +597,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
                   style={[styles.breakGo, { opacity: busy ? 0.5 : 1 }]}
                 >
                   <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
-                    {`START ${breakMinutes}-MIN BREAK (USES 1 OVERRIDE)`}
+                    {`WATCH AD: ${breakMinutes}-MIN BREAK (USES 1 OVERRIDE)`}
                   </Text>
                 </TouchableOpacity>
               </Animated.View>

@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useOnForeground } from '../hooks/useOnForeground';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
+import { isPro } from '../billing/pro';
 import { Task, blockedPackagesOf } from '../types';
 import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
@@ -133,7 +134,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
       if (v !== loadVersion.current) return;
       // M6: presets never counted toward the free task limit.
       const userTasks = allTasks.filter(t => !t.isPreset).length;
-      setShowPaywall(prefs.isSubscribed !== true && userTasks >= FREE_TASK_LIMIT);
+      setShowPaywall(!isPro(prefs) && userTasks >= FREE_TASK_LIMIT);
     } catch {
       if (v === loadVersion.current) setTasks([]);
     }

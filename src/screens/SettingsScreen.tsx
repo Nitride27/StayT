@@ -22,6 +22,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
+import { isPro } from '../billing/pro';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
@@ -30,6 +31,7 @@ import AppBlocker from '../native/AppBlocker';
 import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
 import { useBlockSelfTest, resolveSelfTestApp } from '../blocktest/useBlockSelfTest';
 import { tap } from '../haptics';
+import { AdsConsent } from 'react-native-google-mobile-ads';
 import appConfig from '../../app.json';
 
 const appVersion: string = appConfig.expo.version;
@@ -123,6 +125,8 @@ export default function SettingsScreen({ navigation }: Props) {
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [versionTaps, setVersionTaps] = useState(0);
+  // UMP: EEA/UK users must be able to reopen the ad consent form.
+  const [adPrivacyRequired, setAdPrivacyRequired] = useState(false);
   // N-1: actual OS permission state (may disagree with the pref toggle).
   const [osNotifGranted, setOsNotifGranted] = useState(true);
   // Permissions checklist: real accessibility-service state.
@@ -149,10 +153,13 @@ export default function SettingsScreen({ navigation }: Props) {
       const prefs = await store.getPreferences();
       setNotificationsEnabled(prefs.notificationsEnabled);
       setHapticsEnabled(prefs.hapticFeedback);
-      setIsSubscribed(prefs.isSubscribed === true);
+      setIsSubscribed(isPro(prefs));
     } catch {
       // Keep defaults; settings must never trap on a storage error.
     }
+    AdsConsent.getConsentInfo()
+      .then(i => setAdPrivacyRequired(i.privacyOptionsRequirementStatus === 'REQUIRED'))
+      .catch(() => {});
     // N-1: surface the real OS state alongside the pref toggle.
     try {
       setOsNotifGranted(await AppBlocker.isNotificationPermissionGranted());
@@ -459,12 +466,23 @@ export default function SettingsScreen({ navigation }: Props) {
           {/* Subscription */}
           <SectionHeader label="SUBSCRIPTION" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
           {isSubscribed ? (
-            <View style={[styles.proPill, { backgroundColor: colors.ectoGreen, borderColor: cardBorder }]}>
-              <Text style={[typography.label, { color: colors.midnight }]}>STAYT PRO ACTIVE</Text>
+            <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <View style={styles.planRow}>
+                <Text style={[typography.bodyStrong, { color: ink }]}>StayT Pro</Text>
+                <View style={styles.activeBadge}>
+                  <Text style={[typography.label, { color: colors.midnight }]}>ACTIVE</Text>
+                </View>
+              </View>
+              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                Every Pro feature is on. No ads, except a short one before an override.
+              </Text>
             </View>
           ) : (
             <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Text style={[typography.bodyStrong, { color: ink }]}>Free plan</Text>
+              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                Ads keep StayT free. Pro removes them and unlocks every feature.
+              </Text>
               <TouchableOpacity
                 activeOpacity={0.85}
                 onPress={() => { tap(); navigation.navigate('Paywall'); }}
@@ -549,6 +567,23 @@ export default function SettingsScreen({ navigation }: Props) {
             </View>
             <ChevronRightIcon size={24} color={theme.inkSecondary} />
           </TouchableOpacity>
+          {adPrivacyRequired && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => { tap(); AdsConsent.showPrivacyOptionsForm().catch(() => {}); }}
+              style={[styles.rowBox, styles.navRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+              accessibilityRole="button"
+              accessibilityLabel="Ad privacy choices"
+            >
+              <View style={styles.rowText}>
+                <Text style={[typography.bodyStrong, { color: ink }]}>Ad privacy choices</Text>
+                <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                  Change how ads may use your data.
+                </Text>
+              </View>
+              <ChevronRightIcon size={24} color={theme.inkSecondary} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleAppInfoRow}
@@ -680,9 +715,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  proPill: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
+  planRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  activeBadge: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.ectoGreen,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ectoGreenDark,
   },
 });

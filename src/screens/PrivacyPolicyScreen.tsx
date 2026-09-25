@@ -20,8 +20,8 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PrivacyPolicy'>;
 };
 
-// Restyle-only: every title/body below is the existing promise text,
-// verbatim. No statement weakened, none added.
+// Legal promises: change a line here only when the app's behavior changed,
+// and bump the "Last updated" date below with it.
 const SECTIONS: { title: string; body: string }[] = [
   {
     title: 'On-device data',
@@ -40,12 +40,12 @@ const SECTIONS: { title: string; body: string }[] = [
     body: 'Payments are handled by Google Play Billing. StayT stores only an isSubscribed flag for restore and never sees or stores card data.',
   },
   {
-    title: 'Future ads',
-    body: 'StayT shows no ads today. If ads ship later, ad SDKs may collect device identifiers and coarse signals for ads, and this policy will be updated with consent re-asked before launch.',
+    title: 'Ads',
+    body: 'The free plan shows ads from Google AdMob: a quiet card during sessions, an occasional full-screen ad when a session ends, and a short ad before every override or break (Pro included). Pro removes every other ad. To serve, measure and limit ads, AdMob may collect your advertising ID, IP address and basic device and interaction data, under Google\'s privacy policy (policies.google.com/privacy). In the EEA, UK and Switzerland you are asked for consent first and can change it in Settings > Ad privacy choices. You can reset or delete your advertising ID in Android Settings > Privacy > Ads.',
   },
   {
     title: 'Data sharing',
-    body: 'StayT shares no data with third parties today.',
+    body: 'StayT itself sends nothing off your phone. The only third party is Google: AdMob for ads and Play for payments, which receive the data described above. Your tasks, sessions, blocked apps and history are never shared with anyone, ad partners included.',
   },
   {
     title: 'Retention and deletion',
@@ -53,7 +53,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Children',
-    body: 'StayT is not for children under 13.',
+    body: 'StayT is not directed at children under 13 and is not part of Google Play\'s Families program. Its ads are not restricted to child-safe, non-personalized ads, and it relies on an Accessibility Service, so it does not meet the rules for children\'s apps. If a child has been using StayT, uninstalling it deletes all of its data.',
   },
   {
     title: 'Contact',
@@ -119,7 +119,7 @@ export default function PrivacyPolicyScreen({ navigation }: Props) {
             PRIVACY POLICY
           </Text>
           <Text style={[typography.caption, { color: muted, marginTop: spacing.sm, textAlign: 'center' }]}>
-            StayT v{appVersion} · Last updated: 2026-09-16
+            StayT v{appVersion} · Last updated: 2026-09-25
           </Text>
           <View style={[styles.divider, { backgroundColor: theme.paperBorder }]} />
         </Animated.View>

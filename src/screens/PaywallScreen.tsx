@@ -55,6 +55,7 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
 }
 
 const features = [
+  { title: 'No Ads', desc: 'Only a short one before an override' },
   { title: 'Unlimited Tasks', desc: 'Block as many apps as you need' },
   { title: 'Scheduling', desc: 'Auto-block during focus hours' },
   { title: 'Advanced Stats', desc: 'Track your productivity over time' },

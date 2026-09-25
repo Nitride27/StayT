@@ -1,4 +1,5 @@
 import { store } from '../storage/store';
+import { isPro } from '../billing/pro';
 import AppBlocker from '../native/AppBlocker';
 import { blockedPackagesOf, Task, isEffectiveStrict } from '../types';
 
@@ -64,7 +65,7 @@ export async function syncWidgetNow(lastTask?: Task | null): Promise<void> {
     await AppBlocker.syncWidgetData({
       todayFocusMin,
       streak,
-      subscribed: prefs.isSubscribed === true,
+      subscribed: isPro(prefs),
       lastPackages,
       sessionActive,
       strictActive,
