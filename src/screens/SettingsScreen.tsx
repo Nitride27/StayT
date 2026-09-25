@@ -567,6 +567,22 @@ export default function SettingsScreen({ navigation }: Props) {
             </View>
             <ChevronRightIcon size={24} color={theme.inkSecondary} />
           </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => { tap(); Linking.openURL('mailto:samridhashrestha@gmail.com?subject=StayT%20support').catch(() => {}); }}
+            style={[styles.rowBox, styles.navRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+            accessibilityRole="button"
+            accessibilityLabel="Contact support"
+            accessibilityHint="Opens your email app"
+          >
+            <View style={styles.rowText}>
+              <Text style={[typography.bodyStrong, { color: ink }]}>Contact support</Text>
+              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+                samridhashrestha@gmail.com
+              </Text>
+            </View>
+            <ChevronRightIcon size={24} color={theme.inkSecondary} />
+          </TouchableOpacity>
           {adPrivacyRequired && (
             <TouchableOpacity
               activeOpacity={0.7}

@@ -57,7 +57,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Contact',
-    body: 'To ask about your data, reach us through the support options in the app.',
+    body: 'Questions or data requests: samridhashrestha@gmail.com. Online copy: apps.samridhashrestha.com.np/privacypolicy_stayt',
   },
 ];
 
@@ -119,7 +119,7 @@ export default function PrivacyPolicyScreen({ navigation }: Props) {
             PRIVACY POLICY
           </Text>
           <Text style={[typography.caption, { color: muted, marginTop: spacing.sm, textAlign: 'center' }]}>
-            StayT v{appVersion} · Last updated: 2026-09-25
+            StayT v{appVersion} · Last updated: 2026-09-26
           </Text>
           <View style={[styles.divider, { backgroundColor: theme.paperBorder }]} />
         </Animated.View>
