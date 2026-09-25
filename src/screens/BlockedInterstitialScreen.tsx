@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StackActions, useFocusEffect } from '@react-navigation/native';
-import { View, Text, Image, TouchableOpacity, StyleSheet, TextInput, ScrollView, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, TextInput, ScrollView, useWindowDimensions, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -294,9 +294,16 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     navigation.replace('TaskPicker');
   };
 
-  // Every override/break sits behind a rewarded ad, Pro included. No fill /
-  // offline fails open: the ad is a toll, not enforcement.
-  const passAdGate = async () => overridesLeft > 0 && (await showRewarded()) !== 'dismissed';
+  // Every override/break sits behind a rewarded ad, Pro included. Fails
+  // closed: going offline must not skip the ad (the escape stays locked).
+  const passAdGate = async () => {
+    if (overridesLeft <= 0) return false;
+    const result = await showRewarded();
+    if (result === 'unavailable') {
+      Alert.alert('No ad available', 'Overrides and breaks unlock after a short ad. Check your connection and try again.');
+    }
+    return result === 'earned';
+  };
 
   const handleTakeBreak = async () => {
     // Single consume path: atomic check-and-increment. A double-tap (or a

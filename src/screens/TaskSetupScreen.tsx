@@ -12,7 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { isPro as isProActive } from '../billing/pro';
+import { isPro as isProActive, adGate } from '../billing/pro';
 import { Task, FocusSchedule, Budget, BlockedDomain, FeedFilter, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
@@ -540,9 +540,15 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     ]);
   };
 
-  // ── Wave 2C1 A: schedule presets (FREE — bypass the Pro gate) ──
-  const applySchedulePreset = (kind: 'bedtime' | 'work') => {
+  // ── Wave 2C1 A: schedule presets (free tier: a rewarded ad each time) ──
+  const applySchedulePreset = async (kind: 'bedtime' | 'work') => {
     if (presetBusy) return;
+    if (!isPro) {
+      setPresetBusy(true);
+      const ok = await adGate();
+      setPresetBusy(false);
+      if (!ok) return;
+    }
     tap();
     setOnceWindow(null);
     if (kind === 'bedtime') {
@@ -564,9 +570,10 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   // onceStart/onceEnd, so it fires once and never repeats (it used to save
   // as a weekly schedule on today's weekday and block again next week).
   // Crossing midnight is fine: the window is absolute time.
-  const applySprintPreset = () => {
+  const applySprintPreset = async () => {
     if (presetBusy) return;
     setPresetBusy(true);
+    if (!isPro && !(await adGate())) { setPresetBusy(false); return; }
     tap();
     const start = Date.now();
     const end = start + 25 * 60 * 1000;
@@ -707,12 +714,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
 
   // ── Wave 2C1 D: website blocking (Pro) ──
   const showDomainsProGate = () => {
-    showWave2ProGate('Website blocking is Pro.', 'Block sites in browsers.');
+    showWave2ProGate('One website is free.', 'Pro blocks as many as you like.');
   };
 
+  // One website is free; more than one is Pro.
   const handleAddDomain = async () => {
     tap();
-    if (!isPro) { showDomainsProGate(); return; }
+    if (!isPro && domains.length >= 1) { showDomainsProGate(); return; }
     const d = newDomain.trim().toLowerCase();
     if (!d || !d.includes('.')) {
       setDomainError('Enter a valid domain, e.g. example.com');
@@ -730,9 +738,12 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   };
 
   const handleToggleDomain = async (id: string) => {
-    if (!isPro) { showDomainsProGate(); return; }
     const cur = domains.find(x => x.id === id);
     if (!cur) return;
+    if (!isPro && cur.enabled === false && domains.some(x => x.enabled !== false && x.id !== id)) {
+      showDomainsProGate();
+      return;
+    }
     tap();
     try {
       await store.saveBlockedDomain({ ...cur, enabled: !cur.enabled });
@@ -744,7 +755,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   };
 
   const handleDeleteDomain = async (id: string) => {
-    if (!isPro) { showDomainsProGate(); return; }
     tap();
     try {
       await store.deleteBlockedDomain(id);

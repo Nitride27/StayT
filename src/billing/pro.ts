@@ -1,6 +1,8 @@
 // StayT Pro entitlement. Play product id — must exist in Play Console
 // (one-time product) before purchases can succeed.
+import { Alert } from 'react-native';
 import { store } from '../storage/store';
+import { showRewarded } from '../ads/ads';
 import { syncWidgetNow } from '../widget/widgetSync';
 
 export const PRO_SKU = 'stayt_pro';
@@ -22,3 +24,13 @@ export function isPro(prefs: { isSubscribed?: boolean }): boolean {
 
 // Pro removes every ad except the rewarded one in front of overrides.
 export const adsFree = isPro;
+
+/** Rewarded ad in front of a free-tier unlock (schedule presets). */
+export async function adGate(): Promise<boolean> {
+  const result = await showRewarded();
+  if (result === 'earned') return true;
+  if (result === 'unavailable') {
+    Alert.alert('No ad available', 'This unlocks after a short ad. Check your connection and try again, or go Pro.');
+  }
+  return false;
+}

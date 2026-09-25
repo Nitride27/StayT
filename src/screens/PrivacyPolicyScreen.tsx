@@ -29,7 +29,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Accessibility Service',
-    body: 'The Accessibility Service sees the foreground app package and web domains only to decide what to block. It does not collect keystrokes or screen content, and nothing it sees is transmitted anywhere.',
+    body: 'The Accessibility Service decides what to block. It reads which app is in front and which windows are open; for website blocking, the address in your browser\'s address bar; and for Feed Shield, the on-screen labels that show which part of an app is open (for example a Reels or Explore tab). This is checked on your device the moment it appears and then discarded. It is never stored or sent anywhere, and StayT does not collect keystrokes, passwords or messages.',
   },
   {
     title: 'Notifications',
@@ -37,15 +37,15 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Purchases and Pro',
-    body: 'Payments are handled by Google Play Billing. StayT stores only an isSubscribed flag for restore and never sees or stores card data.',
+    body: 'Payments are handled by Google Play Billing. StayT stores only whether you own Pro, so it can restore it, and never sees or stores card data.',
   },
   {
     title: 'Ads',
-    body: 'The free plan shows ads from Google AdMob: a quiet card during sessions, an occasional full-screen ad when a session ends, and a short ad before every override or break (Pro included). Pro removes every other ad. To serve, measure and limit ads, AdMob may collect your advertising ID, IP address and basic device and interaction data, under Google\'s privacy policy (policies.google.com/privacy). In the EEA, UK and Switzerland you are asked for consent first and can change it in Settings > Ad privacy choices. You can reset or delete your advertising ID in Android Settings > Privacy > Ads.',
+    body: 'The free plan shows ads from Google AdMob: a quiet card during sessions (a fresh one about once a minute while it is on screen), an occasional full-screen ad when a session ends, and a short rewarded ad before a schedule preset. Everyone, Pro included, sees a short ad before every override or break. Pro removes every other ad. To serve, measure and limit ads, AdMob may collect your advertising ID, IP address and basic device and interaction data, under Google\'s privacy policy (policies.google.com/privacy). In the EEA, UK and Switzerland you are asked for consent first and can change it in Settings > Ad privacy choices. You can reset or delete your advertising ID in Android Settings > Privacy > Ads.',
   },
   {
     title: 'Data sharing',
-    body: 'StayT itself sends nothing off your phone. The only third party is Google: AdMob for ads and Play for payments, which receive the data described above. Your tasks, sessions, blocked apps and history are never shared with anyone, ad partners included.',
+    body: 'StayT itself sends nothing off your phone. The only third party is Google: AdMob receives the ad data described above, and Google Play handles payments. Your tasks, sessions, blocked apps and history are never shared with anyone, ad partners included.',
   },
   {
     title: 'Retention and deletion',

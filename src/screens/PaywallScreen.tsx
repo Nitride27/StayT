@@ -60,7 +60,7 @@ const features = [
   { title: 'Scheduling', desc: 'Auto-block during focus hours' },
   { title: 'Advanced Stats', desc: 'Track your productivity over time' },
   { title: 'Dumbphone Allowlist', desc: 'Only your chosen apps stay usable' },
-  { title: 'Website Blocking', desc: 'Block distracting sites in browsers' },
+  { title: 'More Websites', desc: 'Block more than one site in browsers' },
   { title: 'Feed Shield', desc: 'Hide reels, explore and comments' },
   { title: 'Unlimited Budgets', desc: 'Daily opens and minutes limits per app' },
   { title: 'Analytics Depth', desc: 'Deeper trends behind your focus time' },
