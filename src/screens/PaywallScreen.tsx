@@ -48,7 +48,7 @@ function AnimatedFeatureItem({ feature, index, isDark }: { feature: typeof featu
       </View>
       <View style={styles.featureInfo}>
         <Text style={[typography.bodyStrong, { color: isDark ? darkColors.ink : colors.midnight }]}>{feature.title}</Text>
-        <Text style={[typography.bodyStrong, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}>{feature.desc}</Text>
+        <Text style={[typography.caption, { color: isDark ? darkColors.inkSecondary : colors.inkSecondary }]}>{feature.desc}</Text>
       </View>
     </Animated.View>
   );
@@ -379,5 +379,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     backgroundColor: 'transparent',
     marginTop: spacing.md,
+    marginHorizontal: spacing.md,
   },
 });

@@ -45,18 +45,20 @@ export default function SessionAd() {
   const border = isDark ? darkColors.paperBorder : colors.paperBorder;
 
   return (
-    <NativeAdView nativeAd={ad} style={[styles.card, { backgroundColor: cardBg, borderColor: border }]}>
+    // Border lives on a wrapper: NativeAdView drops border styles.
+    <View style={[styles.frame, { backgroundColor: cardBg, borderColor: border }]}>
+    <NativeAdView nativeAd={ad} style={styles.card}>
       <NativeMediaView style={styles.media} resizeMode="cover" />
       <View style={styles.info}>
         <View style={[styles.badge, { borderColor: muted }]}>
           <Text style={[typography.label, { color: muted }]}>AD</Text>
         </View>
         <NativeAsset assetType={NativeAssetType.HEADLINE}>
-          <Text numberOfLines={2} style={[typography.bodyStrong, { color: ink }]}>{ad.headline}</Text>
+          <Text numberOfLines={1} style={[typography.bodyStrong, { color: ink }]}>{ad.headline}</Text>
         </NativeAsset>
         {!!ad.body && (
           <NativeAsset assetType={NativeAssetType.BODY}>
-            <Text numberOfLines={2} style={[typography.caption, { color: muted }]}>{ad.body}</Text>
+            <Text numberOfLines={1} style={[typography.caption, { color: muted }]}>{ad.body}</Text>
           </NativeAsset>
         )}
         {!!ad.callToAction && (
@@ -68,18 +70,22 @@ export default function SessionAd() {
         )}
       </View>
     </NativeAdView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
+  frame: {
     alignSelf: 'stretch',
-    gap: spacing.md,
-    padding: spacing.md,
     borderWidth: 2,
     borderRadius: radius.md,
     marginTop: spacing.xl,
+    overflow: 'hidden',
+  },
+  card: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
   },
   // 120dp: the SDK's minimum for video playback in a MediaView.
   media: {
@@ -99,7 +105,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   cta: {
-    marginTop: 'auto',
-    paddingVertical: 6,
+    paddingTop: spacing.sm,
   },
 });
