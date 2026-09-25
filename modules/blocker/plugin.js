@@ -151,6 +151,12 @@ function withBlocker(config) {
         (p) => p.$?.["android:name"] !== "android.permission.SYSTEM_ALERT_WINDOW"
       );
     }
+    // The ads SDK's WorkManager merges in FOREGROUND_SERVICE; StayT runs no
+    // foreground service (ADR-0002), so strip it from the merged manifest.
+    if (!manifest["uses-permission"]) manifest["uses-permission"] = [];
+    manifest["uses-permission"].push({
+      $: { "android:name": "android.permission.FOREGROUND_SERVICE", "tools:node": "remove" },
+    });
     // Plain tap-to-return blocked notification (API 33+ runtime permission;
     // granted via the existing expo-notifications request flow — no overlay,
     // no full-screen intent, no Play review cost).
