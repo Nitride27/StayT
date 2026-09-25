@@ -1,26 +1,27 @@
 import React, { useEffect, useState } from 'react';
-import { View, Image, StyleSheet, PixelRatio } from 'react-native';
+import { View, Image, StyleSheet, PixelRatio, ImageSourcePropType } from 'react-native';
 import Animated, {
+  SharedValue,
   useSharedValue,
   useAnimatedStyle,
-  useAnimatedReaction,
+  withDelay,
   withTiming,
+  withRepeat,
+  withSequence,
   cancelAnimation,
   useReducedMotion,
   Easing,
-  runOnJS,
 } from 'react-native-reanimated';
 import { useTheme } from '../theme/ThemeContext';
 import {
   mascotMood,
   owlMoodLabel,
   witheringTargetFrame,
-  WITHERING_FRAMES_LIST,
+  witheringFrames,
   WITHERING_FRAME_SIZES,
   WITHERING_STAGE_W,
   WITHERING_STAGE_H,
   WITHERING_FRAME_MS,
-  WITHERING_FRAMES,
 } from '../theme/mascot';
 
 type Props = {
@@ -32,224 +33,152 @@ type Props = {
   frameMs?: number;
 };
 
-// Individual-frame animation: 30 files, one per frame, each bg-cleaned, so
-// no frame can ever show another's art — there is no sheet math left. Both
-// layers contain-fit their frame into the fixed transparent stage (max frame
-// size), centered: zero layout shift, morph stays put.
 const STAGE_RATIO = WITHERING_STAGE_H / WITHERING_STAGE_W;
+// Decode head start before the first sweep: every frame is mounted from the
+// start, so this only has to cover the first decode of local bundled PNGs.
+const WARM_MS = 450;
 
 /**
- * Animated loss-state owl: walks the 30 wither frames from 0 toward the
- * give-ins target (and back when the user recovers). Holds the target frame
- * when reached: no looping timers, no battery drain. While warming up (or
- * when a pair load fails) it holds the target OWL frame statically — the
- * static mascotMood expression is only a last resort if the frame art
- * itself fails to decode.
+ * Animated loss-state owl: dissolves through the wither KEY POSES (see
+ * mascot.ts — the raw frames flicker), from the healthy owl (key 0) to
+ * today's give-ins target, and holds there.
  *
- * Smoothness: a single `progress` shared value animates 0 → target on the UI
- * thread (one withTiming, eased in-out so key poses hold and middles pass
- * quickly). Image SOURCES
- * swap on the JS thread only when the integer frame changes (a few updates
- * per animation, via runOnJS); per-vsync work is opacity-only smoothstep
- * crossfade — each frame holds, then dissolves briskly instead of lingering
- * as a 50/50 ghost. Geometry snaps to device pixels. All 30 frames are
- * decode-warmed behind the static fallback before `ready` flips (with a
- * timeout escape so one slow file can't hang the owl). Reduced-motion users
- * snap straight to the target frame.
+ * Why a flipbook (on-device M52 capture): the old crossfade swapped image
+ * SOURCES from JS (runOnJS) while progress ran on the UI thread, so frames
+ * landed late or out of order (visible stutter spikes), and the loading
+ * placeholder showed the END pose, then popped back to frame 0 before the
+ * sweep. Source swaps on images with load callbacks also crashed Fresco.
+ *
+ * Now every key is mounted once, stacked, with a fixed source; each key's
+ * opacity is derived on the UI thread from one `progress` shared value
+ * (no JS per frame, no source swaps). The
+ * sweep starts at frame 0 after a short decode head start, eased in-out so
+ * the key poses hold. Reduced-motion users snap to the target. A healthy
+ * owl breathes gently at rest.
  */
 export default function WitheringOwl({ giveInsToday, width = 96, frameMs = WITHERING_FRAME_MS }: Props) {
   const { isDark } = useTheme();
-  const [ready, setReady] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [frameFailed, setFrameFailed] = useState(false);
-  const [warmed, setWarmed] = useState(0);
-  const [pair, setPair] = useState({ a: 0, b: 0 });
+  const [artFailed, setArtFailed] = useState(false);
   const reduceMotion = useReducedMotion();
-  const devicePx = Math.max(1, PixelRatio.get() || 1);
-  const height = PixelRatio.roundToNearestPixel(width * STAGE_RATIO);
   const progress = useSharedValue(0);
-  const seenPair = useSharedValue(0);
+  const breath = useSharedValue(0);
+  const frames = witheringFrames(isDark);
+  const target = witheringTargetFrame(giveInsToday);
+  const idle = target <= 9;
 
-  // Display px per stage px.
-  const s0 = width / WITHERING_STAGE_W;
+  const height = PixelRatio.roundToNearestPixel(width * STAGE_RATIO);
+  // All frames share one size: one contain-fit rect, snapped to device px.
+  const devicePx = Math.max(1, PixelRatio.get() || 1);
   const snap = (v: number) => Math.round(v * devicePx) / devicePx;
-
-  // Warm every frame up front; timeout escape so a slow file can't hang us.
-  useEffect(() => {
-    if (ready) return;
-    const t = setTimeout(() => setReady(true), 2500);
-    return () => clearTimeout(t);
-  }, [ready]);
-  useEffect(() => {
-    if (warmed >= WITHERING_FRAMES_LIST.length) setReady(true);
-  }, [warmed]);
-
-  useEffect(() => {
-    if (!ready || failed) return;
-    const target = witheringTargetFrame(giveInsToday);
-    const current = progress.value;
-    if (Math.round(current) === target) {
-      if (current !== target) progress.value = target;
-      return;
-    }
-    const effFrameMs = Math.max(30, frameMs);
-    const duration = reduceMotion ? 1 : Math.max(1, Math.abs(target - current) * effFrameMs);
-    // Eased (not linear) pacing: the sweep lingers on the start/end poses
-    // and hurries through the middle frames — the classic hold-key-poses
-    // trick, so 5-frames-per-stage reads as smooth motion. Average pace is
-    // unchanged (duration still scales with frame distance).
-    progress.value = withTiming(target, { duration, easing: Easing.inOut(Easing.quad) });
-    return () => cancelAnimation(progress);
-  }, [giveInsToday, frameMs, ready, failed, reduceMotion, progress]);
-
-  // Sync integer frame pair to JS (sources + sizes live here, not in
-  // worklets). Fires only when floor/ceil actually changes.
-  useAnimatedReaction(
-    () => {
-      const a = Math.max(0, Math.min(WITHERING_FRAMES - 1, Math.floor(progress.value)));
-      const b = Math.max(0, Math.min(WITHERING_FRAMES - 1, Math.ceil(progress.value)));
-      return a * 100 + b;
-    },
-    (v) => {
-      if (v !== seenPair.value) {
-        seenPair.value = v;
-        runOnJS(setPair)({ a: Math.floor(v / 100), b: v % 100 });
-      }
-    },
-    [],
-  );
-
-  // Opacity-only worklets: cheap every vsync.
-  const opacityA = useAnimatedStyle(() => {
-    const frac = progress.value - Math.floor(progress.value);
-    const e = frac * frac * (3 - 2 * frac); // smoothstep: hold, then blend
-    return { opacity: 1 - e };
-  });
-  const opacityB = useAnimatedStyle(() => {
-    const frac = progress.value - Math.floor(progress.value);
-    const e = frac * frac * (3 - 2 * frac); // smoothstep: hold, then blend
-    return { opacity: e };
-  });
-
-  // Contain-fit a frame's native size into the stage, centered.
-  const fit = (idx: number) => {
-    const fw = WITHERING_FRAME_SIZES[idx][0];
-    const fh = WITHERING_FRAME_SIZES[idx][1];
-    const s = s0 * Math.min(WITHERING_STAGE_W / fw, WITHERING_STAGE_H / fh);
-    const w = fw * s;
-    const h = fh * s;
-    return {
-      width: snap(w),
-      height: snap(h),
-      left: snap((width - w) / 2),
-      top: snap((height - h) / 2),
-    };
+  const [fw, fh] = WITHERING_FRAME_SIZES[0];
+  const s = (width / WITHERING_STAGE_W) * Math.min(WITHERING_STAGE_W / fw, WITHERING_STAGE_H / fh);
+  const rect = {
+    width: snap(fw * s),
+    height: snap(fh * s),
+    left: snap((width - fw * s) / 2),
+    top: snap((height - fh * s) / 2),
   };
 
-  // Last resort: the owl art itself failed — static mascot expression.
-  if (frameFailed) {
+  // Sweep toward today's target. First run gets the decode head start; later
+  // changes (give-ins while mounted) sweep from wherever the owl is.
+  const firstRun = React.useRef(true);
+  useEffect(() => {
+    const from = progress.value;
+    if (reduceMotion) {
+      progress.value = target;
+      return;
+    }
+    const duration = Math.max(1, Math.abs(target - from) * Math.max(16, frameMs));
+    const sweep = withTiming(target, { duration, easing: Easing.inOut(Easing.cubic) });
+    progress.value = firstRun.current ? withDelay(WARM_MS, sweep) : sweep;
+    firstRun.current = false;
+    return () => cancelAnimation(progress);
+  }, [target, frameMs, reduceMotion, progress]);
+
+  // Idle breath: a slow swell + lift while the owl is healthy, so a good day
+  // looks alive. Wilted poses stay still; no loop for reduced motion.
+  useEffect(() => {
+    if (reduceMotion || !idle) {
+      cancelAnimation(breath);
+      breath.value = withTiming(0, { duration: 300 });
+      return;
+    }
+    const half = { duration: 1400, easing: Easing.inOut(Easing.sin) };
+    breath.value = withDelay(
+      WARM_MS,
+      withRepeat(withSequence(withTiming(1, half), withTiming(0, half)), -1, false),
+    );
+    return () => cancelAnimation(breath);
+  }, [reduceMotion, idle, breath]);
+  const breathStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -3 * breath.value }, { scale: 1 + 0.02 * breath.value }],
+  }));
+
+  // Last resort: the frame art failed to decode — static mascot expression.
+  if (artFailed) {
     return (
-      <View
-        style={[styles.frame, { width, height }]}
-        accessibilityRole="image"
-        accessibilityLabel={owlMoodLabel(giveInsToday)}
-      >
-        <Image
-          source={mascotMood(giveInsToday, isDark)}
-          style={{ width, height }}
-          resizeMode="contain"
-          accessibilityRole="image"
-          accessibilityLabel={owlMoodLabel(giveInsToday)}
-        />
+      <View style={[styles.frame, { width, height }]} accessibilityRole="image" accessibilityLabel={owlMoodLabel(giveInsToday)}>
+        <Image source={mascotMood(giveInsToday, isDark)} style={{ width, height }} resizeMode="contain" />
       </View>
     );
   }
-
-  if (failed || !ready) {
-    // Loading / pair-error fallback: the target OWL frame for today's
-    // give-ins (same wither state the animation would hold) — never the
-    // static blocked/working mascot. Decode warm-up runs behind it.
-    const target = witheringTargetFrame(giveInsToday);
-    return (
-      <View
-        style={[styles.frame, { width, height }]}
-        accessibilityRole="image"
-        accessibilityLabel={owlMoodLabel(giveInsToday)}
-      >
-        <Image
-          source={WITHERING_FRAMES_LIST[target]}
-          style={{ width, height }}
-          resizeMode="contain"
-          onError={() => setFrameFailed(true)}
-          accessibilityRole="image"
-          accessibilityLabel={owlMoodLabel(giveInsToday)}
-        />
-        {/* Decode warm-up: 1px hidden frames force the decode instead. */}
-        {!failed && !ready && (
-          <View style={styles.preloadWrap} accessible={false}>
-            {WITHERING_FRAMES_LIST.map((src, k) => (
-              <Image
-                key={k}
-                source={src}
-                style={styles.preload}
-                onLoad={() => setWarmed((w) => w + 1)}
-                onError={() => setWarmed((w) => w + 1)}
-                accessible={false}
-              />
-            ))}
-          </View>
-        )}
-      </View>
-    );
-  }
-
-  const styleA = fit(pair.a);
-  const styleB = fit(pair.b);
-  // Base layer: the static target frame for today's give-ins, always
-  // mounted under the crossfade pair. If a pair frame isn't decoded yet
-  // when the sweep reaches it (slow decode after the warm-up timeout), the
-  // correct owl shows through instead of a blank flash — the owl can never
-  // intermittently disappear mid-run. Costs one small static image.
-  const targetFrame = witheringTargetFrame(giveInsToday);
-  const styleT = fit(targetFrame);
 
   return (
-    <View
-      style={[styles.frame, { width, height }]}
+    <Animated.View
+      style={[styles.frame, { width, height }, breathStyle]}
       accessibilityRole="image"
       accessibilityLabel={owlMoodLabel(giveInsToday)}
     >
-      <View style={[styles.layer, styleT]} accessible={false}>
-        <Image
-          source={WITHERING_FRAMES_LIST[targetFrame]}
-          onError={() => setFailed(true)}
-          style={{ width: styleT.width, height: styleT.height }}
-          resizeMode="stretch"
-          fadeDuration={0}
-          accessible={false}
+      {frames.map((src, idx) => (
+        <FlipFrame
+          key={idx}
+          idx={idx}
+          src={src}
+          rect={rect}
+          progress={progress}
+          // Only frame 0 (fixed source) reports errors: callbacks on many
+          // images were the Fresco crash path.
+          onError={idx === 0 ? () => setArtFailed(true) : undefined}
         />
-      </View>
-      <Animated.View style={[styles.layer, styleA, opacityA]}>
-        <Animated.Image
-          source={WITHERING_FRAMES_LIST[pair.a]}
-          onError={() => setFailed(true)}
-          style={{ width: styleA.width, height: styleA.height }}
-          resizeMode="stretch"
-          fadeDuration={0}
-          accessible={false}
-        />
-      </Animated.View>
-      <Animated.View style={[styles.layer, styleB, opacityB]}>
-        <Animated.Image
-          source={WITHERING_FRAMES_LIST[pair.b]}
-          onError={() => setFailed(true)}
-          style={{ width: styleB.width, height: styleB.height }}
-          resizeMode="stretch"
-          fadeDuration={0}
-          accessible={false}
-        />
-      </Animated.View>
-    </View>
+      ))}
+    </Animated.View>
+  );
+}
+
+type FrameProps = {
+  idx: number;
+  src: ImageSourcePropType;
+  rect: { width: number; height: number; left: number; top: number };
+  progress: SharedValue<number>;
+  onError?: () => void;
+};
+
+/**
+ * One key pose. Between keys i and i+1 (t = progress - i): the upper key
+ * fades IN over the first half while the lower stays solid, then the lower
+ * fades OUT — the owl never turns see-through mid-dissolve (a plain 50/50
+ * crossfade reads as a ghost). Keys stack in index order, so the higher key
+ * draws on top. At an integer progress exactly one key is visible.
+ */
+function FlipFrame({ idx, src, rect, progress, onError }: FrameProps) {
+  const visible = useAnimatedStyle(() => {
+    const d = progress.value - idx;
+    if (d <= -1 || d >= 1) return { opacity: 0 };
+    if (d >= 0) return { opacity: d < 0.5 ? 1 : 2 * (1 - d) }; // lower of the pair
+    const t = 1 + d; // upper of the pair
+    return { opacity: t < 0.5 ? 2 * t : 1 };
+  });
+  return (
+    <Animated.View style={[styles.layer, rect, visible]} accessible={false}>
+      <Image
+        source={src}
+        style={{ width: rect.width, height: rect.height }}
+        resizeMode="stretch"
+        fadeDuration={0}
+        onError={onError}
+        accessible={false}
+      />
+    </Animated.View>
   );
 }
 
@@ -260,22 +189,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'transparent',
   },
-  // Crossfade layers: absolute, contain-fit sized, centered. Opacity comes
-  // from the animated styles; geometry is static per render.
   layer: {
     position: 'absolute',
     overflow: 'hidden',
     backgroundColor: 'transparent',
-  },
-  // Off-screen decode warm-up; never participates in layout.
-  preloadWrap: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
-  },
-  preload: {
-    width: 1,
-    height: 1,
   },
 });

@@ -56,6 +56,13 @@ export interface FocusSchedule {
   startMinutes: number;
   endMinutes: number;
   enabled: boolean;
+  /**
+   * One-time window (epoch ms). When both are set the schedule fires once,
+   * [onceStart, onceEnd), and `days` is ignored (Focus sprint). Absent =
+   * recurring weekly on `days`, as before.
+   */
+  onceStart?: number;
+  onceEnd?: number;
 }
 
 /** Effective block list for a task: paid multi-list, else the single app. */

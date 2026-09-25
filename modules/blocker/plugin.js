@@ -65,6 +65,21 @@ function copyResFiles(projectRoot) {
     }
   }
 
+  // No res/font: notification + widget RemoteViews ignore bundled app
+  // fonts on-device (Samsung M52), so they use system faces instead.
+
+  // drawable-<density>/*.png: notification small icon (ic_stayt_note) at
+  // each density. Copied as a set so any density folder needs no wiring.
+  for (const dir of fs.readdirSync(RES_SRC)) {
+    if (!/^drawable-(l|m|h|xh|xxh|xxxh)dpi$/.test(dir)) continue;
+    const from = path.join(RES_SRC, dir);
+    const to = path.join(destRes, dir);
+    fs.mkdirSync(to, { recursive: true });
+    for (const f of fs.readdirSync(from)) {
+      if (f.endsWith(".png")) fs.copyFileSync(path.join(from, f), path.join(to, f));
+    }
+  }
+
   // drawable-nodpi/overlay art (e.g. stayt_owl_blocked.png for the overlay)
   const drawableSrc = path.join(RES_SRC, "drawable-nodpi");
   if (fs.existsSync(drawableSrc)) {
@@ -96,22 +111,24 @@ function copyResFiles(projectRoot) {
   // Expo-generated file. The template owns app_name; every string in the
   // module source (service description, widget description, …) must be
   // present or the build breaks (widget_info references stayt_widget_desc).
-  // Merge, never overwrite: missing entries are inserted, existing kept.
+  // Blocker-owned strings are kept current: inserted when missing, and
+  // their value replaced when it changed (other strings are never touched).
   const stringsDest = path.join(destRes, "values/strings.xml");
   const ownedStrings = {
     accessibility_service_description:
-      "StayT uses this service to detect when you open a blocked app and redirect you back to your task. No data is collected or transmitted.",
+      "StayT uses this service to see which app is open and to cover apps you blocked while you focus. No data is collected or sent anywhere.",
     stayt_widget_desc:
       "Focus time, streak and live session status.",
   };
   if (fs.existsSync(stringsDest)) {
     let existing = fs.readFileSync(stringsDest, "utf8");
     for (const [name, value] of Object.entries(ownedStrings)) {
-      if (!existing.includes(`name="${name}"`)) {
-        existing = existing.replace(
-          "</resources>",
-          `  <string name="${name}">${value}</string>\n</resources>`
-        );
+      const line = `<string name="${name}">${value}</string>`;
+      const re = new RegExp(`<string name="${name}">[\\s\\S]*?</string>`);
+      if (re.test(existing)) {
+        existing = existing.replace(re, line);
+      } else {
+        existing = existing.replace("</resources>", `  ${line}\n</resources>`);
       }
     }
     fs.writeFileSync(stringsDest, existing);
@@ -249,6 +266,8 @@ function withBlocker(config) {
       // P2-1 widget: update receiver (APPWIDGET_UPDATE + provider info) and
       // the dateless midnight rollover receiver (explicit alarms only).
       ensureReceiver("WidgetMidnightReceiver", []);
+      // Session-note play/pause button (explicit broadcast only).
+      ensureReceiver("SessionControlReceiver", []);
       const widgetAlready = app.receiver.some((r) =>
         r.$?.["android:name"]?.includes("StayTWidgetProvider")
       );
@@ -289,7 +308,7 @@ function withBlocker(config) {
             "android:name": "com.nitridee.staytapp.blocker.StayTTileService",
             "android:permission": "android.permission.BIND_QUICK_SETTINGS_TILE",
             "android:exported": "true",
-            "android:icon": "@drawable/ic_stayt_tile",
+            "android:icon": "@drawable/ic_stayt_note",
             "android:label": "StayT",
           },
           "intent-filter": [

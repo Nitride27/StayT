@@ -65,8 +65,14 @@ object ScheduleAlarmScheduler {
         val startMinutes: Int,
         val endMinutes: Int,
         val enabled: Boolean,
-        val blockedPackages: List<String>
-    )
+        val blockedPackages: List<String>,
+        // One-time window, epoch ms (Focus sprint). Both > 0 = fires once in
+        // [onceStart, onceEnd) and `days` is ignored; 0 = recurring weekly.
+        val onceStart: Long = 0L,
+        val onceEnd: Long = 0L
+    ) {
+        val isOnce: Boolean get() = onceStart > 0L && onceEnd > onceStart
+    }
 
     // ---------- parsing (never throws) ----------
 
@@ -109,7 +115,15 @@ object ScheduleAlarmScheduler {
                 }
             } catch (_: Exception) {
             }
-            return FocusSchedule(days, start, end, enabled, pkgs)
+            val onceStart = try {
+                if (map.hasKey("onceStart") && map.getType("onceStart") == ReadableType.Number) map.getDouble("onceStart").toLong() else 0L
+            } catch (_: Exception) { 0L }
+            val onceEnd = try {
+                if (map.hasKey("onceEnd") && map.getType("onceEnd") == ReadableType.Number) map.getDouble("onceEnd").toLong() else 0L
+            } catch (_: Exception) { 0L }
+            // Clamp: a one-time window is at most 24h (defense in depth).
+            val safeOnceEnd = if (onceStart > 0L && onceEnd > onceStart) minOf(onceEnd, onceStart + 86_400_000L) else 0L
+            return FocusSchedule(days, start, end, enabled, pkgs, if (safeOnceEnd > 0L) onceStart else 0L, safeOnceEnd)
         } catch (_: Exception) {
             return null
         }
@@ -148,6 +162,10 @@ object ScheduleAlarmScheduler {
                     val pkgs = JSONArray()
                     for (p in s.blockedPackages) pkgs.put(p)
                     o.put("pkgs", pkgs)
+                    if (s.isOnce) {
+                        o.put("onceStart", s.onceStart)
+                        o.put("onceEnd", s.onceEnd)
+                    }
                     arr.put(o)
                 } catch (_: Exception) {
                 }
@@ -186,7 +204,10 @@ object ScheduleAlarmScheduler {
                             if (p.isNotBlank()) pkgs.add(p)
                         }
                     }
-                    out.add(FocusSchedule(days, start, end, o.optBoolean("enabled", false), pkgs))
+                    out.add(FocusSchedule(
+                        days, start, end, o.optBoolean("enabled", false), pkgs,
+                        o.optLong("onceStart", 0L), o.optLong("onceEnd", 0L)
+                    ))
                 } catch (_: Exception) {
                 }
             }
@@ -198,11 +219,26 @@ object ScheduleAlarmScheduler {
 
     // ---------- entry points ----------
 
-    /** setSchedules path: persist mirror, reprogram all alarms, apply current window now. */
+    /**
+     * setSchedules path: persist mirror, reprogram all alarms, apply now.
+     * If the push changed what is scheduled RIGHT NOW (a running window was
+     * disabled, edited or deleted), reconcile immediately: its STOP alarm is
+     * gone with the reprogram, so blocking would otherwise stay on forever
+     * (on-device: disabling a running Focus sprint left YouTube blocked).
+     * Reconcile keeps a live session's apps; unrelated edits leave manual
+     * (tile) blocking alone.
+     */
     fun saveAndProgram(context: Context, list: List<FocusSchedule>) {
+        val now = System.currentTimeMillis()
+        val wasActive = unionActive(load(context), now).toSet()
         persist(context, list)
         program(context, list)
-        applyCurrentState(context, list)
+        val nowActive = unionActive(list, now)
+        if (wasActive.isNotEmpty() && wasActive != nowActive.toSet()) {
+            StayTAccessibilityService.reconcileWithSchedules(context, nowActive)
+        } else {
+            applyCurrentState(context, list)
+        }
     }
 
     /** Boot path: no JS running, work purely from the mirror. */
@@ -237,6 +273,7 @@ object ScheduleAlarmScheduler {
         }
 
     fun nextStartMillis(s: FocusSchedule, nowMillis: Long): Long? {
+        if (s.isOnce) return s.onceStart.takeIf { it > nowMillis }
         try {
             val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
             var best: Long? = null
@@ -253,6 +290,7 @@ object ScheduleAlarmScheduler {
     }
 
     fun nextStopMillis(s: FocusSchedule, nowMillis: Long): Long? {
+        if (s.isOnce) return s.onceEnd.takeIf { it > nowMillis }
         try {
             val durMs = durationMinutes(s) * 60_000L
             val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
@@ -273,6 +311,7 @@ object ScheduleAlarmScheduler {
     fun isActiveAt(s: FocusSchedule, nowMillis: Long): Boolean {
         try {
             if (!s.enabled) return false
+            if (s.isOnce) return nowMillis in s.onceStart until s.onceEnd
             val durMs = durationMinutes(s) * 60_000L
             val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
             for (offset in -1..0) {
@@ -306,7 +345,7 @@ object ScheduleAlarmScheduler {
         try {
             val union = unionActive(list, System.currentTimeMillis())
             if (union.isNotEmpty()) {
-                StayTAccessibilityService.setBlocking(true, union)
+                StayTAccessibilityService.reconcileWithSchedules(context, union)
                 Log.d(TAG, "inside focus window now; blocking ${union.size} pkgs")
             } else {
                 Log.d(TAG, "no active window now; leaving blocking state untouched")

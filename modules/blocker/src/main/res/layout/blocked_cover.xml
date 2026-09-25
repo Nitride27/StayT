@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Window cover (ADR-0009): pinned over a blocked app shown in split
+     screen, a pop-up window, PiP or a bubble. Themed like the full overlay
+     at runtime; sized to the window at runtime. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/cover_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <ImageView
+        android:id="@+id/cover_owl"
+        android:layout_width="48dp"
+        android:layout_height="56dp"
+        android:contentDescription="StayT owl"
+        android:scaleType="fitCenter"
+        android:src="@drawable/stayt_owl_blocked_white" />
+
+    <TextView
+        android:id="@+id/cover_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="2"
+        android:text="Blocked"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp" />
+</LinearLayout>

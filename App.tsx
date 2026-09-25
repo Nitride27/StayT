@@ -20,12 +20,13 @@ import { store } from './src/storage/store';
 import { Task, Session } from './src/types';
 import AppBlocker from './src/native/AppBlocker';
 import { decideEntry, shouldLogEntry } from './src/navigation/blockedEntry';
+import { isSelfTestRunning } from './src/blocktest/useBlockSelfTest';
 import {
   ensureReminderHandler,
   setupReminderGuard,
   ensureDailyReminder,
 } from './src/notifications/reminders';
-import { colors } from './src/theme/tokens';
+import { colors, darkColors } from './src/theme/tokens';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -57,6 +58,21 @@ function newBlockedId(): string {
 // is completed so History never renders phantom rows. Focus sessions run
 // minutes-to-hours; 12h is comfortably beyond any legitimate one.
 const STALE_SESSION_MS = 12 * 60 * 60 * 1000;
+
+// A block belongs to the RUNNING session's task. An app can sit in several
+// tasks (and allowlist mode blocks apps no task lists), so "first task that
+// lists the package" mislabelled blocks — wrong task name on the
+// interstitial, and that task's strict/dumbphone rules and taskId applied.
+// Falls back to the first listing task only when no session is live
+// (e.g. a schedule-only block).
+async function taskForBlock(pkg: string): Promise<Task | undefined> {
+  const [tasks, active] = await Promise.all([
+    store.getTasks().catch(() => [] as Task[]),
+    store.getActiveSession().catch(() => null),
+  ]);
+  const live = active ? tasks.find(t => t.id === active.taskId) : undefined;
+  return live ?? tasks.find(t => t.packageName === pkg || t.blockedPackages?.includes(pkg));
+}
 
 function AppNavigator() {
   const { isDark } = useTheme();
@@ -173,44 +189,30 @@ function AppNavigator() {
     })();
   }, []);
 
-  // Listen for native blocked-attempt events and navigate to interstitial
+  // Native blocked-attempt events: LOG ONLY. The block surface is the
+  // native overlay on the blocked app (ADR-0008); these events arrive while
+  // StayT is backgrounded, so navigating here pushed an interstitial nobody
+  // saw — it then greeted the user on their next return to StayT. The
+  // interstitial is reached only through user-initiated deep links below.
   useEffect(() => {
     const unsub = AppBlocker.onBlockedAttempt(async (event) => {
       try {
-        if (!claimBlockedNav(event.packageName)) return;
-        const tasks = await store.getTasks().catch(() => []);
-        const task = tasks.find(
-          t => t.packageName === event.packageName || t.blockedPackages?.includes(event.packageName),
-        ) as (Task & { dumbphoneMode?: boolean }) | undefined;
+        const task = await taskForBlock(event.packageName);
         // Dumbphone gate is per-task: strict blocking, nothing counts.
-        const dumfound = task?.dumbphoneMode === true;
-        // P0-1/P1-4 stats need every block recorded: the attempt itself is a
-        // 'give_in'; a later override adds a separate 'override' record, so
-        // resists (action != 'override') stay exact. Best-effort, never crash.
-        // M1: the override/break path deletes this give_in, so each block
-        // yields exactly one record. M7: late re-entries skip the log.
-        // Dumfound: non-consequential — the interstitial still shows, but
-        // nothing is recorded (no give_in, no streak/mascot movement).
-        try {
-          if (!dumfound && shouldLogEntry(event.packageName)) {
-            await store.saveBlockedAttempt({
-              id: newBlockedId(),
-              packageName: event.packageName,
-              taskId: task?.id ?? '',
-              timestamp: event.timestamp ?? Date.now(),
-              action: 'give_in',
-            });
-          }
-        } catch {
-          // Logging must never block the interstitial.
+        // Every block is one 'give_in'; a later override/break replaces it
+        // (deleteLatestGiveIn). shouldLogEntry dedups emit + deep-link
+        // double delivery of the same block.
+        if (!isSelfTestRunning() && task?.dumbphoneMode !== true && shouldLogEntry(event.packageName)) {
+          await store.saveBlockedAttempt({
+            id: newBlockedId(),
+            packageName: event.packageName,
+            taskId: task?.id ?? '',
+            timestamp: event.timestamp ?? Date.now(),
+            action: 'give_in',
+          });
         }
-        showBlockedInterstitial(
-          event.packageName,
-          task?.id ?? '',
-          event.appLabel ?? event.packageName,
-        );
       } catch {
-        // Best-effort navigation; a missed interstitial must never crash the app.
+        // Logging must never crash the app.
       }
     });
     return unsub;
@@ -234,14 +236,19 @@ function AppNavigator() {
       if (!link || !navigationRef.isReady()) return;
       if (!claimBlockedNav(link.packageName)) return;
       try {
-        const tasks = await store.getTasks().catch(() => []);
-        const task = tasks.find(
-          t => t.packageName === link.packageName || t.blockedPackages?.includes(link.packageName),
-        );
+        const task = await taskForBlock(link.packageName);
         // Dumbphone gate is per-task (source of truth), same as the live path above.
         const dumfound = task?.dumbphoneMode === true;
         try {
-          if (!dumfound && shouldLogEntry(link.packageName)) {
+          // The overlay's MORE OPTIONS (ADR-0008) opens this link for a
+          // block the emit already logged: skip when this package's latest
+          // record is a give_in from the last 2 min. Cold starts (dead JS at
+          // block time, no emit) still log.
+          const attempts = await store.getBlockedAttempts().catch(() => []);
+          const lastForPkg = [...attempts].reverse().find(a => a.packageName === link.packageName);
+          const alreadyLogged =
+            lastForPkg?.action === 'give_in' && Date.now() - lastForPkg.timestamp < 2 * 60 * 1000;
+          if (!dumfound && !alreadyLogged && shouldLogEntry(link.packageName)) {
             await store.saveBlockedAttempt({
               id: newBlockedId(),
               packageName: link.packageName,
@@ -369,6 +376,20 @@ function AppNavigator() {
           />
         </Stack.Navigator>
       </NavigationContainer>
+      {/* Edge-to-edge leaves the status bar transparent: scrolled content
+          slid under the clock/icons on every scrolling screen. One
+          theme-colored strip behind it, app-wide, in both themes. */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: StatusBar.currentHeight ?? 0,
+          backgroundColor: isDark ? darkColors.paper : colors.paper,
+        }}
+      />
     </>
   );
 }

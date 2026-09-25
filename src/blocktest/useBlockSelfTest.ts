@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import AppBlocker from '../native/AppBlocker';
 import { store } from '../storage/store';
 
@@ -42,6 +43,18 @@ export async function resolveSelfTestApp(): Promise<{ packageName: string; appNa
   return { packageName: 'com.google.android.youtube', appName: 'YouTube' };
 }
 
+// True while the self-test owns blocking: its blocks are a setup check,
+// not a real give-in, so App.tsx must not log them.
+let selfTestRunning = false;
+export function isSelfTestRunning(): boolean {
+  return selfTestRunning;
+}
+
+function releaseTestBlocking(): void {
+  selfTestRunning = false;
+  AppBlocker.stopBlocking().catch(() => {});
+}
+
 export function useBlockSelfTest() {
   const [state, setState] = useState<SelfTestState>('idle');
   const [remaining, setRemaining] = useState(60);
@@ -57,7 +70,7 @@ export function useBlockSelfTest() {
     timerRef.current = null;
     if (tickRef.current) clearInterval(tickRef.current);
     tickRef.current = null;
-    if (releaseBlocking) AppBlocker.stopBlocking().catch(() => {});
+    if (releaseBlocking) releaseTestBlocking();
   }, []);
 
   // Release blocking if the screen unmounts mid-test.
@@ -92,6 +105,7 @@ export function useBlockSelfTest() {
         setState('error');
         return 'error';
       }
+      selfTestRunning = true;
       setState('waiting');
       const startedAt = Date.now();
       tickRef.current = setInterval(() => {
@@ -100,8 +114,15 @@ export function useBlockSelfTest() {
       unsubRef.current = AppBlocker.onBlockedAttempt(() => {
         // Any block event during the window proves detection end-to-end
         // (the test package is the only thing blocked right now).
-        cleanup(true);
+        // Keep blocking until StayT is back in front: releasing now would
+        // pull the block overlay (ADR-0008) out from under the user.
+        cleanup(false);
         setState('success');
+        const sub = AppState.addEventListener('change', next => {
+          if (next !== 'active') return;
+          sub.remove();
+          releaseTestBlocking();
+        });
       });
       timerRef.current = setTimeout(() => {
         cleanup(true);

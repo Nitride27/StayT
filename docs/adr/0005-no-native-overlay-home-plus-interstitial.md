@@ -1,7 +1,7 @@
 # ADR-0005: No native overlay — HOME bounce + JS interstitial only
 
 Date: 2026-09-17
-Status: accepted
+Status: superseded by ADR-0008
 Supersedes: ADR-0001 (overlay as enforcement surface)
 
 ## Context

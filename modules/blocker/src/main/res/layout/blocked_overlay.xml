@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Block overlay (ADR-0008): full-screen accessibility overlay drawn over
+     the blocked app. Colors follow the app theme at runtime (tokens.ts:
+     pure black / paper) — the values here are the dark defaults. Typefaces
+     (Anton / SpaceGrotesk-Bold / Inter) are applied in code from assets. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlay_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp">
+
+    <ImageView
+        android:id="@+id/overlay_owl"
+        android:layout_width="150dp"
+        android:layout_height="180dp"
+        android:contentDescription="StayT owl"
+        android:scaleType="fitCenter"
+        android:src="@drawable/stayt_owl_blocked_white" />
+
+    <TextView
+        android:id="@+id/overlay_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:gravity="center"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:text="This app is blocked"
+        android:textColor="#FFFFFF"
+        android:textSize="40sp" />
+
+    <TextView
+        android:id="@+id/overlay_sub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:text="You're in a focus session. Stay with it."
+        android:textColor="#C8C8C8"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/overlay_back"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="40dp"
+        android:background="@drawable/overlay_btn_primary"
+        android:clickable="true"
+        android:focusable="true"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp"
+        android:singleLine="true"
+        android:text="BACK TO MY TASK"
+        android:textColor="#000437"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/overlay_close"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/overlay_btn_secondary"
+        android:clickable="true"
+        android:focusable="true"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:singleLine="true"
+        android:text="CLOSE APP"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/overlay_more"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_marginTop="8dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:text="MORE OPTIONS"
+        android:textColor="#AFAFAF"
+        android:textSize="14sp" />
+</LinearLayout>

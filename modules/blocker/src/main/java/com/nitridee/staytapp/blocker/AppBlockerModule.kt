@@ -30,6 +30,17 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         fun emitBlockedAttempt(packageName: String, timestamp: Long, appLabel: String) {
             instance?.emitToJS(packageName, timestamp, appLabel)
         }
+
+        fun emitSessionPause(paused: Boolean, pausedAt: Long, pausedTotalMs: Long) {
+            instance?.emitPauseToJS(paused, pausedAt, pausedTotalMs)
+        }
+
+        private fun pauseMap(paused: Boolean, pausedAt: Long, pausedTotalMs: Long) =
+            Arguments.createMap().apply {
+                putBoolean("paused", paused)
+                putDouble("pausedAt", pausedAt.toDouble())
+                putDouble("pausedTotalMs", pausedTotalMs.toDouble())
+            }
     }
 
     init {
@@ -78,7 +89,11 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
                 promise.resolve(false)
                 return
             }
-            val blockedPackages = cleanPackages(blocked.toArrayList())
+            val sessionPackages = cleanPackages(blocked.toArrayList())
+            // Active schedule windows keep blocking alongside the session.
+            StayTAccessibilityService.setSessionPackages(reactApplicationContext, sessionPackages)
+            val blockedPackages = (sessionPackages +
+                StayTAccessibilityService.scheduleUnionNow(reactApplicationContext)).distinct()
             if (allowlist == null) {
                 StayTAccessibilityService.clearAllowlist()
                 StayTAccessibilityService.setBlocking(blocking = true, blocked = blockedPackages, taskName = taskName)
@@ -100,10 +115,110 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Session metadata for the ongoing note (ADR-0008): true start (timer
+     * base) and whether pause is offered (false for strict/dumbphone).
+     */
+    @ReactMethod
+    fun setSessionInfo(startedAt: Double, pausable: Boolean, promise: Promise) {
+        try {
+            val at = if (startedAt.isNaN() || startedAt <= 0.0) 0L else startedAt.toLong()
+            StayTAccessibilityService.setSessionInfo(reactApplicationContext, at, pausable)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "setSessionInfo failed", e)
+            try { promise.resolve(false) } catch (_: Exception) { }
+        }
+    }
+
+    /** Pause/resume the running session; resolves the resulting pause snapshot. */
+    @ReactMethod
+    fun setSessionPaused(paused: Boolean, promise: Promise) {
+        try {
+            StayTAccessibilityService.setSessionPaused(reactApplicationContext, paused)
+            getSessionPause(promise)
+        } catch (e: Exception) {
+            Log.e(TAG, "setSessionPaused failed", e)
+            try { promise.resolve(null) } catch (_: Exception) { }
+        }
+    }
+
+    /**
+     * Send StayT to the background without finishing the activity (like
+     * HOME). Back on a live session uses this: finishing would unmount the
+     * session screen and silently drop enforcement mid-session.
+     */
+    @ReactMethod
+    fun moveToBack(promise: Promise) {
+        try {
+            val activity = reactApplicationContext.currentActivity
+            promise.resolve(activity?.moveTaskToBack(true) ?: false)
+        } catch (e: Exception) {
+            Log.e(TAG, "moveToBack failed", e)
+            try { promise.resolve(false) } catch (_: Exception) { }
+        }
+    }
+
+    /** App theme mirror for native surfaces (overlay, note, widget). */
+    @ReactMethod
+    fun setThemeDark(dark: Boolean, promise: Promise) {
+        try {
+            StayTAccessibilityService.setThemeDark(reactApplicationContext, dark)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "setThemeDark failed", e)
+            try { promise.resolve(false) } catch (_: Exception) { }
+        }
+    }
+
+    /**
+     * Open an installed app by package (after an override / intention break,
+     * so the user lands where they asked to go). StayT is in the foreground
+     * when this runs, so the launch is BAL-allowed. Validated like every
+     * bridge input (ADR-0004): launcher-visible packages only.
+     */
+    @ReactMethod
+    fun openApp(packageName: String?, promise: Promise) {
+        try {
+            val pkg = packageName?.trim().orEmpty()
+            if (pkg.isEmpty() || pkg.length > 256) {
+                promise.resolve(false)
+                return
+            }
+            val launch = reactApplicationContext.packageManager.getLaunchIntentForPackage(pkg)
+            if (launch == null) {
+                promise.resolve(false)
+                return
+            }
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            reactApplicationContext.startActivity(launch)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "openApp failed", e)
+            try { promise.resolve(false) } catch (_: Exception) { }
+        }
+    }
+
+    @ReactMethod
+    fun getSessionPause(promise: Promise) {
+        try {
+            val (paused, at, total) = StayTAccessibilityService.sessionPauseSnapshot()
+            promise.resolve(pauseMap(paused, at, total))
+        } catch (e: Exception) {
+            Log.e(TAG, "getSessionPause failed", e)
+            try { promise.resolve(null) } catch (_: Exception) { }
+        }
+    }
+
     @ReactMethod
     fun stopBlocking(promise: Promise) {
         try {
+            // Session over: full stop clears its name/allowlist/pause, then an
+            // active schedule window re-arms blocking for its own apps.
+            StayTAccessibilityService.setSessionPackages(reactApplicationContext, null)
             StayTAccessibilityService.setBlocking(blocking = false)
+            val scheduled = StayTAccessibilityService.scheduleUnionNow(reactApplicationContext)
+            if (scheduled.isNotEmpty()) StayTAccessibilityService.setBlocking(blocking = true, blocked = scheduled)
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e(TAG, "stopBlocking failed", e)
@@ -168,9 +283,8 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * No-overlay (ADR-0005): no-op shim — JS BlockedInterstitial still calls
-     * this on mount, and with no native window it trivially resolves true.
-     * Kept so the JS seam needs zero changes; never throws.
+     * Single-surface rule (ADR-0008): the JS interstitial removes the native
+     * block overlay on mount. Never throws.
      */
     @ReactMethod
     fun dismissBlockedOverlay(promise: Promise) {
@@ -419,9 +533,9 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Battery optimization screen: request-ignore with package URI first,
-     * then the list, then generic Settings. Best-effort, never throws.
-     * No new permissions, no manifest change.
+     * Battery screen for StayT: its App info page first (Battery >
+     * Unrestricted lives there), then the battery-optimization list, then
+     * generic Settings. Best-effort, never throws. No new permissions.
      */
     @ReactMethod
     fun openBatteryOptimizationSettings(promise: Promise) {
@@ -504,6 +618,10 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
                     candidates.add(Intent().setClassName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"))
                 }
                 manufacturer.contains("samsung") -> {
+                    // One UI 4+ (verified on-device, M52 / One UI 5): Battery
+                    // with "Background usage limits" > Never sleeping apps.
+                    candidates.add(Intent().setClassName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"))
+                    // Older One UI class name.
                     candidates.add(Intent().setClassName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"))
                 }
                 manufacturer.contains("asus") -> {
@@ -542,21 +660,15 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (_: Exception) {
             return false
         }
+        // App info first: on Android 12+ every brand puts Battery >
+        // Unrestricted there (verified on-device), which is what the
+        // permission page tells the user to tap. The old first choice,
+        // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, needs a permission
+        // StayT does not declare, so it always failed.
         val candidates = mutableListOf<Intent>()
         try {
-            candidates.add(
-                Intent(
-                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    Uri.parse("package:" + ctx.packageName)
-                )
-            )
-        } catch (_: Exception) {
-        }
-        try {
+            candidates.add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName)))
             candidates.add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-        } catch (_: Exception) {
-        }
-        try {
             candidates.add(Intent(Settings.ACTION_SETTINGS))
         } catch (_: Exception) {
         }
@@ -779,6 +891,17 @@ class AppBlockerModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.w(TAG, "icon load failed for $packageName", e)
             return ""
+        }
+    }
+
+    private fun emitPauseToJS(paused: Boolean, pausedAt: Long, pausedTotalMs: Long) {
+        // Same dead-runtime rule as emitToJS: never throw.
+        try {
+            reactApplicationContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("onSessionPauseChanged", pauseMap(paused, pausedAt, pausedTotalMs))
+        } catch (e: Exception) {
+            Log.w(TAG, "emitSessionPause failed (JS runtime gone?)", e)
         }
     }
 

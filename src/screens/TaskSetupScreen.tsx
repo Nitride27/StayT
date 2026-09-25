@@ -60,6 +60,7 @@ async function syncSchedulesToNative(): Promise<void> {
         endMinutes: s.endMinutes,
         enabled: s.enabled,
         blockedPackages: blockedPackagesOf(byId.get(s.taskId)!),
+        ...(s.onceStart && s.onceEnd ? { onceStart: s.onceStart, onceEnd: s.onceEnd } : {}),
       }));
     await AppBlocker.setSchedules(payload).catch(() => {});
   } catch {
@@ -159,6 +160,7 @@ export function AppSelectModal(props: {
   loading?: boolean;
 }) {
   const [q, setQ] = useState('');
+  const { isDark } = useTheme();
   const filtered = props.apps.filter(
     a =>
       a.appName.toLowerCase().includes(q.toLowerCase()) ||
@@ -172,7 +174,7 @@ export function AppSelectModal(props: {
       onRequestClose={props.onClose}
     >
       <TouchableWithoutFeedback onPress={() => { props.onClose(); Keyboard.dismiss(); }}>
-        <View style={styles.pickerBackdrop}>
+        <View style={[styles.pickerBackdrop, { backgroundColor: isDark ? darkColors.overlay : colors.overlay }]}>
           <TouchableWithoutFeedback>
             <View style={[styles.pickerCard, { backgroundColor: props.cardBg, borderColor: props.border }]}>
               <TextInput
@@ -268,6 +270,18 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       ? [{ packageName: existingTask.packageName, appName: existingTask.appName }]
       : [];
   });
+  // A saved task stores one app name (the first app); the rest seed with
+  // their package id ("com.android.chrome"). Swap in real names once the
+  // installed-app list is in.
+  useEffect(() => {
+    if (installedApps.length === 0) return;
+    const names = new Map(installedApps.map(a => [a.packageName, a.appName]));
+    setSelectedApps(prev =>
+      prev.some(a => a.appName === a.packageName && names.has(a.packageName))
+        ? prev.map(a => (a.appName === a.packageName ? { ...a, appName: names.get(a.packageName) ?? a.appName } : a))
+        : prev,
+    );
+  }, [installedApps]);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleDays, setScheduleDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [startMinutes, setStartMinutes] = useState(9 * 60);
@@ -282,6 +296,9 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   // ── Wave 2C1 A: schedule presets (free) ──
   const [scheduleFromPreset, setScheduleFromPreset] = useState(false);
   const [presetNote, setPresetNote] = useState<string | null>(null);
+  // Set only by the Focus sprint preset: a one-time window (epoch ms). Any
+  // manual day/time edit or another preset turns it back into a weekly one.
+  const [onceWindow, setOnceWindow] = useState<{ start: number; end: number } | null>(null);
   const [presetBusy, setPresetBusy] = useState(false);
   // ── Wave 2C1 C: dumbphone allowlist (Pro flagship, per-task) ──
   const [allowlistMode, setAllowlistMode] = useState(existingTask?.allowlistMode === true);
@@ -302,8 +319,14 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   // Product-clarity Q2: budget creation reuses AppSelectModal (no twin picker).
   const [budgetPickerOpen, setBudgetPickerOpen] = useState(false);
   // Product-clarity Q4: pkgs where the hard block wins over feed/budget.
-  const [feedCollisions, setFeedCollisions] = useState<string[]>([]);
-  const [budgetCollisions, setBudgetCollisions] = useState<string[]>([]);
+  // Collision notes are about THIS task only: its own block list vs its
+  // budgets / the global feed shields (other tasks' lists never run in this
+  // task's session, so they must not warn here).
+  const thisTaskBlocked = new Set(selectedApps.map(a => a.packageName));
+  const budgetCollisions = [...new Set(budgets.map(b => b.packageName).filter(p => thisTaskBlocked.has(p)))];
+  const feedCollisions = feedFilters
+    .filter(f => f.enabled === true && thisTaskBlocked.has(f.packageName))
+    .map(f => f.packageName);
   // Declutter: progressive disclosure — advanced sections collapsed by default.
   // Visibility only; save/store/navigation/push logic below is untouched.
   const [showManualPkg, setShowManualPkg] = useState(false);
@@ -319,8 +342,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     store.getBudgetsForTask(currentTaskId).then(setBudgets).catch(() => {});
     store.getBlockedDomains().then(setDomains).catch(() => {});
     store.getFeedFilters().then(setFeedFilters).catch(() => {});
-    store.findFeedBlockCollisions().then(setFeedCollisions).catch(() => {});
-    store.findBudgetBlockCollisions().then(setBudgetCollisions).catch(() => {});
     AppBlocker.getBudgetUsage().then(u => setBudgetUsage(u ?? {})).catch(() => {});
   }, [currentTaskId]);
 
@@ -352,7 +373,10 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
         if (!live || list.length === 0) return;
         const s: FocusSchedule = list[0];
         setExistingScheduleId(s.id);
-        setScheduleEnabled(s.enabled);
+        const once = s.onceStart && s.onceEnd ? { start: s.onceStart, end: s.onceEnd } : null;
+        setOnceWindow(once);
+        // A finished one-time sprint reads as off, not as a weekly schedule.
+        setScheduleEnabled(s.enabled && !(once && once.end <= Date.now()));
         setScheduleDays(s.days);
         setStartMinutes(s.startMinutes);
         setEndMinutes(s.endMinutes);
@@ -467,12 +491,14 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const handleToggleDay = (day: number) => {
     if (!isPro) { showScheduleProGate(); return; }
     tap();
+    setOnceWindow(null);
     setScheduleDays(prev => (prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]));
   };
 
   const adjustHour = (which: 'start' | 'end', delta: number) => {
     if (!isPro) { showScheduleProGate(); return; }
     tap();
+    setOnceWindow(null);
     if (which === 'start') {
       setStartMinutes(prev => {
         const h = Math.floor(prev / 60);
@@ -489,6 +515,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const cycleMinute = (which: 'start' | 'end') => {
     if (!isPro) { showScheduleProGate(); return; }
     tap();
+    setOnceWindow(null);
     if (which === 'start') {
       setStartMinutes(prev => {
         const h = Math.floor(prev / 60);
@@ -516,6 +543,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   const applySchedulePreset = (kind: 'bedtime' | 'work') => {
     if (presetBusy) return;
     tap();
+    setOnceWindow(null);
     if (kind === 'bedtime') {
       setScheduleDays([0, 1, 2, 3, 4, 5, 6]);
       setStartMinutes(1380);
@@ -531,26 +559,27 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     setScheduleFromPreset(true);
   };
 
-  // One-shot 25-min block, today only. Re-tapping yields the same window, so
-  // it is idempotent — that plus presetBusy is the double-tap safety.
-  // Overlap with an existing schedule is allowed (native handles overlap).
+  // Focus sprint: a ONE-TIME 25-min window starting now. Stored with
+  // onceStart/onceEnd, so it fires once and never repeats (it used to save
+  // as a weekly schedule on today's weekday and block again next week).
+  // Crossing midnight is fine: the window is absolute time.
   const applySprintPreset = () => {
     if (presetBusy) return;
     setPresetBusy(true);
     tap();
-    const now = new Date();
-    const start = now.getHours() * 60 + now.getMinutes();
-    let end = start + 25;
-    let clamped = false;
-    if (end >= 1440) { end = 1439; clamped = true; }
-    setScheduleDays([now.getDay()]);
-    setStartMinutes(start);
-    setEndMinutes(end);
+    const start = Date.now();
+    const end = start + 25 * 60 * 1000;
+    const minutesOf = (ms: number) => {
+      const d = new Date(ms);
+      return d.getHours() * 60 + d.getMinutes();
+    };
+    setOnceWindow({ start, end });
+    setScheduleDays([new Date(start).getDay()]);
+    setStartMinutes(minutesOf(start));
+    setEndMinutes(minutesOf(end));
     setScheduleEnabled(true);
     setScheduleFromPreset(true);
-    setPresetNote(
-      `Today ${formatScheduleTime(start)}–${formatScheduleTime(end)}${clamped ? ' (to midnight)' : ''}`,
-    );
+    setPresetNote(`Once, ${formatScheduleTime(minutesOf(start))}–${formatScheduleTime(minutesOf(end))}`);
     setPresetBusy(false);
   };
 
@@ -562,19 +591,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       { text: 'View Pro', onPress: () => navigation.navigate('Paywall') },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  };
-
-  // Collision notice shared by every path that auto-disables a shield:
-  // hard block wins, the feed row is kept (disabled) for one-tap re-enable.
-  const showShieldDisabledNotice = (pkgs: string[], reason: 'blocked' | 'budget') => {
-    if (pkgs.length === 0) return;
-    const names = pkgs.map(appLabelFor).join(', ');
-    Alert.alert(
-      'Feed Shield auto-disabled',
-      reason === 'blocked'
-        ? `Hard block wins: ${names} ${pkgs.length === 1 ? 'is' : 'are'} fully blocked by a task, so the shield was turned off. The entry is kept — re-enable it after unblocking.`
-        : `Budget wins: ${names} ${pkgs.length === 1 ? 'has' : 'have'} an enabled budget now (over-limit takes the block path), so the shield was turned off. The entry is kept — re-enable it after removing the budget.`,
-    );
   };
 
   // Re-push feeds after any write that may have auto-disabled a shield row
@@ -604,7 +620,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       ?? selectedApps.find(a => a.packageName === pkg)?.appName
       ?? pkg;
     try {
-      const shieldOff = await store.saveBudget({
+      await store.saveBudget({
         id: `budget-${Date.now()}`,
         packageName: pkg,
         appLabel: label,
@@ -620,8 +636,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       setNewBudgetLimit(10);
       if (duplicate) {
         Alert.alert('Duplicate budget', 'This app + meter is already tracked. Both rows are kept.');
-      } else {
-        showShieldDisabledNotice(shieldOff, 'budget');
       }
     } catch {
       Alert.alert('Could not save budget', 'Storage failed. Please try again.');
@@ -637,11 +651,10 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     // the enabled switch (the store also normalizes limit <= 0 to disabled).
     if (patch.limit !== undefined) merged.limit = Math.min(999, Math.max(1, patch.limit));
     try {
-      const shieldOff = await store.saveBudget(merged);
+      await store.saveBudget(merged);
       setBudgets(await store.getBudgetsForTask(currentTaskId));
       await syncBudgetsToNative();
       await refreshFeedsAndPush();
-      showShieldDisabledNotice(shieldOff, 'budget');
     } catch {
       Alert.alert('Could not save budget', 'Storage failed. Please try again.');
     }
@@ -763,13 +776,9 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     const next: FeedFilter = { ...cur };
     next[flag] = !next[flag];
     try {
-      const res = await store.saveFeedFilter(next);
+      await store.saveFeedFilter(next);
       setFeedFilters(await store.getFeedFilters());
       await syncFeedsToNative();
-      // Enabling onto a blocked/budgeted app auto-disables (hard block wins).
-      if (res.autoDisabled && res.reason) {
-        showShieldDisabledNotice([next.packageName], res.reason);
-      }
     } catch {
       Alert.alert('Could not save feed filter', 'Storage failed. Please try again.');
     }
@@ -783,7 +792,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     }
     tap();
     try {
-      const res = await store.saveFeedFilter({
+      await store.saveFeedFilter({
         packageName: app.packageName,
         hideReels: true,
         hideExplore: true,
@@ -793,9 +802,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       setFeedFilters(await store.getFeedFilters());
       await syncFeedsToNative();
       setFeedPickerOpen(false);
-      if (res.autoDisabled && res.reason) {
-        showShieldDisabledNotice([app.packageName], res.reason);
-      }
     } catch {
       Alert.alert('Could not save feed filter', 'Storage failed. Please try again.');
     }
@@ -846,17 +852,6 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     // Free tier forces the schedule off at save — except preset schedules,
     // which are free by design (Wave 2C1 A).
     const effectiveScheduleEnabled = scheduleEnabled && (isPro || scheduleFromPreset);
-    // Collision notice: capture enabled shields before the save — saveTask
-    // auto-disables newly colliding ones (hard block wins); the diff below
-    // is the notice list.
-    let shieldsBefore: string[] = [];
-    try {
-      shieldsBefore = (await store.getFeedFilters())
-        .filter(f => f.enabled === true)
-        .map(f => f.packageName);
-    } catch {
-      // Best-effort; the save below still reconciles.
-    }
 
     try {
       let saved: Task;
@@ -902,6 +897,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           startMinutes,
           endMinutes,
           enabled: effectiveScheduleEnabled,
+          ...(onceWindow ? { onceStart: onceWindow.start, onceEnd: onceWindow.end } : {}),
         });
       } else if (effectiveScheduleEnabled) {
         await store.saveSchedule({
@@ -911,26 +907,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           startMinutes,
           endMinutes,
           enabled: true,
+          ...(onceWindow ? { onceStart: onceWindow.start, onceEnd: onceWindow.end } : {}),
         });
       }
     } catch {
       // Best-effort; the task itself already saved.
     }
     await syncSchedulesToNative();
-    // Task edits can newly collide feed rows (saveTask auto-disabled them
-    // internally) — refresh the list, re-push native feeds, and notice.
-    try {
-      const after = await store.getFeedFilters();
-      setFeedFilters(after);
-      const newlyOff = after
-        .filter(f => f.enabled !== true && shieldsBefore.includes(f.packageName))
-        .map(f => f.packageName);
-      if (newlyOff.length > 0) {
-        showShieldDisabledNotice(newlyOff, 'blocked');
-      }
-    } catch {
-      // Best-effort.
-    }
     await syncFeedsToNative();
     navigation.goBack();
   };
@@ -1014,11 +997,13 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     if (scheduleDays.length === 7) return 'Daily';
     if (scheduleDays.length === 5 && [1, 2, 3, 4, 5].every(d => s.has(d))) return 'Weekdays';
     if (scheduleDays.length === 2 && s.has(0) && s.has(6)) return 'Weekends';
-    return `${scheduleDays.length} days`;
+    // Any other set: name the days ("Thu", "Mon, Wed") — "1 days" read wrong.
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return [...scheduleDays].sort((x, y) => x - y).map(d => names[d]).join(', ');
   })();
   const scheduleSummary = !scheduleEnabled
     ? 'Off'
-    : `${scheduleDaySummary} · ${formatScheduleTime(startMinutes)}–${formatScheduleTime(endMinutes)}`;
+    : `${onceWindow ? 'Once' : scheduleDaySummary} · ${formatScheduleTime(startMinutes)}–${formatScheduleTime(endMinutes)}`;
   const budgetSummary = taskBudgets.length === 0
     ? 'Off'
     : `${taskBudgets.length} app${taskBudgets.length === 1 ? '' : 's'}`;
@@ -1040,7 +1025,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     return (
       <View key={b.id} style={styles.budgetRow}>
         <View style={styles.rowBetween}>
-          <Text style={[typography.bodyMedium, { color: lockedInk, flex: 1 }]} numberOfLines={1}>
+          {/* A budget on an app this task already blocks has no effect: red. */}
+          <Text style={[typography.bodyMedium, { color: budgetCollisionSet.has(b.packageName) ? colors.danger : lockedInk, flex: 1 }]} numberOfLines={1}>
             {`${b.appLabel} · ${b.limit} ${unit}/day${used !== undefined ? ` · ${used} used` : ''}`}
           </Text>
           {budgetCollisionSet.has(b.packageName) && (
@@ -1168,7 +1154,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             onRequestClose={() => setAppPickerOpen(false)}
           >
             <TouchableWithoutFeedback onPress={() => { setAppPickerOpen(false); Keyboard.dismiss(); }}>
-              <View style={styles.pickerBackdrop}>
+              <View style={[styles.pickerBackdrop, { backgroundColor: isDark ? darkColors.overlay : colors.overlay }]}>
                 <TouchableWithoutFeedback>
                   <View style={[styles.pickerCard, { backgroundColor: cardBg, borderColor: border }]}>
                     <TextInput
@@ -1387,7 +1373,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           {showSchedule && (
           <>
           <Text style={[typography.caption, { color: muted, marginBottom: spacing.sm }]}>
-            Recurring auto-block for THIS task only. Runs on its own — no session needed.
+            Blocks this task's apps at set times, even when no session is running.
           </Text>
           <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
             <TouchableOpacity
@@ -1464,7 +1450,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                   Focus sprint
                 </Text>
                 <Text style={[typography.caption, { color: muted, marginTop: 2 }]}>
-                  Today · 25 min from now
+                  Once · 25 min from now
                 </Text>
               </View>
               <ChevronRightIcon size={20} color={muted} />
@@ -1474,6 +1460,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                 {presetNote}
               </Text>
             )}
+            {/* A one-time sprint has no weekdays to pick. */}
+            {!onceWindow && (
             <View style={styles.dayRow}>
                   {DAY_ORDER.map((day, i) => {
                     const on = scheduleDays.includes(day);
@@ -1494,6 +1482,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
                     );
                   })}
                 </View>
+            )}
                 <View style={styles.timeRow}>
                   <Text style={[typography.label, { color: lockedInk }]}>START</Text>
                   <View style={styles.stepperGroup}>
@@ -1545,7 +1534,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
           />
           {budgetCollisions.length > 0 && (
             <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
-              {`Hard block wins: ${budgetCollisions.map(appLabelFor).join(', ')} ${budgetCollisions.length === 1 ? 'is' : 'are'} already fully blocked by a task — the budget only meters when no block is active.`}
+              {`${budgetCollisions.map(appLabelFor).join(', ')} ${budgetCollisions.length === 1 ? 'is' : 'are'} already blocked in this task, so ${budgetCollisions.length === 1 ? 'its budget has' : 'their budgets have'} no effect here.`}
             </Text>
           )}
           {showBudgets && (
@@ -1707,19 +1696,19 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
             label="Feed Shield"
           />
           {feedCollisions.length > 0 && !showFeeds && (
-            <Text style={[typography.caption, { color: colors.danger, marginBottom: spacing.sm }]}>
-              {`Hard block wins: ${feedCollisions.map(appLabelFor).join(', ')} already fully blocked.`}
+            <Text style={[typography.caption, { color: muted, marginBottom: spacing.sm }]}>
+              {`${feedCollisions.map(appLabelFor).join(', ')} ${feedCollisions.length === 1 ? 'is' : 'are'} blocked in this task, so Feed Shield has no effect here.`}
             </Text>
           )}
           {showFeeds && (
           <>
           <View pointerEvents={dumb ? 'none' : 'auto'} style={[styles.scheduleCard, { backgroundColor: cardBg, borderColor: border }, dumb && styles.grayed]}>
             <Text style={[typography.caption, { color: muted }]}>
-              Hardens feeds, never blocks. If the app is also fully blocked, the block wins. Off if glitchy.
+              Backs you out of feeds like Reels without blocking the whole app. Turn it off if an app acts up.
             </Text>
             {feedCollisions.length > 0 && (
-              <Text style={[typography.caption, { color: colors.danger, marginTop: spacing.sm }]}>
-                {`Hard block wins: ${feedCollisions.map(appLabelFor).join(', ')} already fully blocked — Feed Shield adds nothing while blocked.`}
+              <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
+                {`${feedCollisions.map(appLabelFor).join(', ')} ${feedCollisions.length === 1 ? 'is' : 'are'} blocked in this task, so Feed Shield has no effect here.`}
               </Text>
             )}
             {feedFilters.length === 0 ? (

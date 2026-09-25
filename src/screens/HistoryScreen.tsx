@@ -489,26 +489,11 @@ export default function HistoryScreen({ navigation }: Props) {
                 <Text style={[typography.displayXL, { color: streakGreen }]}>{streak}</Text>
               </View>
               <Text style={[typography.display, { color: streakGreen, textAlign: 'center', marginTop: spacing.xs }]}>DAY STREAK!</Text>
-              {/* Withering owl: dark themes composite transparency straight
-                  onto the screen; light theme gets a deliberate midnight tile
-                  (black art needs a dark stage — floating it on white reads
-                  as a blob). */}
+              {/* Withering owl straight on the screen in both themes, like
+                  every other mascot: light uses the plain frames, dark the
+                  white-outlined set (see witheringFrames). */}
               <View style={{ alignItems: 'center', marginTop: spacing.md }}>
-                <View
-                  style={
-                    isDark
-                      ? undefined
-                      : {
-                          backgroundColor: colors.midnight,
-                          borderRadius: radius.xl,
-                          padding: spacing.md,
-                          borderWidth: 2,
-                          borderColor: colors.ectoGreenDark,
-                        }
-                  }
-                >
-                  <WitheringOwl giveInsToday={giveInsToday} width={200} />
-                </View>
+                <WitheringOwl giveInsToday={giveInsToday} width={200} />
               </View>
               {/* Wave 2C2 owl mood line (additive, same helper as TaskPicker). */}
               <Text style={[typography.bodyMedium, { color: muted, textAlign: 'center', marginTop: spacing.sm }]}>

@@ -12,14 +12,6 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withDelay,
-  withSpring,
-  Easing,
-} from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../theme/ThemeContext';
@@ -37,35 +29,75 @@ type Props = {
   route: { params?: { pendingTaskId?: string } };
 };
 
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
-function getOEMTip(): string | null {
-  if (Platform.OS !== 'android') return null;
+type Brand = 'samsung' | 'xiaomi' | 'huawei' | 'oppo' | 'oneplus' | 'vivo' | 'motorola' | 'nothing' | 'other';
+
+function detectBrand(): Brand {
+  if (Platform.OS !== 'android') return 'other';
   const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
-  const manufacturer =
-    (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
+  const manufacturer = (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
   const hay = `${manufacturer} ${model}`;
-  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
-    return 'Xiaomi: Settings > Apps > Manage apps > StayT > Autostart ON';
-  if (hay.includes('samsung'))
-    return 'Samsung: Settings > Battery > StayT > Allow background activity';
-  if (hay.includes('huawei') || hay.includes('honor'))
-    return 'Huawei: Settings > Battery > App launch > StayT > Manage manually';
-  if (hay.includes('oppo') || hay.includes('realme') || hay.includes('oneplus'))
-    return 'OPPO/OnePlus: Settings > Battery > App battery management > StayT > Allow background activity';
-  if (hay.includes('vivo') || hay.includes('iqoo'))
-    return 'Vivo: Settings > Battery > Background power consumption > StayT > Allow';
-  if (hay.includes('motorola') || hay.includes('moto'))
-    return 'Motorola: Settings > Battery > Adaptive Battery > exclude StayT';
-  if (hay.includes('nothing'))
-    return 'Nothing: Settings > Battery > StayT > Unrestricted';
-  return null;
+  if (hay.includes('samsung')) return 'samsung';
+  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco')) return 'xiaomi';
+  if (hay.includes('huawei') || hay.includes('honor')) return 'huawei';
+  if (hay.includes('oppo') || hay.includes('realme')) return 'oppo';
+  if (hay.includes('oneplus')) return 'oneplus';
+  if (hay.includes('vivo') || hay.includes('iqoo')) return 'vivo';
+  if (hay.includes('motorola') || hay.includes('moto')) return 'motorola';
+  if (hay.includes('nothing')) return 'nothing';
+  return 'other';
 }
 
-// Shown on EVERY Android device — OEM killers break blocking silently,
-// so the generic path is always visible, with an OEM-specific line on top.
-const GENERIC_BATTERY_TIP =
-  'Keep StayT running: Settings > Apps > StayT > Battery > Unrestricted.';
+// What to tap after OPEN SETTINGS lands on the Accessibility page. Apps
+// can't deep-link to one service's page (OPEN_ACCESSIBILITY_DETAILS_SETTINGS
+// is system-only, verified on-device), so the list name has to be exact.
+// Samsung One UI verified on-device: "Installed apps".
+function accessibilitySteps(brand: Brand): string[] {
+  const list = brand === 'samsung' ? 'Installed apps' : 'Downloaded apps (on some phones: Installed apps)';
+  return [
+    'Tap OPEN SETTINGS below.',
+    `Tap ${list}, then StayT.`,
+    'Turn StayT on and tap Allow.',
+    'Come back here. StayT continues on its own.',
+  ];
+}
+
+type KeepAliveRow = { title: string; how: string; open: 'battery' | 'oem' };
+
+// Optional hardening against phones that close apps in the background.
+// Each row says exactly what to tap on the screen its OPEN button opens.
+// Battery row verified on-device: App info > Battery > Unrestricted.
+function keepAliveRows(brand: Brand): KeepAliveRow[] {
+  const rows: KeepAliveRow[] = [
+    { title: 'Battery: Unrestricted', how: 'Tap Battery, then Unrestricted.', open: 'battery' },
+  ];
+  // Android 11+ can revoke an unused app's permissions; on the same App info
+  // screen (verified on-device, M52).
+  if (Platform.OS === 'android' && Number(Platform.Version) >= 30) {
+    rows.push({
+      title: 'Keep permissions',
+      how: 'Turn off Remove permissions if app is unused.',
+      open: 'battery',
+    });
+  }
+  if (brand === 'samsung') {
+    rows.push({
+      title: 'Never sleeping apps',
+      how: 'Tap Background usage limits, then Never sleeping apps, and add StayT.',
+      open: 'oem',
+    });
+  } else if (brand === 'xiaomi' || brand === 'oppo' || brand === 'oneplus') {
+    rows.push({ title: 'Autostart', how: 'Turn Autostart on for StayT.', open: 'oem' });
+  } else if (brand === 'huawei') {
+    rows.push({ title: 'App launch', how: 'Set StayT to Manage manually and turn every switch on.', open: 'oem' });
+  } else if (brand === 'vivo') {
+    rows.push({ title: 'Background startup', how: 'Allow StayT to start in the background.', open: 'oem' });
+  }
+  return rows;
+}
+
+// Fallback when a settings screen can't be opened.
+const GENERIC_BATTERY_TIP = 'Open Settings > Apps > StayT > Battery and choose Unrestricted.';
 
 // Last-resort manual path for the restricted-settings toggle, shown only
 // when neither the native app-info intent nor the OS settings page opens.
@@ -100,75 +132,11 @@ function getRestrictedSettingsSteps(): string[] {
   ];
 }
 
-// Wave 2C2 per-OEM survival steps (additive, static text, no new
-// permissions). Each brand: recents-lock + Autostart/battery +
-// "No restrictions" lines.
-function getOEMSurvivalSteps(): string[] {
-  if (Platform.OS !== 'android') return [];
-  const model = (Platform.constants?.Model as string | undefined)?.toLowerCase() ?? '';
-  const manufacturer =
-    (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
-  const hay = `${manufacturer} ${model}`;
-  if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
-    return [
-      'Lock StayT in Recents so MIUI / HyperOS cannot swipe it away.',
-      'Autostart ON for StayT (Settings > Apps > StayT).',
-      'Battery saver → No restrictions for StayT.',
-    ];
-  if (hay.includes('huawei') || hay.includes('honor'))
-    return [
-      'Lock StayT in Recents so EMUI cannot close it.',
-      'App launch > StayT > Manage manually, all toggles ON.',
-      'Battery → No restrictions for StayT.',
-    ];
-  if (hay.includes('oppo') || hay.includes('realme'))
-    return [
-      'Lock StayT in Recents so ColorOS cannot close it.',
-      'Autostart ON for StayT.',
-      'App battery management → No restrictions for StayT.',
-    ];
-  if (hay.includes('oneplus'))
-    return [
-      'Lock StayT in Recents so OxygenOS cannot close it.',
-      'Autostart ON for StayT.',
-      'Battery optimization → Don\u2019t optimize StayT.',
-    ];
-  if (hay.includes('samsung'))
-    return [
-      'Lock StayT in Recents so One UI cannot close it.',
-      'Never-sleeping apps: add StayT.',
-      'Battery → Unrestricted for StayT.',
-    ];
-  if (hay.includes('vivo') || hay.includes('iqoo'))
-    return [
-      'Lock StayT in Recents.',
-      'Autostart ON for StayT.',
-      'Background power consumption → Allow for StayT.',
-    ];
-  if (hay.includes('motorola') || hay.includes('moto'))
-    return [
-      'Lock StayT in Recents.',
-      'Adaptive Battery: exclude StayT.',
-      'Battery → Unrestricted for StayT.',
-    ];
-  if (hay.includes('nothing'))
-    return [
-      'Lock StayT in Recents.',
-      'Autostart ON for StayT.',
-      'Battery → Unrestricted for StayT.',
-    ];
-  return [
-    'Lock StayT in Recents so the system cannot close it.',
-    'Autostart ON for StayT where available.',
-    'Battery → Unrestricted (No restrictions) for StayT.',
-  ];
-}
-
 export default function PermissionSetupScreen({ navigation, route }: Props) {
   const { isDark } = useTheme();
   const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const appState = useRef(AppState.currentState);
-  const oemTip = getOEMTip();
+  const brand = detectBrand();
   // P0-2 self-test + N-2 inline notification prompt (each fires once).
   const selfTest = useBlockSelfTest();
   const [testApp, setTestApp] = useState({ packageName: '', appName: '' });
@@ -177,29 +145,6 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
   // accessibility page without the grant (silent sideload refusal).
   const [showRestricted, setShowRestricted] = useState(false);
   const a11yAttempts = useRef(0);
-
-  // --- Animations ---
-  const headerOpacity = useSharedValue(0);
-  const headerTranslateY = useSharedValue(20);
-  const mascotScale = useSharedValue(0.8);
-  const mascotOpacity = useSharedValue(0);
-  const oemOpacity = useSharedValue(0);
-  const oemTranslateY = useSharedValue(20);
-  const buttonOpacity = useSharedValue(0);
-  const buttonScale = useSharedValue(1);
-
-  useEffect(() => {
-    headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-    headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
-
-    mascotOpacity.value = withDelay(150, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-    mascotScale.value = withDelay(150, withSpring(1, { damping: 16, stiffness: 200 }));
-
-    oemOpacity.value = withDelay(500, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-    oemTranslateY.value = withDelay(500, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
-
-    buttonOpacity.value = withDelay(600, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-  }, []);
 
   // --- Check accessibility on mount ---
   useEffect(() => {
@@ -250,41 +195,19 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
         })
         .catch(() => {});
     }
-    // P0-2: a running test owns the screen; success advances, timeout/error
-    // wait for the manual continue so nobody is trapped or skipped.
-    if (selfTest.state === 'waiting') return;
-    if (selfTest.state === 'timeout' || selfTest.state === 'error') return;
-    const delay = selfTest.state === 'success' ? 800 : 1200;
+    // Stay on this page after the grant so the user can test blocks and
+    // set up "Keep StayT running" (the old 1.2s auto-advance hid both).
+    // Only a successful test moves on by itself; otherwise CONTINUE does.
+    if (selfTest.state !== 'success') return;
     const timer = setTimeout(() => {
       // A gated TaskPicker tap carries its task id through: granting resumes
       // that exact tap instead of dropping the user on the list.
       const pendingTaskId = route.params?.pendingTaskId;
       const next = pendingTaskId ? { autoStartTaskId: pendingTaskId } : undefined;
       markOnboarded().finally(() => navigation.navigate('TaskPicker', next));
-    }, delay);
+    }, 800);
     return () => clearTimeout(timer);
   }, [accessibilityEnabled, navigation, selfTest.state, route.params?.pendingTaskId]);
-
-  // --- Animated styles ---
-  const headerAnimStyle = useAnimatedStyle(() => ({
-    opacity: headerOpacity.value,
-    transform: [{ translateY: headerTranslateY.value }],
-  }));
-
-  const mascotAnimStyle = useAnimatedStyle(() => ({
-    opacity: mascotOpacity.value,
-    transform: [{ scale: mascotScale.value }],
-  }));
-
-  const oemAnimStyle = useAnimatedStyle(() => ({
-    opacity: oemOpacity.value,
-    transform: [{ translateY: oemTranslateY.value }],
-  }));
-
-  const buttonAnimStyle = useAnimatedStyle(() => ({
-    opacity: buttonOpacity.value,
-    transform: [{ scale: buttonScale.value }],
-  }));
 
   // --- Handlers ---
   const markOnboarded = async () => {
@@ -385,14 +308,6 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
     markOnboarded().finally(() => navigation.navigate('TaskPicker', next));
   };
 
-  const handlePressIn = () => {
-    buttonScale.value = withSpring(0.97, { damping: 16, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    buttonScale.value = withSpring(1, { damping: 16, stiffness: 400 });
-  };
-
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
   const secondary = isDark ? darkColors.inkSecondary : colors.inkSecondary;
@@ -410,16 +325,16 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
       >
       <View style={styles.topSection}>
         {/* Mascot */}
-        <Animated.View style={[styles.mascotContainer, mascotAnimStyle]}>
+        <View style={styles.mascotContainer}>
           <Image
             source={mascotSource('phone', isDark)}
             style={[styles.mascotImage, { width: mascotSize, height: mascotSize }]}
             resizeMode="contain"
           />
-        </Animated.View>
+        </View>
 
         {/* Header */}
-        <Animated.View style={[styles.header, headerAnimStyle]}>
+        <View style={styles.header}>
           <Text
             style={[
               typography.display,
@@ -440,73 +355,22 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
               },
             ]}
           >
-            StayT needs Accessibility permission to check which app is open, so it can block distractions while you work.
+            StayT needs Accessibility permission to see which app is open, so it can block distractions while you work.
           </Text>
-        </Animated.View>
+        </View>
 
-        {/* Battery guidance: OEM-specific on top, generic path always */}
-        {Platform.OS === 'android' && (
-          <Animated.View style={[styles.oemCard, oemAnimStyle, { backgroundColor: bg, borderColor: ink }]}>
-            {oemTip && (
-              <Text
-                style={[
-                  typography.bodyStrong,
-                  { color: ink, textAlign: 'center' },
-                ]}
-              >
-                {oemTip}
-              </Text>
-            )}
-            <Text
-              style={[
-                typography.caption,
-                { color: muted, textAlign: 'center', marginTop: oemTip ? spacing.xs : 0 },
-              ]}
-            >
-              {GENERIC_BATTERY_TIP}
-            </Text>
-          </Animated.View>
-        )}
-
-        {/* OEM survival flow: numbered rows, each with its own OPEN
-            button to the exact system screen. Recents lock has no
-            system page, so it shows text only. */}
-        {Platform.OS === 'android' && (
+        {/* How to turn it on: exact taps for this phone's Accessibility page. */}
+        {Platform.OS === 'android' && !accessibilityEnabled && (
           <View style={[styles.oemKeepCard, { backgroundColor: bg, borderColor: ink }]}>
-            <Text style={[typography.cta, { color: ink, textAlign: 'center' }]}>
-              KEEP STAYT ALIVE
-            </Text>
-            {getOEMSurvivalSteps().map((step, index) => (
+            <Text style={[typography.cta, { color: ink, textAlign: 'center' }]}>HOW TO TURN IT ON</Text>
+            {accessibilitySteps(brand).map((step, index) => (
               <View key={step} style={styles.oemStepRow}>
-                <Text style={[typography.caption, { color: muted, flex: 1 }]}>
-                  {`${index + 1}. ${step}`}
-                </Text>
-                {index === 1 && (
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={handleOpenManufacturer}
-                    style={styles.oemStepOpenButton}
-                    accessibilityRole="button"
-                    accessibilityLabel="Open manufacturer settings"
-                  >
-                    <Text style={styles.oemStepOpenText}>OPEN</Text>
-                  </TouchableOpacity>
-                )}
-                {index === 2 && (
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={handleOpenBattery}
-                    style={styles.oemStepOpenButton}
-                    accessibilityRole="button"
-                    accessibilityLabel="Open battery settings"
-                  >
-                    <Text style={styles.oemStepOpenText}>OPEN</Text>
-                  </TouchableOpacity>
-                )}
+                <Text style={[typography.body, { color: ink, flex: 1 }]}>{`${index + 1}. ${step}`}</Text>
               </View>
             ))}
           </View>
         )}
+
         {/* Restricted-settings escape hatch: sideloaded APKs can be silently
             refused at the accessibility toggle (HyperOS/MIUI, some Samsung).
             Shown only when the user came back without the grant. */}
@@ -541,34 +405,70 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         )}
+        {/* Optional: keep StayT running on phones that close background
+            apps. Each row opens the screen its text describes. */}
+        {Platform.OS === 'android' && (
+          <View style={[styles.oemKeepCard, { backgroundColor: bg, borderColor: ink }]}>
+            <Text style={[typography.cta, { color: ink, textAlign: 'center' }]}>KEEP STAYT RUNNING</Text>
+            <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: spacing.xs }]}>
+              Recommended. Some phones close apps in the background, which stops blocking.
+            </Text>
+            {keepAliveRows(brand).map(row => (
+              <View key={row.title} style={styles.oemStepRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.bodyStrong, { color: ink }]}>{row.title}</Text>
+                  <Text style={[typography.caption, { color: muted }]}>{row.how}</Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={row.open === 'battery' ? handleOpenBattery : handleOpenManufacturer}
+                  style={styles.oemStepOpenButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${row.title} settings`}
+                >
+                  <Text style={styles.oemStepOpenText}>OPEN</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
       </ScrollView>
 
       {/* Bottom section */}
-      <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
+      <View style={styles.bottomSection}>
         {!accessibilityEnabled ? (
-          <AnimatedTouchable
+          <TouchableOpacity
             style={styles.primaryButton}
             activeOpacity={0.85}
             onPress={handleGrantAccessibility}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
+            accessibilityRole="button"
           >
             <Text style={styles.primaryButtonText}>OPEN SETTINGS</Text>
-          </AnimatedTouchable>
+          </TouchableOpacity>
         ) : (
           <View style={[styles.testCard, { borderColor: ink }]}>
             <Text style={[typography.bodyStrong, { color: ink, textAlign: 'center' }]}>
               Permission granted
             </Text>
             {selfTest.state === 'idle' && (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handleStartSelfTest}
-                style={styles.primaryButton}
-              >
-                <Text style={styles.primaryButtonText}>TEST MY BLOCKS</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={handleStartSelfTest}
+                  style={styles.primaryButton}
+                >
+                  <Text style={styles.primaryButtonText}>TEST MY BLOCKS</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleSelfTestContinue}
+                  style={styles.ghostButton}
+                  accessibilityRole="button"
+                >
+                  <Text style={[typography.button, { color: muted, textAlign: 'center' }]}>CONTINUE</Text>
+                </TouchableOpacity>
+              </>
             )}
             {selfTest.state === 'waiting' && (
               <>
@@ -633,7 +533,7 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
             )}
           </View>
         )}
-      </Animated.View>
+      </View>
     </View>
   );
 }
@@ -667,12 +567,6 @@ const styles = StyleSheet.create({
   mascotImage: {
     width: 220,
     height: 220,
-  },
-  oemCard: {
-    padding: spacing.lg,
-    borderWidth: 2,
-    borderRadius: radius.md,
-    marginTop: spacing.xl,
   },
   // Wave 2C2 OEM keep-alive card (additive, existing tokens only).
   oemKeepCard: {

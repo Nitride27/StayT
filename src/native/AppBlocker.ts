@@ -21,6 +21,19 @@ export interface BlockedAttemptEvent {
   appLabel?: string;
 }
 
+/** Session pause snapshot (ADR-0008). pausedTotalMs = finished pauses only. */
+export interface SessionPause {
+  paused: boolean;
+  pausedAt: number;
+  pausedTotalMs: number;
+}
+
+/** Focus ms for a session: wall time minus pauses, frozen while paused. */
+export function focusElapsed(startedAt: number, p: SessionPause | null, now: number = Date.now()): number {
+  const end = p?.paused && p.pausedAt > 0 ? p.pausedAt : now;
+  return Math.max(0, end - startedAt - (p?.pausedTotalMs ?? 0));
+}
+
 export interface InstalledApp {
   packageName: string;
   appName: string;
@@ -34,6 +47,9 @@ export interface NativeSchedule {
   endMinutes: number;
   enabled: boolean;
   blockedPackages: string[];
+  /** One-time window, epoch ms (see FocusSchedule). */
+  onceStart?: number;
+  onceEnd?: number;
 }
 
 export interface BlockedDeepLinkCompat {
@@ -121,6 +137,70 @@ class AppBlockerBridge {
     }
   }
 
+  /** Timer base + whether the note offers pause (false for strict/dumbphone). */
+  async setSessionInfo(startedAt: number, pausable: boolean): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker?.setSessionInfo) return false;
+    try {
+      return await AppBlocker.setSessionInfo(startedAt, pausable);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Background StayT like HOME (the activity and the session keep running). */
+  async moveToBack(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker?.moveToBack) return false;
+    try {
+      return await AppBlocker.moveToBack();
+    } catch {
+      return false;
+    }
+  }
+
+  /** Mirror the resolved app theme so native surfaces (overlay, note, widget) match. */
+  async setThemeDark(dark: boolean): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker?.setThemeDark) return false;
+    try {
+      return await AppBlocker.setThemeDark(dark);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Open an installed app (after an override / break). False when not launchable. */
+  async openApp(packageName: string): Promise<boolean> {
+    if (Platform.OS !== 'android' || !AppBlocker?.openApp) return false;
+    try {
+      return await AppBlocker.openApp(packageName);
+    } catch {
+      return false;
+    }
+  }
+
+  async getSessionPause(): Promise<SessionPause | null> {
+    if (Platform.OS !== 'android' || !AppBlocker?.getSessionPause) return null;
+    try {
+      return await AppBlocker.getSessionPause();
+    } catch {
+      return null;
+    }
+  }
+
+  async setSessionPaused(paused: boolean): Promise<SessionPause | null> {
+    if (Platform.OS !== 'android' || !AppBlocker?.setSessionPaused) return null;
+    try {
+      return await AppBlocker.setSessionPaused(paused);
+    } catch {
+      return null;
+    }
+  }
+
+  onSessionPauseChanged(callback: (p: SessionPause) => void): () => void {
+    if (!this.eventEmitter) return () => {};
+    const sub = this.eventEmitter.addListener('onSessionPauseChanged', callback);
+    return () => sub.remove();
+  }
+
   async pauseBlocking(seconds: number): Promise<boolean> {
     if (Platform.OS !== 'android' || !AppBlocker) {
       return false;
@@ -134,7 +214,7 @@ class AppBlockerBridge {
 
   /**
    * Single-surface rule: the JS interstitial calls this on mount so the
-   * native overlay never stacks over it (double blocked screen).
+   * native block overlay (ADR-0008) never stacks over it.
    * Best-effort: resolves false when native is absent; never throws.
    */
   async dismissBlockedOverlay(): Promise<boolean> {

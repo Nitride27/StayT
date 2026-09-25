@@ -9,14 +9,26 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.Rect
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.LayoutInflater
+import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.TextView
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.nitridee.staytapp.R
 import java.util.concurrent.ConcurrentHashMap
 
@@ -55,24 +67,34 @@ class StayTAccessibilityService : AccessibilityService() {
         private const val SESSION_CHANNEL_NAME = "Ongoing session"
         private const val SESSION_NOTIFICATION_ID = 57001
         private const val SESSION_TAP_REQ = 7001
-        // 5s refresh: the note carries live HRS/MINS/SECS boxes (a per-minute
-        // tick froze SECS at :00 and read as a stuck counter). Silent same-ID
-        // updates, no sound/vibration — comparable to any timer app.
-        private const val SESSION_TICK_MS = 5_000L
+        private const val SESSION_TOGGLE_REQ = 7002
         // ectoGreen accent for the small icon (mirrors theme tokens).
         // Signed decimal for 0xFF58CC02 — a raw 0xFF… literal overflows
         // Kotlin Int and will not compile.
         private const val SESSION_ACCENT = -10957822
+        // Elapsed base: the JS session's startedAt (setSessionInfo), falling
+        // back to the persisted blocking-start for native-only sessions.
         @Volatile
         private var sessionStartMs: Long = 0L
-        private var sessionTick: Runnable? = null
         // Note-lifecycle flag, independent of isBlocking: an intention
-        // break pauses enforcement but the SESSION continues, so the note +
-        // ticker must survive pauseBlocking (which flips isBlocking false and
-        // used to starve the ticker dead — frozen 00:00 until the next
-        // setBlocking). Only cancelSessionNotification clears this.
+        // break or a user pause turns enforcement off but the SESSION
+        // continues, so the note must survive. Only cancelSessionNotification
+        // clears this. The timer is a native Chronometer (ticks itself), so
+        // there is no refresh loop.
         @Volatile
         private var sessionNoteOn = false
+        // Session pause (ADR-0008): play/pause from the note or the session
+        // screen. Paused = enforcement off, timer frozen; paused intervals
+        // are excluded from elapsed. Persisted so process death keeps it.
+        @Volatile
+        private var sessionPaused = false
+        @Volatile
+        private var pausedAt = 0L
+        @Volatile
+        private var pausedTotalMs = 0L
+        // False for strict / dumbphone tasks: no pause control at all.
+        @Volatile
+        private var sessionPausable = true
         @Volatile
         private var appCtx: Context? = null
         // BlockedContract mirror (src/native/blockedContract.ts): single
@@ -112,12 +134,23 @@ class StayTAccessibilityService : AccessibilityService() {
         /** Cached PackageManager label lookup. Never throws. */
         private fun appLabel(context: Context, openedPackage: String): String {
             appLabelCache[openedPackage]?.let { return it }
+            val pm = context.packageManager
             val label = try {
-                val info = context.packageManager.getApplicationInfo(openedPackage, 0)
-                context.packageManager.getApplicationLabel(info).toString()
+                pm.getApplicationLabel(pm.getApplicationInfo(openedPackage, 0)).toString()
             } catch (_: Exception) {
-                openedPackage
+                null
+            } ?: try {
+                // Package visibility (API 30+) can hide the app itself while its
+                // launcher entry stays visible via our LAUNCHER <queries> intent
+                // (seen on-device for preinstalled YouTube on Samsung).
+                pm.queryIntentActivities(
+                    Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(openedPackage), 0
+                ).firstOrNull()?.loadLabel(pm)?.toString()
+            } catch (_: Exception) {
+                null
             }
+            // Never cache the raw package fallback: a later lookup may succeed.
+            if (label.isNullOrBlank()) return openedPackage
             appLabelCache[openedPackage] = label
             return label
         }
@@ -141,6 +174,14 @@ class StayTAccessibilityService : AccessibilityService() {
         // the mode flag and the set persist side by side with the blocklist.
         private const val STATE_KEY_ALLOW_MODE = "allowlist_mode"
         private const val STATE_KEY_ALLOW_PKGS = "allowlist_pkgs"
+        // Packages the live JS session blocks (bridge startBlocking), kept
+        // apart from schedule windows so neither can drop the other's set.
+        private const val STATE_KEY_SESSION_PKGS = "session_pkgs"
+        private const val STATE_KEY_STARTED = "session_started"
+        private const val STATE_KEY_PAUSABLE = "pausable"
+        private const val STATE_KEY_PAUSED = "paused"
+        private const val STATE_KEY_PAUSED_AT = "paused_at"
+        private const val STATE_KEY_PAUSED_TOTAL = "paused_total"
 
         // Allowlist SAFELIST: never blocked while allowlist mode is active,
         // even when not listed. Own package is handled by the existing
@@ -239,6 +280,37 @@ class StayTAccessibilityService : AccessibilityService() {
 
         // CopyOnWrite: same iteration-vs-write profile as budgetRules above.
         private val feedRules: MutableList<FeedRule> = java.util.concurrent.CopyOnWriteArrayList()
+
+        // Feed-shield section signatures. Ids: Instagram Reels viewer
+        // verified on-device (M52; also covers reels opened from feed/DMs).
+        // Tab names: a SELECTED tab with this name = that section is open —
+        // generic across apps (Instagram "Reels", YouTube "Shorts").
+        // ponytail: small fixed lists; extend per app as users report gaps.
+        private val FEED_SECTION_IDS: Map<String, List<String>> = mapOf(
+            "reels" to listOf("com.instagram.android:id/clips_viewer_view_pager"),
+        )
+        private val FEED_SECTION_TAB_NAMES: Map<String, List<String>> = mapOf(
+            "reels" to listOf("Reels", "Shorts"),
+            "explore" to listOf("Explore"),
+            "comments" to listOf("Comments"),
+        )
+
+        // Address-bar view ids of common browsers, for blocked websites.
+        // Samsung Internet verified on-device (M52); Chrome and the rest are
+        // their published ids. ponytail: fixed list — add a browser here if
+        // users report a site slipping through it.
+        private val BROWSER_URL_BAR_IDS: Map<String, String> = mapOf(
+            "com.android.chrome" to "com.android.chrome:id/url_bar",
+            "com.chrome.beta" to "com.chrome.beta:id/url_bar",
+            "com.sec.android.app.sbrowser" to "com.sec.android.app.sbrowser:id/location_bar_edit_text",
+            "com.sec.android.app.sbrowser.beta" to "com.sec.android.app.sbrowser.beta:id/location_bar_edit_text",
+            "org.mozilla.firefox" to "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
+            "com.microsoft.emmx" to "com.microsoft.emmx:id/url_bar",
+            "com.brave.browser" to "com.brave.browser:id/url_bar",
+            "com.opera.browser" to "com.opera.browser:id/url_field",
+            "com.vivaldi.browser" to "com.vivaldi.browser:id/url_bar",
+            "com.duckduckgo.mobile.android" to "com.duckduckgo.mobile.android:id/omnibarTextInput",
+        )
         private val lastFeedBackAt: MutableMap<String, Long> = ConcurrentHashMap()
         private const val FEED_BACK_COOLDOWN_MS = 10_000L
 
@@ -312,7 +384,18 @@ class StayTAccessibilityService : AccessibilityService() {
          * via [clearAllowlist] when JS passes allowlist:null.
          */
         fun setBlocking(blocking: Boolean, blocked: List<String> = emptyList(), taskName: String? = null, allowlist: List<String>? = null) {
-            isBlocking = blocking
+            // A user pause survives re-pushes of the same session (mount
+            // effect, 5s poll): enforcement stays off until resume. Stop
+            // ends the session, so it clears every pause/session field.
+            if (!blocking) {
+                clearSessionState(instance ?: appCtx)
+                // Allowlist mode belongs to the session that set it: a later
+                // tile/schedule start must be a plain blocklist, not
+                // "block everything except an old allowlist".
+                allowlistMode = false
+                allowlistPackages.clear()
+            }
+            isBlocking = blocking && !sessionPaused
             blockingTaskName = if (blocking) taskName?.takeIf { it.isNotBlank() }?.take(128) else null
             // Defense in depth (bridge already cleans): drop blanks/oversize
             // and cap size so the durable prefs mirror can't bloat unbounded.
@@ -344,7 +427,7 @@ class StayTAccessibilityService : AccessibilityService() {
             // deliberately leaves it posted (a break is still an active
             // session; only setBlocking(false) ends enforcement).
             if (!blocking) cancelSessionNotification() else postSessionNotification(instance)
-            // No-overlay (ADR-0005): dismiss is a no-op shim kept for the JS seam.
+            // Enforcement off: never leave the block overlay up (ADR-0008).
             try {
                 instance?.dismissBlockedOverlay()
             } catch (e: Exception) {
@@ -366,7 +449,7 @@ class StayTAccessibilityService : AccessibilityService() {
             // stays true, ticker keeps running): the session never ended.
             cancelBlockNotifications()
 
-            // No-overlay (ADR-0005): dismiss is a no-op shim kept for the JS seam.
+            // Enforcement off: never leave the block overlay up (ADR-0008).
             try {
                 instance?.dismissBlockedOverlay()
             } catch (e: Exception) {
@@ -378,13 +461,100 @@ class StayTAccessibilityService : AccessibilityService() {
 
             // Resume after delay
             pauseRunnable = Runnable {
+                // A user pause taken during the break wins: stay off.
+                if (sessionPaused) return@Runnable
                 isBlocking = true
                 Log.d(TAG, "Blocking resumed after pause")
-                // The session note survives breaks (session never ended) —
-                // refresh immediately so no stale text lingers.
                 refreshSessionNotification()
+                // The blocked app may still be in front when the break ends:
+                // no window event will come, so re-check the screen now.
+                instance?.requestScan()
             }
             handler.postDelayed(pauseRunnable!!, s * 1000)
+        }
+
+        // App theme mirror (bridge setThemeDark): the JS light/dark/system
+        // choice resolved to one flag, so native surfaces (overlay, covers,
+        // session note, widget) match the app instead of the phone.
+        private const val THEME_PREFS = "stayt_theme"
+        private const val THEME_KEY_DARK = "dark"
+
+        /** App theme when JS has mirrored it; else the phone's night mode. Never throws. */
+        fun isDarkTheme(ctx: Context): Boolean {
+            return try {
+                val p = ctx.getSharedPreferences(THEME_PREFS, Context.MODE_PRIVATE)
+                if (p.contains(THEME_KEY_DARK)) p.getBoolean(THEME_KEY_DARK, false)
+                else (ctx.resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        /** tokens.ts mirror: paper/card/ink/muted/border per theme. */
+        class Palette(val bg: Int, val card: Int, val ink: Int, val muted: Int, val border: Int)
+
+        fun palette(ctx: Context): Palette {
+            val c = { hex: String -> android.graphics.Color.parseColor(hex) }
+            return if (isDarkTheme(ctx)) Palette(c("#000000"), c("#111111"), c("#FFFFFF"), c("#888888"), c("#222222"))
+            else Palette(c("#F5F5F5"), c("#FFFFFF"), c("#000437"), c("#777777"), c("#E5E5E5"))
+        }
+
+        /** Bridge: persist the app theme and repaint every native surface. Never throws. */
+        fun setThemeDark(ctx: Context, dark: Boolean) {
+            try {
+                val p = ctx.getSharedPreferences(THEME_PREFS, Context.MODE_PRIVATE)
+                if (p.contains(THEME_KEY_DARK) && p.getBoolean(THEME_KEY_DARK, !dark) == dark) return
+                p.edit().putBoolean(THEME_KEY_DARK, dark).apply()
+                refreshSessionNotification()
+                try { StayTWidgetProvider.refreshAll(ctx) } catch (_: Exception) { }
+                handler.post { instance?.retheme() }
+            } catch (e: Exception) {
+                Log.w(TAG, "setThemeDark failed", e)
+            }
+        }
+
+        /** Bridge startBlocking/stopBlocking record the JS session's own set (null = no session). */
+        fun setSessionPackages(ctx: Context?, pkgs: List<String>?) {
+            try {
+                val e = (ctx ?: instance ?: appCtx)?.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)?.edit() ?: return
+                if (pkgs == null) e.remove(STATE_KEY_SESSION_PKGS) else e.putStringSet(STATE_KEY_SESSION_PKGS, pkgs.toSet())
+                e.apply()
+            } catch (e: Exception) {
+                Log.w(TAG, "setSessionPackages failed", e)
+            }
+        }
+
+        fun sessionPackages(ctx: Context?): List<String> = try {
+            (ctx ?: instance ?: appCtx)?.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                ?.getStringSet(STATE_KEY_SESSION_PKGS, null)?.filter { it.isNotBlank() } ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        /** Active schedule windows right now (empty on any failure). */
+        fun scheduleUnionNow(ctx: Context): List<String> = try {
+            ScheduleAlarmScheduler.unionActive(ScheduleAlarmScheduler.load(ctx), System.currentTimeMillis())
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        /**
+         * Enforce the union of the live JS session and the active schedule
+         * windows (collision rule: hard block wins, nobody unblocks the
+         * other's apps). Empty union = blocking off. Keeps the session's
+         * task name and allowlist. Never throws.
+         */
+        fun reconcileWithSchedules(ctx: Context, scheduleUnion: List<String>) {
+            try {
+                val session = sessionPackages(ctx)
+                val all = (session + scheduleUnion).distinct()
+                if (all.isEmpty()) setBlocking(false)
+                else setBlocking(true, all, if (session.isNotEmpty()) blockingTaskName else null)
+            } catch (e: Exception) {
+                Log.w(TAG, "reconcileWithSchedules failed", e)
+            }
         }
 
         /** N-1: cancel every posted block note we know about. Never throws. */
@@ -397,38 +567,35 @@ class StayTAccessibilityService : AccessibilityService() {
         }
 
         /**
-         * Ongoing session note, music-player style (ADR-0007): persistent,
-         * non-dismissible (ongoing) status note while blocking is enforced —
-         * "StayT · <task>" + live elapsed — whose tap resumes the app on the
-         * session screen. Plain NotificationManager.post, so POST_NOTIFICATIONS
-         * denial (API 33+) silently skips via [canPostNotifications] and no
-         * foreground-service permission/type is ever needed. Never throws.
+         * Ongoing session note, music-player style (ADR-0007/0008):
+         * persistent, non-dismissible themed card — "StayT · <task>", a
+         * native Chronometer and a play/pause button — whose tap resumes the
+         * app on the session screen. Plain NotificationManager.post, so
+         * POST_NOTIFICATIONS denial (API 33+) silently skips via
+         * [canPostNotifications] and no foreground service is needed.
+         * Never throws.
          */
         fun postSessionNotification(ctx: Context?) {
             try {
                 val c = ctx ?: appCtx ?: return
-                if (!canPostNotifications(c)) return
-                ensureSessionChannel(c)
-                val now = System.currentTimeMillis()
-                // Elapsed base: the persisted blocking-start survives process
-                // death, so a re-armed note keeps counting the same session.
                 if (sessionStartMs <= 0L) {
                     sessionStartMs = try {
                         c.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
-                            .getLong(STATE_KEY_AT, 0L).takeIf { it > 0L } ?: now
+                            .getLong(STATE_KEY_AT, 0L).takeIf { it > 0L }
                     } catch (_: Exception) {
-                        now
-                    }
+                        null
+                    } ?: System.currentTimeMillis()
                 }
-                buildAndNotifySession(c, now)
                 sessionNoteOn = true
-                startSessionTicker()
+                if (!canPostNotifications(c)) return
+                ensureSessionChannel(c)
+                buildAndNotifySession(c, System.currentTimeMillis())
             } catch (e: Exception) {
                 Log.w(TAG, "postSessionNotification failed", e)
             }
         }
 
-        /** Silent elapsed refresh of the session note. Never throws. */
+        /** Re-post the session note with current pause state. Never throws. */
         fun refreshSessionNotification() {
             try {
                 if (!sessionNoteOn) return
@@ -440,16 +607,10 @@ class StayTAccessibilityService : AccessibilityService() {
             }
         }
 
-        /** Drop the session note + ticker. Idempotent. Never throws. */
+        /** Drop the session note. Idempotent. Never throws. */
         fun cancelSessionNotification() {
             try {
-                try {
-                    sessionTick?.let { handler.removeCallbacks(it) }
-                } catch (_: Exception) {
-                }
-                sessionTick = null
                 sessionNoteOn = false
-                sessionStartMs = 0L
                 val c = instance ?: appCtx ?: return
                 try {
                     c.getSystemService(NotificationManager::class.java)?.cancel(SESSION_NOTIFICATION_ID)
@@ -457,6 +618,127 @@ class StayTAccessibilityService : AccessibilityService() {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "cancelSessionNotification failed", e)
+            }
+        }
+
+        /**
+         * JS session metadata (bridge setSessionInfo): the true session start
+         * (timer base survives process death and re-pushes) and whether the
+         * pause control is offered (false for strict / dumbphone). Persisted.
+         * Never throws.
+         */
+        fun setSessionInfo(ctx: Context?, startedAt: Long, pausable: Boolean) {
+            try {
+                if (startedAt > 0L) sessionStartMs = startedAt
+                sessionPausable = pausable
+                // A strict task can never sit paused (e.g. edited to strict
+                // mid-pause): resume immediately.
+                if (!pausable && sessionPaused) setSessionPaused(ctx, false)
+                try {
+                    (ctx ?: instance ?: appCtx)?.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                        ?.edit()
+                        ?.putLong(STATE_KEY_STARTED, sessionStartMs)
+                        ?.putBoolean(STATE_KEY_PAUSABLE, pausable)
+                        ?.apply()
+                } catch (_: Exception) {
+                }
+                refreshSessionNotification()
+            } catch (e: Exception) {
+                Log.w(TAG, "setSessionInfo failed", e)
+            }
+        }
+
+        /**
+         * Pause / resume the running session (note button, session screen).
+         * Pause = enforcement off + timer frozen, until resume — no timeout
+         * (strict tasks never get the control). Returns the resulting paused
+         * state. Emits onSessionPauseChanged to JS. Never throws.
+         */
+        fun setSessionPaused(ctx: Context?, paused: Boolean): Boolean {
+            try {
+                if (paused == sessionPaused) return sessionPaused
+                val hasSession = blockedPackages.isNotEmpty() || allowlistMode
+                if (paused && (!sessionPausable || !hasSession)) return sessionPaused
+                val now = System.currentTimeMillis()
+                if (paused) {
+                    sessionPaused = true
+                    pausedAt = now
+                    isBlocking = false
+                    // A running intention break is folded into the pause.
+                    pauseRunnable?.let { handler.removeCallbacks(it) }
+                    pauseRunnable = null
+                    cancelBlockNotifications()
+                    try { instance?.dismissBlockedOverlay() } catch (_: Exception) { }
+                } else {
+                    pausedTotalMs += maxOf(0L, now - pausedAt)
+                    pausedAt = 0L
+                    sessionPaused = false
+                    isBlocking = hasSession
+                    // Resumed while a blocked app is on screen: cover it now.
+                    handler.post { instance?.requestScan() }
+                }
+                persistPause(ctx ?: instance ?: appCtx)
+                refreshSessionNotification()
+                try {
+                    AppBlockerModule.emitSessionPause(sessionPaused, pausedAt, pausedTotalMs)
+                } catch (_: Exception) {
+                }
+                return sessionPaused
+            } catch (e: Exception) {
+                Log.w(TAG, "setSessionPaused failed", e)
+                return sessionPaused
+            }
+        }
+
+        fun toggleSessionPause(ctx: Context?): Boolean = setSessionPaused(ctx, !sessionPaused)
+
+        /** (paused, pausedAt, pausedTotalMs) for the bridge. */
+        fun sessionPauseSnapshot(): Triple<Boolean, Long, Long> = Triple(sessionPaused, pausedAt, pausedTotalMs)
+
+        private fun persistPause(ctx: Context?) {
+            try {
+                ctx?.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                    ?.edit()
+                    ?.putBoolean(STATE_KEY_PAUSED, sessionPaused)
+                    ?.putLong(STATE_KEY_PAUSED_AT, pausedAt)
+                    ?.putLong(STATE_KEY_PAUSED_TOTAL, pausedTotalMs)
+                    ?.apply()
+            } catch (e: Exception) {
+                Log.w(TAG, "persistPause failed", e)
+            }
+        }
+
+        /** Session ended: forget start/pause state (memory + prefs). Never throws. */
+        private fun clearSessionState(ctx: Context?) {
+            sessionStartMs = 0L
+            sessionPaused = false
+            pausedAt = 0L
+            pausedTotalMs = 0L
+            sessionPausable = true
+            try {
+                ctx?.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                    ?.edit()
+                    ?.remove(STATE_KEY_STARTED)
+                    ?.remove(STATE_KEY_PAUSABLE)
+                    ?.remove(STATE_KEY_PAUSED)
+                    ?.remove(STATE_KEY_PAUSED_AT)
+                    ?.remove(STATE_KEY_PAUSED_TOTAL)
+                    ?.apply()
+            } catch (_: Exception) {
+            }
+        }
+
+        /** Process-death restore of start/pause state (onServiceConnected). */
+        private fun loadSessionState(ctx: Context) {
+            try {
+                val p = ctx.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                sessionStartMs = p.getLong(STATE_KEY_STARTED, 0L)
+                sessionPausable = p.getBoolean(STATE_KEY_PAUSABLE, true)
+                sessionPaused = p.getBoolean(STATE_KEY_PAUSED, false)
+                pausedAt = p.getLong(STATE_KEY_PAUSED_AT, 0L)
+                pausedTotalMs = p.getLong(STATE_KEY_PAUSED_TOTAL, 0L)
+            } catch (e: Exception) {
+                Log.w(TAG, "loadSessionState failed", e)
             }
         }
 
@@ -494,27 +776,62 @@ class StayTAccessibilityService : AccessibilityService() {
         private fun buildAndNotifySession(ctx: Context, now: Long) {
             val task = try { blockingTaskName?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
                 ?: "Focus"
+            val sub = if (sessionPaused) "Paused" else "Focusing"
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(ctx, SESSION_CHANNEL_ID)
             } else {
                 Notification.Builder(ctx)
             }
-            // Small icon MUST be a white alpha silhouette (Play-compliant) —
-            // the tile bolt vector is exactly that, reused, no new asset.
-            // Rich card (icon tile + HRS/MINS/SECS boxes): custom content on
-            // N+ via DecoratedCustomViewStyle; title/text below double as the
-            // fallback, lockscreen line, and accessibility text. Lockscreen is
-            // covered by VISIBILITY_PUBLIC here + on the channel.
-            val (eh, em, es) = sessionElapsedParts(now)
-            val pad2 = { v: Long -> v.toString().padStart(2, '0') }
+            // Themed card (app theme: black / white, tokens.ts): custom
+            // content on N+; title/text below double as the fallback,
+            // lockscreen line and accessibility text.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 try {
                     val card = android.widget.RemoteViews(ctx.packageName, R.layout.session_note)
-                    try { card.setTextViewText(R.id.session_title, "StayT · $task") } catch (_: Exception) { }
-                    try { card.setTextViewText(R.id.session_sub, sessionElapsedText(now)) } catch (_: Exception) { }
-                    try { card.setTextViewText(R.id.session_hrs, pad2(eh)) } catch (_: Exception) { }
-                    try { card.setTextViewText(R.id.session_mins, pad2(em)) } catch (_: Exception) { }
-                    try { card.setTextViewText(R.id.session_secs, pad2(es)) } catch (_: Exception) { }
+                    val dark = isDarkTheme(ctx)
+                    val pal = palette(ctx)
+                    card.setInt(
+                        R.id.session_card, "setBackgroundResource",
+                        if (dark) R.drawable.session_card_bg else R.drawable.session_card_bg_light
+                    )
+                    // Short on purpose: the timer + button leave little width,
+                    // and the app icon already says StayT.
+                    card.setTextViewText(R.id.session_title, task)
+                    card.setTextColor(R.id.session_title, pal.ink)
+                    card.setTextViewText(R.id.session_sub, sub)
+                    card.setTextColor(R.id.session_sub, pal.muted)
+                    // Frozen timer reads as paused: muted instead of ink.
+                    card.setTextColor(R.id.session_timer, if (sessionPaused) pal.muted else pal.ink)
+                    // Native Chronometer: ticks every second by itself, no
+                    // refresh loop. Paused = frozen at the elapsed value.
+                    card.setChronometer(
+                        R.id.session_timer,
+                        android.os.SystemClock.elapsedRealtime() - sessionElapsedMs(now),
+                        null,
+                        !sessionPaused
+                    )
+                    if (sessionPausable) {
+                        card.setViewVisibility(R.id.session_toggle, android.view.View.VISIBLE)
+                        card.setImageViewResource(
+                            R.id.session_toggle,
+                            if (sessionPaused) R.drawable.ic_note_play else R.drawable.ic_note_pause
+                        )
+                        card.setContentDescription(
+                            R.id.session_toggle,
+                            if (sessionPaused) "Resume session" else "Pause session"
+                        )
+                        val toggle = Intent(ctx, SessionControlReceiver::class.java)
+                            .setAction(SessionControlReceiver.ACTION_TOGGLE)
+                        card.setOnClickPendingIntent(
+                            R.id.session_toggle,
+                            PendingIntent.getBroadcast(
+                                ctx, SESSION_TOGGLE_REQ, toggle,
+                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            )
+                        )
+                    } else {
+                        card.setViewVisibility(R.id.session_toggle, android.view.View.GONE)
+                    }
                     builder.setStyle(Notification.DecoratedCustomViewStyle())
                     builder.setCustomContentView(card)
                     builder.setCustomBigContentView(card)
@@ -524,13 +841,12 @@ class StayTAccessibilityService : AccessibilityService() {
             }
             builder
                 .setContentTitle("StayT · $task")
-                .setContentText(sessionElapsedText(now))
-                .setSmallIcon(R.drawable.ic_stayt_tile)
+                .setContentText(sub)
+                .setSmallIcon(R.drawable.ic_stayt_note)
                 .setColor(SESSION_ACCENT)
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setOnlyAlertOnce(true)
-                .setWhen(sessionStartMs)
                 .setShowWhen(false)
                 .setCategory(Notification.CATEGORY_STATUS)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -565,63 +881,14 @@ class StayTAccessibilityService : AccessibilityService() {
             }
         }
 
-        private fun sessionElapsedParts(now: Long): Triple<Long, Long, Long> {
-            return try {
-                val base = if (sessionStartMs > 0L) sessionStartMs else now
-                val totalSec = maxOf(0L, (now - base) / 1000L)
-                Triple(totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
-            } catch (_: Exception) {
-                Triple(0L, 0L, 0L)
-            }
+        /** Focus time so far: wall time minus paused intervals, frozen while paused. */
+        private fun sessionElapsedMs(now: Long): Long {
+            val base = if (sessionStartMs > 0L) sessionStartMs else now
+            val end = if (sessionPaused && pausedAt > 0L) pausedAt else now
+            return maxOf(0L, end - base - pausedTotalMs)
         }
 
-        private fun sessionElapsedText(now: Long): String {
-            return try {
-                val (h, m, s) = sessionElapsedParts(now)
-                val fmt = if (h > 0) "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
-                    else "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
-                "$fmt in focus · tap to return"
-            } catch (_: Exception) {
-                "In focus · tap to return"
-            }
-        }
-
-        private fun startSessionTicker() {
-            try {
-                try {
-                    sessionTick?.let { handler.removeCallbacks(it) }
-                } catch (_: Exception) {
-                }
-                val r = object : Runnable {
-                    override fun run() {
-                        try {
-                            // Stopped meanwhile: do not reschedule — the
-                            // cancel path owns teardown. Gated on the note
-                            // flag (not isBlocking) so breaks don't kill it.
-                            if (!sessionNoteOn) return
-                            refreshSessionNotification()
-                        } catch (e: Exception) {
-                            Log.w(TAG, "session tick failed", e)
-                        } finally {
-                            try {
-                                if (sessionNoteOn) handler.postDelayed(this, SESSION_TICK_MS)
-                            } catch (_: Exception) {
-                            }
-                        }
-                    }
-                }
-                sessionTick = r
-                handler.postDelayed(r, SESSION_TICK_MS)
-            } catch (e: Exception) {
-                Log.w(TAG, "startSessionTicker failed", e)
-            }
-        }
-
-        /**
-         * No-overlay (ADR-0005): no-op seam. The JS interstitial still calls
-         * this on mount; with no native window it trivially succeeds.
-         * Never throws.
-         */
+        /** Bridge seam: the JS interstitial dismisses the overlay on mount. Never throws. */
         fun dismissOverlay() {
             try {
                 instance?.dismissBlockedOverlay()
@@ -1027,12 +1294,31 @@ class StayTAccessibilityService : AccessibilityService() {
         }
 
         /**
-         * Budget meter: counts this open for the getBudgetUsage telemetry
-         * (opens/minutes per pkg, rolled over daily). Telemetry ONLY — it
-         * never allows the open: hard blocks always win, so the caller takes
-         * the normal block path unconditionally after this returns. The
-         * increment happens on every qualifying open (post-cooldown), so the
-         * counters stay exact. Never throws.
+         * Over today's budget: an enabled rule for [pkg] whose meter is used
+         * up. "N opens/day" allows N opens — the (N+1)th is blocked (the
+         * current open is already counted when this runs). Minutes block once
+         * the limit is reached. Never throws.
+         */
+        fun isOverBudget(pkg: String): Boolean {
+            return try {
+                val u = budgetUsage[pkg] ?: return false
+                budgetRules.any { r ->
+                    r.packageName == pkg && r.enabled && r.limit > 0 && when (r.kind) {
+                        "opens" -> u.opens > r.limit
+                        "minutes" -> u.ms >= r.limit * 60_000L
+                        else -> false
+                    }
+                }
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        /**
+         * Budget meter: counts one open of a budgeted [pkg] (called when it
+         * comes to the front while blocking; rolled over daily). Feeds both
+         * getBudgetUsage and [isOverBudget]. A budget never unblocks a hard-
+         * blocked app — it only adds a block once used up. Never throws.
          */
         fun countBudgetOpen(pkg: String, today: String) {
             try {
@@ -1124,10 +1410,6 @@ class StayTAccessibilityService : AccessibilityService() {
         }
     }
 
-    // No-overlay (ADR-0005): no native window is ever added, so there is no
-    // overlay view, timeout, or countdown state. dismissBlockedOverlay()
-    // below is a no-op shim kept for the JS seam.
-
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -1203,7 +1485,8 @@ class StayTAccessibilityService : AccessibilityService() {
                 emptyList()
             }
             if (wantBlocking && pkgs.isNotEmpty()) {
-                isBlocking = true
+                loadSessionState(this)
+                isBlocking = !sessionPaused
                 blockedPackages.clear()
                 blockedPackages.addAll(pkgs)
                 blockingTaskName = try {
@@ -1221,7 +1504,7 @@ class StayTAccessibilityService : AccessibilityService() {
             // when enforcement is re-armed (elapsed continues from the
             // persisted start); otherwise sweep the orphan.
             try {
-                if (isBlocking) postSessionNotification(this) else cancelSessionNotification()
+                if (wantBlocking && pkgs.isNotEmpty()) postSessionNotification(this) else cancelSessionNotification()
             } catch (e: Exception) {
                 Log.w(TAG, "session note re-arm failed", e)
             }
@@ -1268,35 +1551,67 @@ class StayTAccessibilityService : AccessibilityService() {
         }
 
         serviceInfo = serviceInfo.apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            // WINDOWS_CHANGED: split screen, pop-up/freeform, PiP and bubbles
+            // change what is visible without a WINDOW_STATE_CHANGED from the
+            // blocked app — the window scan below re-enforces on every one.
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                    AccessibilityEvent.TYPE_WINDOWS_CHANGED or
+                    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 100
             // canRetrieveWindowContent lives in the XML config only: the
             // platform exposes a getter with no setter.
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                    AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            if (isBlocking || hasBlockSurface()) requestScan()
+            return
+        }
+        // In-page navigation fires no window-state event: re-read browser
+        // address bars on content changes. Everything else returns at once,
+        // so the extra event type costs one map lookup per event.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            val pkg = event.packageName?.toString() ?: return
+            if (!isBlocking) return
+            if (blockedDomains.isNotEmpty() && BROWSER_URL_BAR_IDS.containsKey(pkg)) requestScan()
+            // Feed sections open without a window-state event (tab switch).
+            if (feedRules.any { it.packageName == pkg && it.enabled }) requestFeedCheck(pkg)
+            return
+        }
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val openedPackage = event.packageName?.toString() ?: return
 
         if (!isBlocking) return
 
-        // Allow our own package
-        if (openedPackage == packageName) return
+        // Own package: overlay windows report it too, so only rescan —
+        // the scan drops surfaces whose blocked window is no longer visible
+        // (e.g. StayT came to front over the blocked app).
+        if (openedPackage == packageName) {
+            requestScan()
+            return
+        }
 
         val now = System.currentTimeMillis()
 
-        // Budget minutes meter: attribute capped foreground time to the
-        // previously-foreground pkg. We are past isBlocking, so this only
-        // runs while blocking; only budgeted-minutes pkgs accumulate.
-        try {
-            trackForegroundMinutes(openedPackage, now)
-        } catch (e: Exception) {
-            Log.w(TAG, "minutes meter failed", e)
+        // Budget meters (while blocking): minutes go to the previously
+        // foreground pkg; an OPEN is counted when a budgeted app comes to
+        // the front. The shade and keyboard float over apps — they are not
+        // app switches and must not inflate either meter.
+        if (!isTransientSurface(openedPackage)) {
+            val newOpen = lastFgPkg != openedPackage
+            try {
+                trackForegroundMinutes(openedPackage, now)
+                if (newOpen) countBudgetOpen(openedPackage, dayKey(now))
+            } catch (e: Exception) {
+                Log.w(TAG, "budget meters failed", e)
+            }
         }
 
         // Lowercased source text shared by the domain matcher + feed shield.
@@ -1308,127 +1623,559 @@ class StayTAccessibilityService : AccessibilityService() {
             ""
         }
 
-        // Blocked-target decision FIRST (hard block wins): blocklist mode =
-        // membership (empty set = nothing blocked, as before). Allowlist mode
-        // = everything not listed and not safelisted (empty allowlist =
-        // block-all-except-safelist). A blocked-domain hit forces the block
-        // path regardless of list membership.
+        // Blocked-target decision FIRST (hard block wins). A blocked-domain
+        // hit marks that browser as blocked until the user closes it.
         val domainHit = try {
             matchBlockedDomain(haystack)
         } catch (_: Exception) {
             null
         }
-        val target = try {
-            if (domainHit != null) {
-                true
-            } else if (allowlistMode) {
-                !isSafelist(openedPackage) && !allowlistPackages.contains(openedPackage)
-            } else {
-                blockedPackages.isNotEmpty() && blockedPackages.contains(openedPackage)
-            }
-        } catch (_: Exception) {
-            false
+        if (domainHit != null) {
+            domainPkg = openedPackage
+            domainHitName = domainHit
         }
+        val target = domainHit != null || isBlockedPkg(openedPackage)
         if (!target) {
+            // Something else came to front: the scan decides whether any
+            // blocked window is still visible (split screen, pop-up, PiP).
+            requestScan()
             // Feed shield runs ONLY for allowed apps: it hardens feeds, it
-            // never blocks. Skipped for block targets by design — a shield
-            // BACK racing the block-path HOME bounce double-fires navigation
-            // and reads as the blocked app crashing.
+            // never blocks.
             try {
-                maybeFeedShield(openedPackage, event, haystack, now)
+                maybeFeedShield(openedPackage, haystack, now)
             } catch (e: Exception) {
                 Log.w(TAG, "feed shield failed for $openedPackage", e)
             }
             return
         }
 
-        // Per-package cooldown: WINDOW_STATE_CHANGED fires in bursts.
-        // Evaluated BEFORE any counting, so bursts never inflate the
-        // budget opens meter.
-        // Order on a qualifying open: cooldown -> budget count (telemetry
-        // only, never allows) -> HOME bounce + emit + notification.
-        // Hard blocks always win.
+        // Already covered: window-event bursts from the app underneath
+        // must not re-count or re-log the same block.
+        if (isCovered(openedPackage)) return
+
+        // Per-package cooldown: WINDOW_STATE_CHANGED fires in bursts. It
+        // gates counting + emit only — the surface itself must always come
+        // back (a re-open within 1s would otherwise leave the app usable).
         val last = lastBlockedAt[openedPackage] ?: 0L
-        if (now - last < BLOCK_COOLDOWN_MS) return
-        lastBlockedAt[openedPackage] = now
+        val fresh = now - last >= BLOCK_COOLDOWN_MS
+        if (fresh) lastBlockedAt[openedPackage] = now
 
-        // Block-path label + gates below; the HOME bounce runs after them
-        // (a budget-allowed open must never be kicked to HOME).
-
-        // Resolve the display label once — shared by emit, notification, deep link.
         val appLabel = appLabel(this, openedPackage)
 
-        // Budget meter (list-based targets only — an explicit domain ban
-        // skips it): counts this open for the getBudgetUsage telemetry.
-        // Hard blocks always win — there is no silent-allow path: every
-        // qualifying open continues to the HOME bounce + emit +
-        // notification below, over or under budget.
-        if (domainHit == null) {
-            try {
-                countBudgetOpen(openedPackage, dayKey(now))
-            } catch (e: Exception) {
-                Log.w(TAG, "budget meter failed for $openedPackage", e)
-            }
-        }
-
-        // No-overlay (ADR-0005): native friction wait retired — the JS
-        // interstitial owns the breathe gate (BlockedInterstitialScreen reads
-        // the same prefs). Every qualifying open takes the HOME + emit +
-        // notification path below unconditionally.
-
-        // Package is blocked - bounce to HOME. If the bounce is denied or
-        // throttled, do NOT silently return: the emit + notification below
-        // remain the enforcement path instead.
-        // Every qualifying open bounces: the budget meter above counts
-        // only and never exempts.
-        //
-        // No-overlay block pattern (ADR-0005): at most ONE GLOBAL_ACTION_HOME
-        // per debounced open. HOME only backgrounds the target process (it
-        // never kills or crashes it). No native window exists anymore, so the
-        // bounce always fires — no skip, no race with an overlay window token.
-        // Denial/throttle falls through to the emit + notification below (the
-        // notification tap deep-link is the BAL-safe foreground path).
         Log.d(TAG, "Blocked app: $openedPackage")
-        // Throwable (not just Exception): this service shares StayT's process,
-        // so anything escaping here kills the whole app, not just the block.
+
+        // Block surface (ADR-0008/0009): cover exactly what is visible —
+        // full overlay for a full-screen app, window-sized covers for
+        // split/pop-up/PiP. Fail-closed: the window list can lag this
+        // event, so if nothing got covered, cover the whole screen.
+        enforceWindows(allowDismiss = false)
+        if (!hasBlockSurface()) showBlockedOverlay(openedPackage, appLabel)
+        if (hasBlockSurface()) {
+            if (fresh) AppBlockerModule.emitBlockedAttempt(openedPackage, now, appLabel)
+            return
+        }
+        if (!fresh) return
+
+        // Fallback when no overlay could be added: the ADR-0005/0006
+        // path — HOME bounce + emit + best-effort foreground + tap note.
+        // Throwable (not just Exception): this service shares StayT's process.
         val bounced = try {
             performGlobalAction(GLOBAL_ACTION_HOME)
         } catch (t: Throwable) {
-            Log.w(TAG, "performGlobalAction threw for $openedPackage - emit + notification remain", t)
+            Log.w(TAG, "performGlobalAction threw for $openedPackage", t)
             false
         }
-        if (!bounced) {
-            Log.w(TAG, "performGlobalAction denied/throttled for $openedPackage - emit + notification remain")
-            // Deliberately KEEP the per-package cooldown entry: dropping it
-            // would let the next burst of window events re-enter immediately
-            // — re-counting budget opens, re-emitting to JS — instead of
-            // debouncing.
-        }
-
-        // Emit event to React Native (label travels with it — no per-block
-        // app-list scan on the JS side).
+        if (!bounced) Log.w(TAG, "performGlobalAction denied/throttled for $openedPackage - emit + notification remain")
         AppBlockerModule.emitBlockedAttempt(openedPackage, now, appLabel)
-
-        // Best-effort direct foreground (ADR-0006): same-task/recents edge
-        // only. BAL denies background startActivity on Android 10+ (hardened
-        // 14/15), so denial is the expected path — the notification below
-        // always fires regardless. Never throws, no new permission.
         try {
             foregroundBlockedInterstitial(openedPackage, appLabel)
         } catch (t: Throwable) {
             Log.w(TAG, "best-effort foreground failed for $openedPackage; notification remains", t)
         }
-
-        // Play-safe heads-up notification whose tap deep-links back into
-        // StayT (label embedded — JS resolves taskId like App.tsx does).
-        // No SYSTEM_ALERT_WINDOW, no full-screen intent (ADR-0006).
         postBlockedNotification(openedPackage, appLabel)
+    }
 
-        // No-overlay (ADR-0005) + heads-up tap path (ADR-0006): the JS
-        // interstitial is reached via the onBlockedAttempt emit (live
-        // runtime), the best-effort foreground above (same-task edge), or
-        // the notification tap (dead runtime / BAL-denied — the reliable
-        // path). No native window is ever added; no new permissions.
+    /**
+     * List-based block decision: blocklist = membership; allowlist =
+     * everything not listed and not safelisted. Never throws.
+     */
+    private fun isListTarget(pkg: String): Boolean {
+        return try {
+            if (pkg == packageName) false
+            else if (allowlistMode) !isSafelist(pkg) && !allowlistPackages.contains(pkg)
+            else blockedPackages.contains(pkg)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** List target, or the browser currently showing a blocked domain. */
+    private fun isBlockedPkg(pkg: String): Boolean =
+        isListTarget(pkg) || isOverBudget(pkg) || (pkg == domainPkg && pkg != packageName)
+
+    /** Shade / current keyboard: windows that float over apps, not app switches. */
+    private fun isTransientSurface(pkg: String): Boolean {
+        if (pkg == "com.android.systemui") return true
+        return try {
+            Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+                ?.substringBefore('/') == pkg
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // ── Window enforcement (ADR-0009) ────────────────────────────────────
+    // The visible-window list — not the last event — is the source of
+    // truth. Minimising into a pop-up, split screen, PiP or a chat bubble
+    // leaves a blocked window on screen with no event from its app; every
+    // WINDOWS_CHANGED rescans and covers exactly what is visible.
+    private class BlockedWin(val id: Int, val pkg: String, val bounds: Rect, val pip: Boolean)
+
+    @Volatile
+    private var domainPkg: String? = null
+    // The blocked domain that put domainPkg under cover (overlay title).
+    @Volatile
+    private var domainHitName: String? = null
+    private val covers = HashMap<Int, View>()
+    private val pausedPipWindows = HashSet<Int>()
+    private var scanPending = false
+
+    private fun hasBlockSurface(): Boolean = overlayView != null || covers.isNotEmpty()
+
+    private fun isCovered(pkg: String): Boolean =
+        (overlayView != null && overlayPkg == pkg) || covers.values.any { it.tag == pkg }
+
+    /** Trailing-edge throttle: window events arrive in bursts during animations. Main thread. */
+    fun requestScan() {
+        if (scanPending) return
+        scanPending = true
+        handler.postDelayed({
+            scanPending = false
+            enforceWindows(allowDismiss = true)
+        }, 120L)
+    }
+
+    /**
+     * Visible blocked app windows, or null when the window list is
+     * unavailable (fail-closed: callers keep the current surfaces). A list
+     * with NO app windows means system UI (notification shade, lock
+     * screen) covers the screen: nothing underneath is usable, so the
+     * result is empty and the surfaces step aside — accessibility overlays
+     * sit above the shade and would otherwise hide it (on-device M52).
+     * Closing the shade fires WINDOWS_CHANGED and the rescan restores them.
+     * Never throws.
+     */
+    private fun scanBlockedWindows(): List<BlockedWin>? {
+        val ws = try { windows } catch (_: Throwable) { null }
+        if (ws.isNullOrEmpty()) return null
+        val out = ArrayList<BlockedWin>()
+        for (w in ws) {
+            try {
+                if (w.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+                val root = w.root ?: continue
+                val pkg = root.packageName?.toString()
+                // Browser on a blocked website: read the address bar while
+                // the root is in hand (event text alone never carries the
+                // URL — on-device, wikipedia.org loaded unblocked).
+                val siteHit = pkg != null && browserOnBlockedSite(root, pkg)
+                try { @Suppress("DEPRECATION") root.recycle() } catch (_: Throwable) { }
+                if (pkg == null) continue
+                if (!siteHit && !isBlockedPkg(pkg)) continue
+                val r = Rect()
+                w.getBoundsInScreen(r)
+                if (r.isEmpty) continue
+                val pip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && w.isInPictureInPictureMode
+                // Tiny non-PiP windows are window chrome, not content: on
+                // Samsung the pop-up toolbar (minimise / full screen / close)
+                // is an APPLICATION window of the blocked app itself. Covering
+                // it trapped the user with no way to close the pop-up
+                // (on-device M52). Nothing usable fits under 80dp.
+                if (!pip && r.height() < (80 * resources.displayMetrics.density).toInt()) continue
+                out.add(BlockedWin(w.id, pkg, r, pip))
+            } catch (_: Throwable) {
+            }
+        }
+        return out
+    }
+
+    /**
+     * True when [pkg] is a known browser whose address bar shows a blocked
+     * domain. Tracks [domainPkg]: set on a hit, cleared once the same
+     * browser shows an allowed URL. False for non-browsers / unreadable bars.
+     * Never throws.
+     */
+    private fun browserOnBlockedSite(root: AccessibilityNodeInfo, pkg: String): Boolean {
+        val barId = BROWSER_URL_BAR_IDS[pkg] ?: return false
+        if (blockedDomains.isEmpty()) return false
+        return try {
+            val nodes = root.findAccessibilityNodeInfosByViewId(barId)
+            val raw = nodes?.firstOrNull()?.text?.toString()
+            try { nodes?.forEach { @Suppress("DEPRECATION") it.recycle() } } catch (_: Throwable) { }
+            if (raw.isNullOrBlank()) return pkg == domainPkg
+            // Samsung Internet prefixes an invisible U+200E LRM mark.
+            val url = raw.filter { it.code >= 0x20 && it !in "\u200E\u200F\u202A\u202B\u202C\u202D\u202E" }
+                .trim().lowercase(java.util.Locale.ROOT)
+            val site = matchBlockedDomain(url)
+            if (site != null) {
+                domainPkg = pkg
+                domainHitName = site
+            } else if (domainPkg == pkg) {
+                domainPkg = null
+            }
+            site != null
+        } catch (_: Throwable) {
+            pkg == domainPkg
+        }
+    }
+
+    /**
+     * Report a block first put under cover by the window scan (website,
+     * split screen, pop-up) — those never pass the event path's emit, so
+     * they were missing from stats. Shares the per-package cooldown with the
+     * event path, so one block is never logged twice.
+     */
+    private fun noteBlock(pkg: String) {
+        try {
+            val now = System.currentTimeMillis()
+            if (now - (lastBlockedAt[pkg] ?: 0L) < BLOCK_COOLDOWN_MS) return
+            lastBlockedAt[pkg] = now
+            AppBlockerModule.emitBlockedAttempt(pkg, now, appLabel(this, pkg))
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun screenRect(): Rect {
+        return try {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Rect(wm.currentWindowMetrics.bounds)
+            } else {
+                val p = android.graphics.Point()
+                @Suppress("DEPRECATION") wm.defaultDisplay.getRealSize(p)
+                Rect(0, 0, p.x, p.y)
+            }
+        } catch (_: Throwable) {
+            Rect(0, 0, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        }
+    }
+
+    /**
+     * Make the block surfaces match the visible blocked windows. A blocked
+     * window filling most of the screen gets the full overlay; smaller
+     * ones (split / pop-up / PiP / bubble) get a cover pinned to their
+     * bounds. [allowDismiss]=false (block-event path) never removes a
+     * surface — the window list may lag the event. Main thread. Never throws.
+     */
+    private fun enforceWindows(allowDismiss: Boolean) {
+        try {
+            if (!isBlocking) {
+                if (allowDismiss) dismissBlockedOverlay()
+                return
+            }
+            val found = scanBlockedWindows() ?: return
+            if (found.isEmpty()) {
+                if (allowDismiss) {
+                    domainPkg = null
+                    dismissBlockedOverlay()
+                }
+                return
+            }
+            val screen = screenRect()
+            val screenArea = screen.width().toLong() * screen.height().toLong()
+            // ponytail: 85% area = "full screen" heuristic; tune on OEMs with
+            // tall cutouts/taskbars if full apps get window covers instead.
+            val full = found.firstOrNull {
+                !it.pip && it.bounds.width().toLong() * it.bounds.height() >= screenArea * 85 / 100
+            }
+            if (full != null) {
+                removeCovers()
+                val isNew = overlayView == null || overlayPkg != full.pkg
+                if (showBlockedOverlay(full.pkg, appLabel(this, full.pkg)) && isNew) noteBlock(full.pkg)
+                return
+            }
+            if (overlayView != null) removeFullOverlay()
+            syncCovers(found, screen)
+        } catch (t: Throwable) {
+            Log.w(TAG, "enforceWindows failed", t)
+        }
+    }
+
+    private fun syncCovers(found: List<BlockedWin>, screen: Rect) {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+        loadFonts()
+        val live = found.map { it.id }.toSet()
+        for (id in covers.keys.filter { it !in live }) {
+            covers.remove(id)?.let { v -> try { wm.removeViewImmediate(v) } catch (_: Throwable) { } }
+        }
+        pausedPipWindows.retainAll(live)
+        for (b in found) {
+            val lp = coverParams(b, screen)
+            val existing = covers[b.id]
+            try {
+                if (existing != null) {
+                    existing.tag = b.pkg
+                    wm.updateViewLayout(existing, lp)
+                } else {
+                    val v = LayoutInflater.from(this).inflate(R.layout.blocked_cover, null)
+                    v.tag = b.pkg
+                    applyCoverTheme(v)
+                    v.findViewById<TextView>(R.id.cover_label)?.let { t ->
+                        t.text = "${appLabel(this, b.pkg)} is blocked"
+                        fontBold?.let { t.typeface = it }
+                    }
+                    wm.addView(v, lp)
+                    covers[b.id] = v
+                    noteBlock(b.pkg)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "cover add/update failed for ${b.pkg}", t)
+            }
+            // A blocked video minimised into PiP keeps playing: pause it
+            // once per PiP window (media keys go to the active session,
+            // which is the PiP player here).
+            if (b.pip && pausedPipWindows.add(b.id)) pauseMedia()
+        }
+    }
+
+    /**
+     * Cover params. Touchable covers eat input so the hidden app can't be
+     * used blind. Exceptions keep an exit reachable: PiP covers pass touch
+     * through (drag to dismiss), and pop-up windows keep their caption bar
+     * (close / minimise buttons) uncovered.
+     */
+    private fun coverParams(b: BlockedWin, screen: Rect): WindowManager.LayoutParams {
+        // ponytail: "pop-up" = spans neither screen dimension (split panes
+        // span one). 14dp keeps Samsung's pop-up drag handle (tap = close /
+        // minimise menu) reachable without exposing the app's own toolbar
+        // (32dp did, on-device M52); other OEMs' captions may need tuning.
+        val popup = !b.pip && b.bounds.width() < screen.width() && b.bounds.height() < screen.height()
+        val caption = if (popup) (14 * resources.displayMetrics.density).toInt() else 0
+        val top = b.bounds.top + caption
+        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        if (b.pip) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        return WindowManager.LayoutParams(
+            b.bounds.width(),
+            maxOf(1, b.bounds.bottom - top),
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            flags,
+            PixelFormat.OPAQUE
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = b.bounds.left
+            y = top
+        }
+    }
+
+    private fun pauseMedia() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
+        } catch (t: Throwable) {
+            Log.w(TAG, "media pause failed", t)
+        }
+    }
+
+    // ── Full block overlay (ADR-0008) ────────────────────────────────────
+    // One view at most, added/removed on the main thread only. Every
+    // WindowManager call is wrapped in Throwable: this service shares
+    // StayT's process, so a BadToken here must never kill the app.
+    private var overlayView: View? = null
+    private var overlayPkg: String? = null
+    private var overlayLabel: String = ""
+    private var fontDisplay: Typeface? = null
+    private var fontBold: Typeface? = null
+    private var fontBody: Typeface? = null
+
+    private fun font(name: String): Typeface? = try {
+        Typeface.createFromAsset(assets, "fonts/$name")
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun loadFonts() {
+        if (fontDisplay != null) return
+        fontDisplay = font("Anton-Regular.ttf")
+        fontBold = font("SpaceGrotesk-Bold.ttf")
+        fontBody = font("Inter-Regular.ttf")
+    }
+
+    /** Show (or retarget) the full overlay. False = could not add. */
+    private fun showBlockedOverlay(pkg: String, label: String): Boolean {
+        try {
+            val existing = overlayView
+            if (existing != null) {
+                bindOverlay(existing, pkg, label)
+                return true
+            }
+            val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return false
+            // BACK on the overlay = leave the blocked app (never reveal it).
+            val root = object : FrameLayout(this) {
+                override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                    if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                        if (event.action == KeyEvent.ACTION_UP) closeBlockedApp()
+                        return true
+                    }
+                    return super.dispatchKeyEvent(event)
+                }
+            }
+            LayoutInflater.from(this).inflate(R.layout.blocked_overlay, root, true)
+            loadFonts()
+            root.findViewById<TextView>(R.id.overlay_title)?.let { v -> fontDisplay?.let { v.typeface = it } }
+            root.findViewById<TextView>(R.id.overlay_sub)?.let { v -> fontBody?.let { v.typeface = it } }
+            for (id in intArrayOf(R.id.overlay_back, R.id.overlay_close, R.id.overlay_more)) {
+                root.findViewById<TextView>(id)?.let { v -> fontBold?.let { v.typeface = it } }
+            }
+            root.findViewById<View>(R.id.overlay_back)?.setOnClickListener { backToTask() }
+            root.findViewById<View>(R.id.overlay_close)?.setOnClickListener { closeBlockedApp() }
+            root.findViewById<View>(R.id.overlay_more)?.setOnClickListener { openMoreOptions() }
+            bindOverlay(root, pkg, label)
+            val lp = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.OPAQUE
+            )
+            // Cover the status bar + cutout too: otherwise the blocked app's
+            // own status bar strip shows above the overlay (a black band in
+            // light theme, on-device M52).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                lp.fitInsetsTypes = 0
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            wm.addView(root, lp)
+            overlayView = root
+            // Dark status-bar icons on the light theme (best-effort: the
+            // system may keep the app window's bar appearance).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    root.windowInsetsController?.setSystemBarsAppearance(
+                        if (isDarkTheme(this)) 0 else android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+                        android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                    )
+                } catch (_: Throwable) {
+                }
+            }
+            return true
+        } catch (t: Throwable) {
+            Log.w(TAG, "overlay add failed for $pkg - falling back to HOME bounce", t)
+            overlayView = null
+            overlayPkg = null
+            return false
+        }
+    }
+
+    private fun bindOverlay(root: View, pkg: String, label: String) {
+        overlayPkg = pkg
+        overlayLabel = label
+        applyOverlayTheme(root)
+        val task = blockingTaskName?.takeIf { it.isNotBlank() }
+        try {
+            // Website blocks name the site, not the browser.
+            val site = if (pkg == domainPkg) domainHitName else null
+            val title = when {
+                site != null -> "$site is blocked"
+                !isListTarget(pkg) && isOverBudget(pkg) -> "$label: today's budget is used up"
+                else -> "$label is blocked"
+            }
+            root.findViewById<TextView>(R.id.overlay_title)?.let {
+                it.text = title
+                // Long names ("Samsung Browser is blocked") truncated at 40sp.
+                it.textSize = if (title.length > 18) 30f else 40f
+            }
+            root.findViewById<TextView>(R.id.overlay_sub)?.text =
+                if (task != null) "You're focusing on $task. Stay with it." else "You're in a focus session. Stay with it."
+            root.findViewById<TextView>(R.id.overlay_back)?.text =
+                if (task != null) "BACK TO ${task.uppercase()}" else "BACK TO MY TASK"
+            root.findViewById<TextView>(R.id.overlay_close)?.text = "CLOSE ${label.uppercase()}"
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Paint the full overlay in the app theme (tokens.ts). Never throws. */
+    private fun applyOverlayTheme(root: View) {
+        try {
+            val dark = isDarkTheme(this)
+            val pal = palette(this)
+            root.findViewById<View>(R.id.overlay_root)?.setBackgroundColor(pal.bg)
+            root.findViewById<android.widget.ImageView>(R.id.overlay_owl)?.setImageResource(
+                if (dark) R.drawable.stayt_owl_blocked_white else R.drawable.stayt_owl_blocked
+            )
+            root.findViewById<TextView>(R.id.overlay_title)?.setTextColor(pal.ink)
+            root.findViewById<TextView>(R.id.overlay_sub)?.setTextColor(pal.muted)
+            root.findViewById<TextView>(R.id.overlay_close)?.let {
+                it.setTextColor(pal.ink)
+                it.setBackgroundResource(if (dark) R.drawable.overlay_btn_secondary else R.drawable.overlay_btn_secondary_light)
+            }
+            root.findViewById<TextView>(R.id.overlay_more)?.setTextColor(pal.muted)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun applyCoverTheme(v: View) {
+        try {
+            val pal = palette(this)
+            v.findViewById<View>(R.id.cover_root)?.setBackgroundColor(pal.bg)
+            v.findViewById<android.widget.ImageView>(R.id.cover_owl)?.setImageResource(
+                if (isDarkTheme(this)) R.drawable.stayt_owl_blocked_white else R.drawable.stayt_owl_blocked
+            )
+            v.findViewById<TextView>(R.id.cover_label)?.setTextColor(pal.ink)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Theme changed in the app: repaint whatever surfaces are up. Main thread. */
+    fun retheme() {
+        overlayView?.let { applyOverlayTheme(it) }
+        for (v in covers.values) applyCoverTheme(v)
+    }
+
+    private fun backToTask() {
+        val launch = try { packageManager.getLaunchIntentForPackage(packageName) } catch (_: Throwable) { null }
+        launchThenDismiss(launch?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+    }
+
+    private fun openMoreOptions() {
+        val pkg = overlayPkg ?: return dismissBlockedOverlay()
+        launchThenDismiss(Intent(Intent.ACTION_VIEW, blockedDeepLink(pkg, overlayLabel)).apply {
+            setPackage(packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
+    }
+
+    private fun closeBlockedApp() {
+        domainPkg = null
+        removeFullOverlay()
+        try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) { }
+        // HOME does not close pop-up / PiP windows on every OEM: rescan so
+        // a surviving blocked window gets its cover straight away.
+        handler.postDelayed({ enforceWindows(allowDismiss = true) }, 600L)
+    }
+
+    /**
+     * Start StayT while the overlay is still visible (a visible window is a
+     * documented BAL exemption), then remove it. Fail-closed: a thrown
+     * launch goes HOME; a silently denied one is caught by the rescan —
+     * if the blocked app is still visible, it gets covered again.
+     */
+    private fun launchThenDismiss(intent: Intent?) {
+        val launched = try {
+            if (intent == null) false else { startActivity(intent); true }
+        } catch (t: Throwable) {
+            Log.w(TAG, "overlay launch denied", t)
+            false
+        }
+        if (!launched) {
+            closeBlockedApp()
+            return
+        }
+        removeFullOverlay()
+        handler.postDelayed({ enforceWindows(allowDismiss = true) }, 800L)
     }
 
     private fun postBlockedNotification(openedPackage: String, appLabel: String) {
@@ -1438,8 +2185,11 @@ class StayTAccessibilityService : AccessibilityService() {
             if (!canPostNotifications(this)) return
             // Task-aware action text: name the task when known so the tap
             // target is obvious at a glance in the heads-up peek.
+            // Same words as the overlay and session note: what is blocked,
+            // what you are focusing on, one clear way back.
             val task = try { blockingTaskName?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
-            val actionText = if (task != null) "Tap to return to $task" else "Tap to return to your task"
+            val actionText = if (task != null) "You're focusing on $task. Tap to go back." else "You're in a focus session. Tap to go back."
+            val buttonText = if (task != null) "Back to $task" else "Back to my task"
             val deepLink = blockedDeepLink(openedPackage, appLabel)
             val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
                 setPackage(packageName)
@@ -1460,10 +2210,11 @@ class StayTAccessibilityService : AccessibilityService() {
             }
             @Suppress("DEPRECATION")
             val notification = builder
-                .setContentTitle("StayT blocked $appLabel")
+                .setContentTitle("$appLabel is blocked")
                 .setContentText(actionText)
-                .setTicker("StayT blocked $appLabel")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setTicker("$appLabel is blocked")
+                .setColor(SESSION_ACCENT)
+                .setSmallIcon(R.drawable.ic_stayt_note)
                 .setContentIntent(pending)
                 .setAutoCancel(true)
                 .setOngoing(false)
@@ -1474,7 +2225,7 @@ class StayTAccessibilityService : AccessibilityService() {
                 .setCategory(Notification.CATEGORY_ALARM)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setDefaults(Notification.DEFAULT_ALL)
-                .addAction(0, "Return to task", pending)
+                .addAction(0, buttonText, pending)
                 .build()
             getSystemService(NotificationManager::class.java)
                 ?.notify(openedPackage.hashCode(), notification)
@@ -1580,89 +2331,103 @@ class StayTAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Feed shield: when the event text contains an enabled keyword for this
-     * pkg (reels/explore/comments mapped from the three toggles), press BACK
-     * once per pkg per 10s. Skipped when the focused node is an EditText so
-     * typing is never hijacked. Caller runs this for allowed apps only (hard
-     * block wins — see onAccessibilityEvent). Best-effort: never blocks,
-     * never throws.
+     * Feed shield: when a shielded section (reels / explore / comments) of an
+     * allowed app is on screen, press BACK once (max one per pkg per 10s so
+     * it can never fight the user). Hardens feeds, never blocks; callers run
+     * it for non-target apps only (hard block wins).
+     *
+     * Detection reads the live view tree (on-device: tab switches such as
+     * Instagram Reels fire no window-state event and carry no "reels" text,
+     * so the old event-text match never fired): a known section view id, or
+     * — generic across apps — a SELECTED tab named after the section. The
+     * event-text keyword match stays as a fallback. Skips while the user is
+     * typing. Never throws.
      */
-    private fun maybeFeedShield(openedPackage: String, event: AccessibilityEvent, haystack: String, now: Long) {
+    private fun maybeFeedShield(pkg: String, haystack: String, now: Long) {
         try {
-            if (haystack.isEmpty()) return
-            val keywords = try {
-                val kws = mutableListOf<String>()
-                for (r in feedRules) {
-                    try {
-                        if (r.packageName == openedPackage && r.enabled) {
-                            if (r.hideReels) kws.add("reels")
-                            if (r.hideExplore) kws.add("explore")
-                            if (r.hideComments) kws.add("comments")
-                            break
-                        }
-                    } catch (_: Exception) {
-                    }
-                }
-                kws
-            } catch (_: Exception) {
-                return
+            val rule = feedRules.firstOrNull { it.packageName == pkg && it.enabled } ?: return
+            val sections = buildList {
+                if (rule.hideReels) add("reels")
+                if (rule.hideExplore) add("explore")
+                if (rule.hideComments) add("comments")
             }
-            if (keywords.isEmpty()) return
-            var hit = false
-            try {
-                for (k in keywords) {
-                    if (haystack.contains(k)) {
-                        hit = true
-                        break
-                    }
+            if (sections.isEmpty()) return
+            if (now - (lastFeedBackAt[pkg] ?: 0L) < FEED_BACK_COOLDOWN_MS) return
+            val root = rootInActiveWindow ?: return
+            val hit = try {
+                if (root.packageName?.toString() != pkg) return
+                // Never hijack typing.
+                if (root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.isEditable == true) return
+                sections.any { sec ->
+                    haystack.contains(sec) ||
+                        FEED_SECTION_IDS[sec].orEmpty().any { id ->
+                            root.findAccessibilityNodeInfosByViewId(id).isNotEmpty()
+                        } ||
+                        FEED_SECTION_TAB_NAMES[sec].orEmpty().any { name ->
+                            root.findAccessibilityNodeInfosByText(name).any { n ->
+                                n.isSelected && (n.text?.toString().equals(name, true) ||
+                                    n.contentDescription?.toString().equals(name, true))
+                            }
+                        }
                 }
-            } catch (_: Exception) {
-                return
+            } finally {
+                try { @Suppress("DEPRECATION") root.recycle() } catch (_: Throwable) { }
             }
             if (!hit) return
-            // Never hijack typing: bail when the event source is an EditText.
-            // getSource() needs canRetrieveWindowContent (set in XML + code);
-            // without it the source is null and the shield stays active.
-            var src: AccessibilityNodeInfo? = null
-            try {
-                src = try { event.source } catch (_: Exception) { null }
-                val cls = try { src?.className?.toString() } catch (_: Exception) { null }
-                if (cls == "android.widget.EditText") {
-                    Log.d(TAG, "feed shield skipped (typing) in $openedPackage")
-                    return
-                }
-            } catch (_: Exception) {
-            } finally {
-                try { src?.recycle() } catch (_: Exception) { }
-            }
-            // BACK-loop guard: at most one BACK per pkg per 10s, so a shield
-            // BACK can never fight the user (or the block bounce) in a loop.
-            val lastBack = try { lastFeedBackAt[openedPackage] ?: 0L } catch (_: Exception) { 0L }
-            if (now - lastBack < FEED_BACK_COOLDOWN_MS) return
-            try {
-                lastFeedBackAt[openedPackage] = now
-            } catch (_: Exception) {
-            }
-            try {
-                val ok = performGlobalAction(GLOBAL_ACTION_BACK)
-                Log.d(TAG, "feed shield BACK in $openedPackage -> $ok")
-            } catch (t: Throwable) {
-                Log.w(TAG, "feed shield BACK threw in $openedPackage", t)
-            }
+            lastFeedBackAt[pkg] = now
+            val ok = performGlobalAction(GLOBAL_ACTION_BACK)
+            Log.d(TAG, "feed shield BACK in $pkg -> $ok")
         } catch (t: Throwable) {
-            Log.w(TAG, "maybeFeedShield failed for $openedPackage", t)
+            Log.w(TAG, "maybeFeedShield failed for $pkg", t)
         }
     }
 
+    /** Trailing-edge throttle for content-change driven feed checks. */
+    private var feedCheckPending = false
+    private fun requestFeedCheck(pkg: String) {
+        if (feedCheckPending) return
+        feedCheckPending = true
+        handler.postDelayed({
+            feedCheckPending = false
+            if (isBlocking && !isBlockedPkg(pkg)) maybeFeedShield(pkg, "", System.currentTimeMillis())
+        }, 250L)
+    }
+
     /**
-     * No-overlay (ADR-0005): harmless no-op shim. No native window is ever
-     * added, so there is nothing to dismiss. Kept — with the bridge method
-     * AppBlockerModule.dismissBlockedOverlay and the companion dismissOverlay
-     * — so the JS seam needs zero changes (the interstitial still calls it
-     * on mount). Never throws.
+     * Remove every block surface (full overlay + window covers).
+     * Idempotent, never throws. Bridge callers (setBlocking/pause/JS
+     * interstitial mount) run off the main thread, so removal always hops
+     * to the main looper that added the views.
      */
-    private fun dismissBlockedOverlay() {
-        // Intentionally empty: no overlay exists to remove.
+    fun dismissBlockedOverlay() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { dismissBlockedOverlay() }
+            return
+        }
+        domainPkg = null
+        removeFullOverlay()
+        removeCovers()
+    }
+
+    private fun removeFullOverlay() {
+        val v = overlayView ?: return
+        overlayView = null
+        overlayPkg = null
+        try {
+            (getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.removeViewImmediate(v)
+        } catch (t: Throwable) {
+            Log.w(TAG, "overlay remove failed", t)
+        }
+    }
+
+    private fun removeCovers() {
+        if (covers.isEmpty()) return
+        val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        for (v in covers.values) {
+            try { wm?.removeViewImmediate(v) } catch (_: Throwable) { }
+        }
+        covers.clear()
+        pausedPipWindows.clear()
     }
 
     override fun onInterrupt() {

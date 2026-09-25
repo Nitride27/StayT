@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "stayt-app",
+    "name": "StayT",
     "slug": "stayt",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -29,7 +29,13 @@
       "expo-font",
       "expo-splash-screen",
       "expo-iap",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#58CC02"
+        }
+      ]
     ],
     "extra": {
       "eas": {

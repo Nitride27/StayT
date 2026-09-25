@@ -19,7 +19,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import { SwitchArrowsIcon } from '../components/icons';
-import AppBlocker from '../native/AppBlocker';
+import AppBlocker, { focusElapsed, SessionPause } from '../native/AppBlocker';
 import { syncWidgetNow } from '../widget/widgetSync';
 import { ensureDailyReminder, cancelDailyReminder } from '../notifications/reminders';
 import { tap } from '../haptics';
@@ -58,7 +58,7 @@ function buildSessionOpts(prefs: UserPreferences, task: Task): SessionOpts {
 // are read fresh on every call — never cached across re-applies. Budgets are
 // task-only: only the ACTIVE task's tagged rows are pushed (untagged legacy
 // rows are inert — never pushed, never enforced).
-async function pushSessionConfig(task: Task): Promise<SessionOpts> {
+async function pushSessionConfig(task: Task, session: Session): Promise<SessionOpts> {
   const fallback: SessionOpts = {
     friction: { enabled: false, delaySeconds: 10, escalate: false },
     allowlist: null,
@@ -66,6 +66,11 @@ async function pushSessionConfig(task: Task): Promise<SessionOpts> {
   try {
     const prefs = await store.getPreferences();
     const opts = buildSessionOpts(prefs, task);
+    // Session note timer base + pause control (none for strict/dumbphone).
+    await AppBlocker.setSessionInfo(
+      session.startedAt,
+      !isEffectiveStrict(task.strict, task.dumbphoneMode),
+    ).catch(() => {});
     await AppBlocker.setFriction(opts.friction).catch(() => {});
     const [budgets, domains, filters] = await Promise.all([
       store.getBudgetsForTask(task.id),
@@ -101,21 +106,21 @@ function getSessionOEMTip(): string | null {
     (Platform.constants?.Manufacturer as string | undefined)?.toLowerCase() ?? '';
   const hay = `${manufacturer} ${model}`;
   if (hay.includes('xiaomi') || hay.includes('redmi') || hay.includes('poco'))
-    return 'Xiaomi: Settings > Apps > StayT > Autostart ON, Battery > No restrictions.';
+    return 'Xiaomi: turn Autostart on for StayT, and set Apps > StayT > Battery to No restrictions.';
   if (hay.includes('samsung'))
-    return 'Samsung: add StayT to Never-sleeping apps, Battery > Unrestricted.';
+    return 'Samsung: set Apps > StayT > Battery to Unrestricted, and add StayT to Never sleeping apps.';
   if (hay.includes('huawei') || hay.includes('honor'))
-    return 'Huawei: App launch > StayT > Manage manually, all toggles ON.';
+    return 'Huawei: App launch > StayT > Manage manually, with every switch on.';
   if (hay.includes('oppo') || hay.includes('realme'))
-    return 'OPPO: Autostart ON, App battery management > No restrictions.';
+    return 'OPPO: turn Autostart on for StayT, and set its battery use to No restrictions.';
   if (hay.includes('oneplus'))
-    return 'OnePlus: Autostart ON, Battery optimization > Don\u2019t optimize.';
+    return 'OnePlus: turn Autostart on for StayT, and set its battery to Don\u2019t optimize.';
   if (hay.includes('vivo') || hay.includes('iqoo'))
-    return 'Vivo: Autostart ON, Background power consumption > Allow.';
+    return 'Vivo: turn Autostart on for StayT, and allow its background power use.';
   if (hay.includes('motorola') || hay.includes('moto'))
-    return 'Motorola: Adaptive Battery > exclude StayT, Battery > Unrestricted.';
+    return 'Motorola: set Apps > StayT > Battery to Unrestricted.';
   if (hay.includes('nothing'))
-    return 'Nothing: Autostart ON, Battery > Unrestricted.';
+    return 'Nothing: turn Autostart on for StayT, and set its battery to Unrestricted.';
   return null;
 }
 
@@ -133,6 +138,29 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   // at least once — the screen is loading, live, or ended. Never half-drawn.
   const [hydrated, setHydrated] = useState(false);
   const [elapsed, setElapsed] = useState(routeSession?.startedAt ? Date.now() - routeSession.startedAt : 0);
+  // Back on a live session = leave the app like HOME; the session keeps
+  // running. Popping this screen would run its cleanup (stopBlocking) and
+  // strand an 'active' session with no screen and no timer — the app then
+  // reopened on the task list. Deliberate exits (END SESSION / SWITCH TASK
+  // use replace, a new task uses reset) are not GO_BACK/POP and pass.
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', e => {
+        const t = e.data.action.type;
+        if (t !== 'GO_BACK' && t !== 'POP' && t !== 'POP_TO_TOP') return;
+        e.preventDefault();
+        AppBlocker.moveToBack().catch(() => {});
+      }),
+    [navigation],
+  );
+
+  // Native-owned pause state (note play/pause, ADR-0008). Paused = blocking
+  // off, timer frozen; paused time never counts toward the session.
+  const [pause, setPause] = useState<SessionPause | null>(null);
+  const refreshPause = useCallback(() => {
+    AppBlocker.getSessionPause().then(setPause).catch(() => {});
+  }, []);
+  useEffect(() => AppBlocker.onSessionPauseChanged(setPause), []);
   // False when the service is off or startBlocking fails — blocking silently
   // doing nothing is the worst outcome, so the banner below says so loudly.
   const [blockingOk, setBlockingOk] = useState(true);
@@ -147,6 +175,10 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   // Dynamic to screen size: fixed 220px mascots push the buttons off small screens.
   const { height: winH } = useWindowDimensions();
   const mascotSize = Math.min(220, Math.max(120, Math.floor(winH * 0.24)));
+  // Short windows (split screen, pop-up view): the owl + title pushed the
+  // timer out of view — "the timer disappears". Drop the owl and step the
+  // timer down so title, timer and actions always fit.
+  const compact = winH < 600;
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -228,7 +260,8 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   useFocusEffect(
     useCallback(() => {
       hydrate().catch(() => {});
-    }, [hydrate]),
+      refreshPause();
+    }, [hydrate, refreshPause]),
   );
 
   // Foreground return (home/recents — focus never changes there, so the
@@ -237,9 +270,10 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   // startedAt so no stale tick lingers from the background.
   useOnForeground(() => {
     snapEntries();
+    refreshPause();
     hydrate()
       .then(s => {
-        if (s) setElapsed(Date.now() - s.startedAt);
+        if (s) setElapsed(focusElapsed(s.startedAt, pause));
       })
       .catch(() => {});
   });
@@ -250,12 +284,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const startedAt = session?.startedAt ?? 0;
   useEffect(() => {
     if (!startedAt) return;
-    setElapsed(Date.now() - startedAt);
+    setElapsed(focusElapsed(startedAt, pause));
+    if (pause?.paused) return;
     const interval = setInterval(() => {
-      setElapsed(Date.now() - startedAt);
+      setElapsed(focusElapsed(startedAt, pause));
     }, 1000);
     return () => clearInterval(interval);
-  }, [startedAt]);
+  }, [startedAt, pause]);
 
   // Start blocking when session begins; always release on unmount
   // so a gesture-back can't leave blocking on with no session.
@@ -288,7 +323,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         mark(false);
         return;
       }
-      const { allowlist } = await pushSessionConfig(liveTask);
+      const { allowlist } = await pushSessionConfig(liveTask, liveSession);
       if (!live) return;
       const ok = await AppBlocker.startBlocking(blockedPackagesOf(liveTask), liveTask.name, { allowlist }).catch(() => false);
       mark(ok !== false);
@@ -310,7 +345,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       // in-memory so a kill/re-enable loses it. Only call when we were
       // previously down to avoid re-pushing every 5s.
       if (!blockingOkRef.current) {
-        const { allowlist } = await pushSessionConfig(liveTask);
+        const { allowlist } = await pushSessionConfig(liveTask, liveSession);
         if (!live) return;
         const ok = await AppBlocker.startBlocking(blockedPackagesOf(liveTask), liveTask.name, { allowlist }).catch(() => false);
         mark(ok !== false);
@@ -328,7 +363,9 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     const s = session;
     try {
       if (s) {
-        await store.saveSession({ ...s, status: 'completed', endedAt: Date.now(), duration: Date.now() - s.startedAt });
+        // Read before stopBlocking (which clears native pause state).
+        const p = await AppBlocker.getSessionPause().catch(() => null);
+        await store.saveSession({ ...s, status: 'completed', endedAt: Date.now(), duration: focusElapsed(s.startedAt, p) });
       }
     } finally {
       // Blocking must release even if the save failed — never trap the user.
@@ -348,7 +385,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const handleSwitchTask = async () => {
     tap();
     await finishSession();
-    navigation.replace('TaskPicker');
+    navigation.reset({ index: 0, routes: [{ name: 'TaskPicker' }] });
   };
 
   // END SESSION ends this session and shows it logged in History.
@@ -357,7 +394,10 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const handleEndSession = async () => {
     tap('medium');
     await finishSession();
-    navigation.replace('History');
+    // reset (not replace): a session restored after process death is the
+    // only route, so replace left History alone and BACK closed the app.
+    // Always land on TaskPicker -> History so BACK goes to the task list.
+    navigation.reset({ index: 1, routes: [{ name: 'TaskPicker' }, { name: 'History' }] });
   };
 
   // Wave 2C2 OEM survival (additive, best-effort): false → fall back to
@@ -500,7 +540,7 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
             Allowed-apps mode needs an app update
           </Text>
           <Text style={[typography.caption, { color: muted, textAlign: 'center', marginTop: 4 }]}>
-            This build can't enforce it — only the blocklist is active. Install the latest dev build for full dumbphone mode.
+            This build can't enforce it, so only the blocklist is active. Update StayT for full dumbphone mode.
           </Text>
         </View>
       )}
@@ -509,9 +549,11 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-      <Animated.View style={[styles.header, headerAnimStyle]}>
-        <Image source={mascotSource('working', isDark)} style={[styles.mascotImage, { width: mascotSize, height: mascotSize }]} resizeMode="contain" />
-        <Text style={[typography.display, { color: ink, textAlign: 'center', marginTop: spacing.lg }]}>
+      <Animated.View style={[styles.header, compact && { marginTop: spacing.sm }, headerAnimStyle]}>
+        {!compact && (
+          <Image source={mascotSource(pause?.paused ? 'coffee' : 'working', isDark)} style={[styles.mascotImage, { width: mascotSize, height: mascotSize }]} resizeMode="contain" />
+        )}
+        <Text style={[typography.display, { color: ink, textAlign: 'center', marginTop: compact ? 0 : spacing.lg }]}>
           {task.name.toUpperCase()}
         </Text>
         {effectiveStrict && (
@@ -522,12 +564,27 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.timerArea, timerAnimStyle]}>
-        <Text style={[typography.timerXL, { color: ink }]}>
+        <Text style={[typography.timerXL, { color: ink }, compact && { fontSize: 56, lineHeight: 62 }]}>
           {formatElapsed(elapsed)}
         </Text>
         <Text style={[typography.caption, { color: muted, marginTop: spacing.sm }]}>
-          Small steps build big progress.
+          {pause?.paused ? 'Paused. Your apps are unblocked.' : 'Small steps build big progress.'}
         </Text>
+        {pause?.paused && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            onPress={() => {
+              tap();
+              AppBlocker.setSessionPaused(false).then(p => p && setPause(p)).catch(() => {});
+            }}
+            style={[styles.resumeButton, { borderColor: isDark ? colors.ectoGreen : colors.ectoGreenDark }]}
+          >
+            <Text style={[typography.cta, { color: isDark ? colors.ectoGreen : colors.ectoGreenDark, textAlign: 'center' }]}>
+              RESUME SESSION
+            </Text>
+          </TouchableOpacity>
+        )}
       </Animated.View>
       </ScrollView>
 
@@ -634,6 +691,19 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     paddingVertical: 18,
     marginHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  // Paused-state action: outline (secondary to SWITCH TASK's solid green),
+  // same outline language as the interstitial's secondary buttons.
+  resumeButton: {
+    alignSelf: 'stretch',
+    marginTop: spacing.lg,
+    marginHorizontal: spacing.md,
+    borderWidth: 2,
+    borderRadius: radius.xl,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,

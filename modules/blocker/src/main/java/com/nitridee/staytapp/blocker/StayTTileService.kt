@@ -62,7 +62,7 @@ class StayTTileService : TileService() {
             } else if (StayTAccessibilityService.isBlockingNow() && snap.lastPackages.isNotEmpty()) {
                 tile.state = Tile.STATE_ACTIVE
                 tile.label = "Blocking"
-                setSubtitle("${snap.lastPackages.size} app(s)")
+                setSubtitle(if (snap.lastPackages.size == 1) "1 app" else "${snap.lastPackages.size} apps")
             } else {
                 tile.state = Tile.STATE_INACTIVE
                 tile.label = "StayT"

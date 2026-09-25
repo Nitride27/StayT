@@ -1,124 +1,158 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- P2-1 home-screen widget layout (FREE). Mini dashboard, filled from
-     WidgetData by StayTWidgetProvider: mascot + status header, big focus
-     total, active-task line, streak / guarded-apps footer. Card background
-     and mascot variant are swapped at update time for day/night (RemoteViews
-     only allows framework views — LinearLayout/TextView/ImageView). -->
+<!-- Home-screen widget, clean + minimal like the app (4x2 default):
+     header (app icon, name, status), a hero row (focus-today total on the
+     left, today's owl mood on the right — the owl hides when the widget is
+     resized narrow), and a two-stat footer. Hairline card in the app theme.
+     Colors/art are set at runtime by StayTWidgetProvider; values here are
+     the dark defaults. RemoteViews allows framework views only. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@drawable/stayt_widget_bg"
     android:orientation="vertical"
-    android:gravity="center_vertical"
-    android:padding="14dp">
+    android:paddingStart="18dp"
+    android:paddingTop="14dp"
+    android:paddingEnd="18dp"
+    android:paddingBottom="14dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
         <ImageView
-            android:id="@+id/widget_mascot"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:src="@drawable/stayt_owl_blocked"
-            android:contentDescription="StayT owl" />
+            android:id="@+id/widget_icon"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:contentDescription="StayT"
+            android:src="@mipmap/ic_launcher_round" />
+
+        <TextView
+            android:id="@+id/widget_brand"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:singleLine="true"
+            android:text="StayT"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:text="Ready"
+            android:textColor="#888888"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="10dp"
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/widget_focus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="STAYT"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:textColor="#58CC02" />
+                android:fontFamily="sans-serif-condensed"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="0m"
+                android:textColor="#FFFFFF"
+                android:textSize="40sp"
+                android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/widget_status"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="READY TO FOCUS"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="#FFFFFF" />
-
-            <TextView
-                android:id="@+id/widget_mood"
+                android:id="@+id/widget_focus_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="ROUGH DAY — OWL BELIEVES IN REBOUNDS"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:textColor="#58CC02"
-                android:singleLine="true"
+                android:text="focus today"
+                android:textColor="#888888"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/widget_task"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
                 android:ellipsize="end"
+                android:singleLine="true"
+                android:text="Now: Deep work"
+                android:textColor="#58CC02"
+                android:textSize="12sp"
+                android:textStyle="bold"
                 android:visibility="gone" />
         </LinearLayout>
+
+        <ImageView
+            android:id="@+id/widget_owl"
+            android:layout_width="84dp"
+            android:layout_height="84dp"
+            android:layout_marginStart="8dp"
+            android:contentDescription="Owl mood"
+            android:scaleType="fitCenter"
+            android:src="@drawable/stayt_owl_cheering_white" />
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/widget_task"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="NOW: DEEP WORK"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:textColor="#58CC02"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:visibility="gone" />
-
-    <TextView
-        android:id="@+id/widget_focus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="0m"
-        android:textSize="36sp"
-        android:textStyle="bold"
-        android:textColor="#FFFFFF" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="FOCUS TODAY"
-        android:textSize="11sp"
-        android:textStyle="bold"
-        android:textColor="#8A8A8A" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:baselineAligned="true"
+        android:orientation="horizontal">
 
         <TextView
             android:id="@+id/widget_streak"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="NO STREAK YET"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:textColor="#FFFFFF" />
-
-        <TextView
-            android:id="@+id/widget_guarded"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="NO APPS GUARDED"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:textColor="#8A8A8A" />
+            android:text="0"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_streak_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="5dp"
+            android:layout_weight="1"
+            android:singleLine="true"
+            android:text="day streak"
+            android:textColor="#888888"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/widget_apps"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_apps_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="5dp"
+            android:singleLine="true"
+            android:text="apps blocked"
+            android:textColor="#888888"
+            android:textSize="12sp" />
     </LinearLayout>
 </LinearLayout>

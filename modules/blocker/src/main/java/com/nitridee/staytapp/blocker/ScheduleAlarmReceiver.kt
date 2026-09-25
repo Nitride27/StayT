@@ -1,5 +1,7 @@
 package com.nitridee.staytapp.blocker
 
+import com.nitridee.staytapp.R
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -44,21 +46,24 @@ class ScheduleAlarmReceiver : BroadcastReceiver() {
                 val union = ScheduleAlarmScheduler.unionActive(schedules, System.currentTimeMillis())
                 if (action == ScheduleAlarmScheduler.ACTION_START) {
                     if (union.isNotEmpty()) {
-                        StayTAccessibilityService.setBlocking(true, union)
+                        // Schedule wins over a user pause too (ADR-0008),
+                        // same as it wins over a break.
+                        StayTAccessibilityService.setSessionPaused(context, false)
+                        StayTAccessibilityService.reconcileWithSchedules(context, union)
                         Log.d(TAG, "START idx=$idx: blocking ${union.size} pkgs")
-                        notifyFocusOn(context)
+                        val now = System.currentTimeMillis()
+                        val endsAt = schedules.filter { ScheduleAlarmScheduler.isActiveAt(it, now) }
+                            .mapNotNull { ScheduleAlarmScheduler.nextStopMillis(it, now) }
+                            .minOrNull()
+                        notifyFocusOn(context, union.size, endsAt)
                     } else {
                         Log.w(TAG, "START idx=$idx fired with no active window (clock shifted?); reprogramming")
                     }
                 } else {
-                    if (union.isNotEmpty()) {
-                        // Overlapping schedule still active — stay blocked.
-                        StayTAccessibilityService.setBlocking(true, union)
-                        Log.d(TAG, "STOP idx=$idx: overlap active, keeping ${union.size} pkgs blocked")
-                    } else {
-                        StayTAccessibilityService.setBlocking(false)
-                        Log.d(TAG, "STOP idx=$idx: blocking off")
-                    }
+                    // Overlapping windows and a live manual session both
+                    // survive a STOP; blocking only ends when neither is left.
+                    StayTAccessibilityService.reconcileWithSchedules(context, union)
+                    Log.d(TAG, "STOP idx=$idx: ${union.size} schedule pkgs still active")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "alarm apply failed for $action", e)
@@ -75,13 +80,24 @@ class ScheduleAlarmReceiver : BroadcastReceiver() {
         }
     }
 
+    /** "Blocking 2 apps until 17:00" in the phone's own 12/24h format. */
+    private fun focusOnText(context: Context, appCount: Int, endsAt: Long?): String {
+        val apps = if (appCount == 1) "1 app" else "$appCount apps"
+        val until = try {
+            endsAt?.let { " until " + android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(it)) }
+        } catch (_: Exception) {
+            null
+        } ?: ""
+        return "Blocking $apps$until."
+    }
+
     /**
-     * Best-effort "Focus hours on" tap-to-open notification, following the
+     * Best-effort "Focus hours started" tap-to-open notification, following the
      * existing stayt_blocked channel pattern from StayTAccessibilityService.
      * createNotificationChannel is a no-op if the service already created it.
      * Silently skipped when POST_NOTIFICATIONS (API 33+) is not granted.
      */
-    private fun notifyFocusOn(context: Context) {
+    private fun notifyFocusOn(context: Context, appCount: Int, endsAt: Long?) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
@@ -106,9 +122,10 @@ class ScheduleAlarmReceiver : BroadcastReceiver() {
                 @Suppress("DEPRECATION")
                 Notification.Builder(context)
             }
-                .setContentTitle("Focus hours on")
-                .setContentText("StayT is now blocking distractions")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Focus hours started")
+                .setContentText(focusOnText(context, appCount, endsAt))
+                .setSmallIcon(R.drawable.ic_stayt_note)
+                .setColor(-10957822) // ectoGreen, same accent as the session note
                 .setAutoCancel(true)
             try {
                 val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)

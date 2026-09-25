@@ -343,6 +343,8 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     syncWidgetNow().catch(() => {});
     setBusy(false);
     navigation.goBack();
+    // Land in the app the override was for, not back on the session.
+    AppBlocker.openApp(packageName).catch(() => {});
   };
 
   // P1-3 intention break: inline form -> pauseBlocking(min*60) + a 'break'
@@ -395,6 +397,7 @@ export default function BlockedInterstitialScreen({ navigation, route }: Props) 
     syncWidgetNow().catch(() => {});
     setBusy(false);
     navigation.goBack();
+    AppBlocker.openApp(packageName).catch(() => {});
   };
 
   const formatCountdown = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

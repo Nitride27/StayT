@@ -528,34 +528,15 @@ export const store = {
       hideComments: filter.hideComments ?? false,
       enabled: filter.enabled ?? true,
     };
-    // Collision rule: an app must not be both hard-blocked and feed-shielded.
-    // An enabled save for a colliding package persists as disabled (the
-    // block side wins) and reports it for UI notice. Reason 'blocked' = task
-    // list, 'budget' = enabled budget (over-limit takes the block path).
-    // The row is kept, never dropped — re-enabling is one toggle.
-    let result: { autoDisabled: boolean; reason: 'blocked' | 'budget' | null } = {
+    // No save-time collision rule: feed filters are global while blocks and
+    // budgets are per task, so "blocked by some task" disabled shields that
+    // were useful in every other task's session. Precedence is enforced at
+    // runtime instead — the service applies Feed Shield only to apps that
+    // are not blocked (or over budget) in the running session.
+    const result: { autoDisabled: boolean; reason: 'blocked' | 'budget' | null } = {
       autoDisabled: false,
       reason: null,
     };
-    if (normalized.enabled === true) {
-      try {
-        const [hard, budgets] = await Promise.all([
-          this.getHardBlockedPackages(),
-          this.getEnforceableBudgets(),
-        ]);
-        if (hard.includes(normalized.packageName)) {
-          normalized.enabled = false;
-          result = { autoDisabled: true, reason: 'blocked' };
-        } else if (
-          budgets.some(b => b.packageName === normalized.packageName && b.enabled === true && b.limit > 0)
-        ) {
-          normalized.enabled = false;
-          result = { autoDisabled: true, reason: 'budget' };
-        }
-      } catch {
-        // Best-effort collision check; persist normalized on failure.
-      }
-    }
     return serialized(FEED_FILTERS_KEY, async () => {
       const all = await this.getFeedFilters();
       const index = all.findIndex(f => f.packageName === normalized.packageName);
@@ -569,92 +550,19 @@ export const store = {
     });
   },
 
-  /**
-   * Q4 store-level guard: union of every task's effective blocklist (reuses
-   * blockedPackagesOf — no second blocklist derivation). Single detection
-   * path for feed-vs-block and budget-vs-block collisions; runtime
-   * enforcement stays native (hard block wins — feed shield never blocks and
-   * falls through to block evaluation). Never throws.
-   */
-  async getHardBlockedPackages(): Promise<string[]> {
-    try {
-      const tasks = await this.getTasks();
-      const set = new Set<string>();
-      for (const t of tasks) {
-        for (const p of blockedPackagesOf(t)) if (p) set.add(p);
-      }
-      return [...set];
-    } catch {
-      return [];
-    }
-  },
 
-  /** Feed-shielded pkgs that are also fully blocked (block wins). Never throws. */
-  async findFeedBlockCollisions(): Promise<string[]> {
-    try {
-      const [blocked, filters] = await Promise.all([
-        this.getHardBlockedPackages(),
-        this.getFeedFilters(),
-      ]);
-      const set = new Set(blocked);
-      // Enabled only: auto-disabled rows (see saveFeedFilter/reconcile) are
-      // resolved and must not warn.
-      return filters.filter(f => f.enabled === true).map(f => f.packageName).filter(p => set.has(p));
-    } catch {
-      return [];
-    }
-  },
 
-  /** Budgeted pkgs that are also fully blocked (block wins while active). Never throws. */
-  async findBudgetBlockCollisions(): Promise<string[]> {
-    try {
-      const [blocked, budgets] = await Promise.all([
-        this.getHardBlockedPackages(),
-        this.getBudgets(),
-      ]);
-      const set = new Set(blocked);
-      return [...new Set(budgets.map(b => b.packageName).filter(p => set.has(p)))];
-    } catch {
-      return [];
-    }
-  },
+
+
+
 
   /**
-   * Force-disable every enabled feed entry colliding with a hard block or an
-   * enabled budget (one app, one enforcement mechanism — the block side
-   * wins). Rows are kept, never dropped. Returns the packages it disabled so
-   * callers can notice the user + re-push native feeds. Called from saveTask
-   * and saveBudget (the paths that can newly collide a feed row); never throws.
+   * Retired: feed entries are no longer force-disabled on collision (see
+   * saveFeedFilter — runtime precedence handles it per session). Kept as a
+   * no-op so saveTask/saveBudget callers need no change. Never throws.
    */
   async reconcileFeedCollisions(): Promise<string[]> {
-    return serialized(FEED_FILTERS_KEY, async () => {
-      try {
-        const [all, hard, budgets] = await Promise.all([
-          this.getFeedFilters(),
-          this.getHardBlockedPackages(),
-          this.getEnforceableBudgets(),
-        ]);
-        const hardSet = new Set(hard);
-        const budgeted = new Set(
-          budgets.filter(b => b.enabled === true && b.limit > 0).map(b => b.packageName),
-        );
-        const disabled: string[] = [];
-        let changed = false;
-        for (const f of all) {
-          if (f.enabled === true && (hardSet.has(f.packageName) || budgeted.has(f.packageName))) {
-            f.enabled = false;
-            disabled.push(f.packageName);
-            changed = true;
-          }
-        }
-        if (changed) {
-          await AsyncStorage.setItem(FEED_FILTERS_KEY, JSON.stringify(all));
-        }
-        return disabled;
-      } catch {
-        return [];
-      }
-    });
+    return [];
   },
 
   /**

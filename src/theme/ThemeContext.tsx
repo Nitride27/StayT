@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useColorScheme } from 'react-native';
 import { colors, darkColors, Colors } from './tokens';
 import { store } from '../storage/store';
+import AppBlocker from '../native/AppBlocker';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -37,6 +38,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isDark = mode === 'system' ? systemScheme === 'dark' : mode === 'dark';
+
+  // Native surfaces (block overlay, session note, widget) can't see the
+  // app's theme choice; mirror the resolved value whenever it changes.
+  useEffect(() => {
+    if (loaded) AppBlocker.setThemeDark(isDark).catch(() => {});
+  }, [isDark, loaded]);
 
   const setMode = async (newMode: ThemeMode) => {
     setModeState(newMode);
