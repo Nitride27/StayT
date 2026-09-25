@@ -22,7 +22,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { isPro, PRO_PASS_HOURS } from '../billing/pro';
+import { isPro } from '../billing/pro';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { GearIcon, BoltIcon, CheckIcon, BookIcon, CloseIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
@@ -465,42 +465,19 @@ export default function SettingsScreen({ navigation }: Props) {
 
           {/* Subscription */}
           <SectionHeader label="PRO" color={theme.inkSecondary} glyph={<CheckIcon size={16} color={colors.midnight} />} />
-          {isSubscribed ? (
-            <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <View style={styles.planRow}>
-                <Text style={[typography.bodyStrong, { color: ink }]}>Pro pass</Text>
-                <View style={styles.activeBadge}>
-                  <Text style={[typography.label, { color: colors.midnight }]}>ACTIVE</Text>
-                </View>
-              </View>
-              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
-                Every Pro feature is on. Watch another ad to add {PRO_PASS_HOURS} hours.
-              </Text>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => { tap(); navigation.navigate('Paywall'); }}
-                style={styles.upgradeButton}
-              >
-                <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>EXTEND PASS</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <Text style={[typography.bodyStrong, { color: ink }]}>Free plan</Text>
-              <Text style={[typography.caption, { color: theme.inkSecondary }]}>
-                Ads keep StayT free. Watch one to unlock every Pro feature for {PRO_PASS_HOURS} hours.
-              </Text>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => { tap(); navigation.navigate('Paywall'); }}
-                style={styles.upgradeButton}
-              >
-                  <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
-                  UNLOCK PRO
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={[styles.rowBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Text style={[typography.bodyStrong, { color: ink }]}>Free with ads</Text>
+            <Text style={[typography.caption, { color: theme.inkSecondary }]}>
+              Every Pro feature is included. Turning one on plays a short ad first.
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => { tap(); navigation.navigate('Paywall'); }}
+              style={styles.upgradeButton}
+            >
+              <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>SEE PRO FEATURES</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* About — static text only */}
           <SectionHeader label="SUPPORT" color={theme.inkSecondary} glyph={<BookIcon size={16} color={colors.midnight} />} />

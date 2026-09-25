@@ -13,7 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useOnForeground } from '../hooks/useOnForeground';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { isPro } from '../billing/pro';
+import { adGate } from '../billing/pro';
 import { Task, blockedPackagesOf } from '../types';
 import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
@@ -130,11 +130,10 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
       const currentStreak = await store.getStreak();
       if (v !== loadVersion.current) return;
       setStreak(currentStreak);
-      const prefs = await store.getPreferences();
-      if (v !== loadVersion.current) return;
       // M6: presets never counted toward the free task limit.
       const userTasks = allTasks.filter(t => !t.isPreset).length;
-      setShowPaywall(!isPro(prefs) && userTasks >= FREE_TASK_LIMIT);
+      // no-pro: tasks past the free limit each play an ad.
+      setShowPaywall(userTasks >= FREE_TASK_LIMIT);
     } catch {
       if (v === loadVersion.current) setTasks([]);
     }
@@ -258,13 +257,10 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
     navigation.navigate('TaskSetup', { task });
   }, [navigation]);
 
-  const handleAddTask = () => {
+  const handleAddTask = async () => {
     tap();
-    if (showPaywall) {
-      navigation.navigate('Paywall');
-    } else {
-      navigation.navigate('TaskSetup', {});
-    }
+    if (showPaywall && !(await adGate())) return;
+    navigation.navigate('TaskSetup', {});
   };
 
   const headerAnimStyle = useAnimatedStyle(() => ({
@@ -365,7 +361,7 @@ export default function TaskPickerScreen({ navigation, route }: Props) {
           <View style={styles.primaryButtonRow}>
             <PlusIcon size={18} color={colors.midnight} />
             <Text style={styles.primaryButtonText}>
-              {showPaywall ? 'ADD TASK (UNLOCK PRO)' : 'NEW TASK'}
+              {showPaywall ? 'NEW TASK (SHORT AD)' : 'NEW TASK'}
             </Text>
           </View>
         </AnimatedTouchable>

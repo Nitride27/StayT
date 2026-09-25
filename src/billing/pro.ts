@@ -1,25 +1,21 @@
-// no-pro build: no purchases. Pro features unlock for PRO_PASS_HOURS per
-// rewarded ad watched; ads never switch off.
-import { store } from '../storage/store';
-import { syncWidgetNow } from '../widget/widgetSync';
+// no-pro build: no purchases. Every Pro feature is enforced once saved;
+// turning one on plays a rewarded ad first, every time (adGate).
+import { Alert } from 'react-native';
+import { showRewarded } from '../ads/ads';
 
-export const PRO_PASS_HOURS = 24;
-
-export async function grantProPass(): Promise<void> {
-  const prefs = await store.getPreferences();
-  // Stacks: watching again while active adds on top of what is left.
-  const base = Math.max(Date.now(), prefs.proPassUntil ?? 0);
-  await store.savePreferences({ ...prefs, proPassUntil: base + PRO_PASS_HOURS * 3600 * 1000 });
-  // Refresh the widget/tile entitlement mirror (P2-2 reads it with app dead).
-  // ponytail: the mirror only updates on sync, so the tile can outlive an
-  // expired pass until the next app open; add an expiry field to WidgetData if that matters.
-  await syncWidgetNow().catch(() => {});
-}
-
-// Single Pro seam: every gate reads this. isSubscribed stays only for the
-// __DEV__ toggle in Settings.
-export function isPro(prefs: { isSubscribed?: boolean; proPassUntil?: number }): boolean {
-  return prefs.isSubscribed === true || (prefs.proPassUntil ?? 0) > Date.now();
+// Single Pro seam for enforcement: always on here, the gate is the ad.
+export function isPro(_prefs: unknown): boolean {
+  return true;
 }
 
 export const adsFree = (_prefs: unknown) => false;
+
+/** Rewarded ad in front of enabling a Pro feature. True = go ahead. */
+export async function adGate(): Promise<boolean> {
+  const result = await showRewarded();
+  if (result === 'earned') return true;
+  if (result === 'unavailable') {
+    Alert.alert('No ad available', 'Pro features turn on after a short ad. Check your connection and try again.');
+  }
+  return false;
+}

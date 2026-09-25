@@ -11,7 +11,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { isPro } from '../billing/pro';
+import { isPro, adGate } from '../billing/pro';
 import { Session, Task, BlockedAttempt } from '../types';
 import AppBlocker from '../native/AppBlocker';
 import { useTheme } from '../theme/ThemeContext';
@@ -511,7 +511,7 @@ export default function HistoryScreen({ navigation }: Props) {
                   <TouchableOpacity
                     key={r}
                     activeOpacity={0.8}
-                    onPress={() => { tap(); setRange(r); }}
+                    onPress={async () => { tap(); if (r !== 'today' && r !== range && !(await adGate())) return; setRange(r); }}
                     style={[
                       styles.rangeBtn,
                       { borderColor: border },

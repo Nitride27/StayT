@@ -12,7 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { store } from '../storage/store';
-import { isPro as isProActive } from '../billing/pro';
+import { isPro as isProActive, adGate } from '../billing/pro';
 import { Task, FocusSchedule, Budget, BlockedDomain, FeedFilter, blockedPackagesOf } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
@@ -406,7 +406,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   // outside it dismisses it. The list itself lazy-renders via FlatList.
   const [appPickerOpen, setAppPickerOpen] = useState(false);
 
-  const handlePickApp = (app: InstalledApp) => {
+  const handlePickApp = async (app: InstalledApp) => {
     if (isSubscribed === null) return;
     tap();
     const already = selectedApps.some(a => a.packageName === app.packageName);
@@ -435,6 +435,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       ]);
       return;
     }
+    // no-pro: every app past the first plays an ad.
+    if (selectedApps.length >= 1 && !(await adGate())) return;
     const next = [...selectedApps, app];
     setSelectedApps(next);
     setPackageName(next[0].packageName);
@@ -453,7 +455,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   };
 
   // P1-1: strict mode reuses the same Pro-gate pattern as schedules.
-  const handleToggleStrict = () => {
+  const handleToggleStrict = async () => {
+    if (!strict && !(await adGate())) return;
     if (!isPro) {
       Alert.alert('Pro feature', 'Strict mode is Pro.', [
         { text: 'View Pro', onPress: () => navigation.navigate('Paywall') },
@@ -472,7 +475,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     setDumb(v => !v);
   };
 
-  const handleToggleSchedule = () => {
+  const handleToggleSchedule = async () => {
+    if (!scheduleEnabled && !(await adGate())) return;
     if (!isPro) {
       // Free undo: a preset just turned the schedule on — switching it back
       // off is not a Pro edit. Turning it on or editing stays gated.
@@ -613,6 +617,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       return;
     }
     if (!isPro && budgets.length >= 1) { showBudgetProGate(); return; }
+    if (budgets.length >= 1 && !(await adGate())) return;
     const limit = Math.min(999, Math.max(1, newBudgetLimit));
     const duplicate = taskBudgets.some(b => b.packageName === pkg && b.kind === newBudgetKind);
     // Label is derived — one less field in the form.
@@ -673,7 +678,8 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
   };
 
   // ── Wave 2C1 C: dumbphone allowlist (Pro flagship, per-task) ──
-  const handleToggleAllowlist = () => {
+  const handleToggleAllowlist = async () => {
+    if (!allowlistMode && !(await adGate())) return;
     if (!isPro) {
       showWave2ProGate('Dumbphone mode is Pro.', 'Only chosen apps work.');
       return;
@@ -719,6 +725,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       return;
     }
     setDomainError(null);
+    if (!(await adGate())) return;
     try {
       await store.saveBlockedDomain({ id: `domain-${Date.now()}`, domain: d, enabled: true });
       setDomains(await store.getBlockedDomains());
@@ -733,6 +740,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     if (!isPro) { showDomainsProGate(); return; }
     const cur = domains.find(x => x.id === id);
     if (!cur) return;
+    if (!cur.enabled && !(await adGate())) return;
     tap();
     try {
       await store.saveBlockedDomain({ ...cur, enabled: !cur.enabled });
@@ -773,6 +781,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
     if (!isPro) { showFeedsProGate(); return; }
     const cur = feedFilters.find(f => f.packageName === pkg);
     if (!cur) return;
+    if (!cur[flag] && !(await adGate())) return;
     tap();
     const next: FeedFilter = { ...cur };
     next[flag] = !next[flag];
@@ -791,6 +800,7 @@ export default function TaskSetupScreen({ navigation, route }: Props) {
       Alert.alert('Already added', 'Feed Shield already covers this app.');
       return;
     }
+    if (!(await adGate())) return;
     tap();
     try {
       await store.saveFeedFilter({

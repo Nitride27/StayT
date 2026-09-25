@@ -14,9 +14,6 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography, spacing, radius, layout, colors, darkColors } from '../theme/tokens';
 import { mascotSource } from '../theme/mascot';
 import { CheckIcon, CloseIcon } from '../components/icons';
-import { grantProPass, PRO_PASS_HOURS } from '../billing/pro';
-import { showRewarded } from '../ads/ads';
-import { store } from '../storage/store';
 import { tap } from '../haptics';
 
 type Props = {
@@ -66,30 +63,10 @@ const features = [
   { title: 'Analytics Depth', desc: 'Deeper trends behind your focus time' },
 ];
 
+// no-pro: no purchase here. Lists what Pro covers; each feature plays a
+// rewarded ad at the moment it is turned on (billing/pro.ts adGate).
 export default function PaywallScreen({ navigation }: Props) {
   const { isDark } = useTheme();
-  const [busy, setBusy] = useState(false);
-  const [adError, setAdError] = useState<string | null>(null);
-  const [passUntil, setPassUntil] = useState(0);
-  const passActive = passUntil > Date.now();
-
-  useEffect(() => {
-    store.getPreferences().then(p => setPassUntil(p.proPassUntil ?? 0)).catch(() => {});
-  }, []);
-
-  const handleUnlock = async () => {
-    setAdError(null);
-    tap('medium');
-    setBusy(true);
-    const result = await showRewarded();
-    if (result === 'earned') {
-      await grantProPass().catch(() => {});
-      navigation.goBack();
-      return;
-    }
-    setBusy(false);
-    if (result === 'unavailable') setAdError('No ad is available right now. Check your connection and try again.');
-  };
 
   // Entry animations
   const headerOpacity = useSharedValue(0);
@@ -154,7 +131,7 @@ export default function PaywallScreen({ navigation }: Props) {
           <CloseIcon size={20} color={isDark ? darkColors.inkMuted : colors.inkMuted} />
         </TouchableOpacity>
         <Text style={[typography.display, { color: isDark ? darkColors.ink : colors.midnight, textAlign: 'center' }]}>
-          UNLOCK FULL POWER
+          PRO FEATURES
         </Text>
       </Animated.View>
 
@@ -165,14 +142,11 @@ export default function PaywallScreen({ navigation }: Props) {
       <Animated.View style={[styles.pricingCard, cardAnimStyle, { backgroundColor: isDark ? darkColors.paperCard : colors.paperCard, borderColor: isDark ? darkColors.ink : colors.ink }]}>
         <Text style={[typography.h2, { color: colors.ectoGreen, textAlign: 'center' }]}>Pro</Text>
         <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkSecondary, textAlign: 'center', marginTop: spacing.xs }]}>
-          {passActive
-            ? `Active until ${new Date(passUntil).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`
-            : 'Free with one short ad'}
+          Free with ads
         </Text>
-        <View style={styles.priceRow}>
-          <Text style={[typography.h1, { color: isDark ? darkColors.ink : colors.midnight }]}>{PRO_PASS_HOURS} hours</Text>
-          <Text style={[typography.bodyMedium, { color: isDark ? darkColors.inkMuted : colors.inkSecondary }]}> per ad</Text>
-        </View>
+        <Text style={[typography.caption, { color: isDark ? darkColors.inkSecondary : colors.inkSecondary, textAlign: 'center', marginTop: spacing.md }]}>
+          Turn on any feature below and a short ad plays first. Every time.
+        </Text>
       </Animated.View>
 
       <Animated.View style={[styles.features, featuresAnimStyle, { borderColor: isDark ? darkColors.ink : colors.ink }]}>
@@ -182,22 +156,14 @@ export default function PaywallScreen({ navigation }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.bottomSection, buttonAnimStyle]}>
-        {adError && (
-          <Text style={[typography.caption, { color: colors.danger, textAlign: 'center', marginBottom: spacing.md }]}>
-            {adError}
-          </Text>
-        )}
         <AnimatedTouchable
-          style={[styles.primaryButton, { opacity: busy ? 0.6 : 1 }]}
+          style={styles.primaryButton}
           activeOpacity={0.85}
-          onPress={handleUnlock}
-          disabled={busy}
+          onPress={() => { tap(); navigation.goBack(); }}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
         >
-          <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>
-            {busy ? 'LOADING AD…' : passActive ? `WATCH AD: +${PRO_PASS_HOURS} HOURS` : 'WATCH AD TO UNLOCK'}
-          </Text>
+          <Text style={[typography.cta, { color: colors.midnight, textAlign: 'center' }]}>GOT IT</Text>
         </AnimatedTouchable>
       </Animated.View>
       </ScrollView>
