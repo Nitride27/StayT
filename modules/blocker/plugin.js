@@ -116,7 +116,7 @@ function copyResFiles(projectRoot) {
   const stringsDest = path.join(destRes, "values/strings.xml");
   const ownedStrings = {
     accessibility_service_description:
-      "StayT uses this service to see which app is open, read your browser's address bar for websites you block, spot feeds like Reels that you shield, and cover blocked apps while you focus. Everything is checked on your phone and never stored or sent anywhere.",
+      "StayT uses this service to see which app is open, read your browser\\'s address bar for websites you block, spot feeds like Reels that you shield, and cover blocked apps while you focus. Everything is checked on your phone and never stored or sent anywhere.",
     stayt_widget_desc:
       "Focus time, streak and live session status.",
   };
