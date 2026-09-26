@@ -781,10 +781,15 @@ class StayTAccessibilityService : AccessibilityService() {
             } else {
                 Notification.Builder(ctx)
             }
+            // Android 16+: Live Update (promoted ongoing) — lock-screen and
+            // status-bar chip even in compact lock-screen styles. Promotion
+            // forbids custom RemoteViews, so these get the standard template
+            // with a system chronometer + pause action instead of the card.
+            val promote = Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA
             // Themed card (app theme: black / white, tokens.ts): custom
             // content on N+; title/text below double as the fallback,
             // lockscreen line and accessibility text.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !promote) {
                 try {
                     val card = android.widget.RemoteViews(ctx.packageName, R.layout.session_note)
                     val dark = isDarkTheme(ctx)
@@ -854,6 +859,39 @@ class StayTAccessibilityService : AccessibilityService() {
                 // the synthetic `priority` accessor does not resolve
                 // against this deprecated Java setter and breaks the build.
                 try { builder.setPriority(Notification.PRIORITY_DEFAULT) } catch (_: Exception) { }
+            }
+            if (promote) {
+                try {
+                    builder
+                        .setWhen(now - sessionElapsedMs(now))
+                        .setShowWhen(!sessionPaused)
+                        .setUsesChronometer(!sessionPaused)
+                    if (sessionPaused) builder.setShortCriticalText("Paused")
+                    if (sessionPausable) {
+                        val toggle = PendingIntent.getBroadcast(
+                            ctx, SESSION_TOGGLE_REQ,
+                            Intent(ctx, SessionControlReceiver::class.java)
+                                .setAction(SessionControlReceiver.ACTION_TOGGLE),
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        builder.addAction(
+                            Notification.Action.Builder(
+                                android.graphics.drawable.Icon.createWithResource(
+                                    ctx, if (sessionPaused) R.drawable.ic_note_play else R.drawable.ic_note_pause
+                                ),
+                                if (sessionPaused) "Resume" else "Pause",
+                                toggle
+                            ).build()
+                        )
+                    }
+                    // Notification.EXTRA_REQUEST_PROMOTED_ONGOING (API 36.1
+                    // setter; the extra works on 36 and is ignored below).
+                    builder.addExtras(android.os.Bundle().apply {
+                        putBoolean("android.requestPromotedOngoing", true)
+                    })
+                } catch (e: Exception) {
+                    Log.w(TAG, "session live update setup failed", e)
+                }
             }
             try {
                 val launch = try {

@@ -28,6 +28,13 @@ session end.
   white bolt vector (notification-compliant alpha silhouette, no new asset).
   `POST_NOTIFICATIONS` denial silently skips via the existing
   `canPostNotifications` seam; bounce + emit remain enforcement.
+- Pro flavor only (2026-09-26): on Android 16+ the note requests promotion
+  as a Live Update (`android.requestPromotedOngoing` extra +
+  `POST_PROMOTED_NOTIFICATIONS`, a normal permission) so it gets a
+  lock-screen / status-bar chip. Promotion forbids custom RemoteViews, so on
+  16+ the note uses the standard template (system chronometer, Pause/Resume
+  action) instead of the themed card. Verified against
+  developer.android.com/develop/ui/views/notifications/live-update.
 - NO foreground service: no `startForeground()`, no `FOREGROUND_SERVICE*`
   permission, no `foregroundServiceType`, no manifest/Play-declaration cost.
 

@@ -170,6 +170,16 @@ function withBlocker(config) {
         $: { "android:name": "android.permission.POST_NOTIFICATIONS" },
       });
     }
+    // Android 16 Live Update for the session note (promoted ongoing).
+    if (
+      !manifest["uses-permission"].some(
+        (p) => p.$?.["android:name"] === "android.permission.POST_PROMOTED_NOTIFICATIONS"
+      )
+    ) {
+      manifest["uses-permission"].push({
+        $: { "android:name": "android.permission.POST_PROMOTED_NOTIFICATIONS" },
+      });
+    }
     if (!manifest.queries) manifest.queries = [];
     if (!manifest.queries[0]) manifest.queries[0] = {};
     if (!manifest.queries[0].intent) manifest.queries[0].intent = [];
