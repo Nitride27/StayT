@@ -55,7 +55,7 @@ function detectBrand(): Brand {
 function accessibilitySteps(brand: Brand): string[] {
   const list = brand === 'samsung' ? 'Installed apps' : 'Downloaded apps (on some phones: Installed apps)';
   return [
-    'Tap OPEN SETTINGS below.',
+    'Tap AGREE & OPEN SETTINGS below.',
     `Tap ${list}, then StayT.`,
     'Turn StayT on and tap Allow.',
     'Come back here. StayT continues on its own.',
@@ -117,18 +117,18 @@ function getRestrictedSettingsSteps(): string[] {
     return [
       'Open StayT\u2019s app-info page with the button below.',
       'Tap \u22EE (top-right) > Allow restricted settings.',
-      'Come back here and tap OPEN SETTINGS again.',
+      'Come back here and tap AGREE & OPEN SETTINGS again.',
     ];
   if (hay.includes('samsung'))
     return [
       'Open StayT\u2019s app-info page with the button below.',
       'Tap \u22EE (top-right) > Allow restricted settings.',
-      'Come back here and tap OPEN SETTINGS again.',
+      'Come back here and tap AGREE & OPEN SETTINGS again.',
     ];
   return [
     'Open StayT\u2019s app-info page with the button below.',
     'Tap \u22EE (top-right) > Allow restricted settings, if shown.',
-    'Come back here and tap OPEN SETTINGS again.',
+    'Come back here and tap AGREE & OPEN SETTINGS again.',
   ];
 }
 
@@ -308,6 +308,12 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
     markOnboarded().finally(() => navigation.navigate('TaskPicker', next));
   };
 
+  // Play prominent-disclosure rule: consent must be declinable. Declining
+  // drops the pending task too; TaskPicker re-gates any session start.
+  const handleDecline = () => {
+    markOnboarded().finally(() => navigation.navigate('TaskPicker'));
+  };
+
   const bg = isDark ? darkColors.paper : colors.paper;
   const ink = isDark ? darkColors.ink : colors.ink;
   const secondary = isDark ? darkColors.inkSecondary : colors.inkSecondary;
@@ -438,14 +444,24 @@ export default function PermissionSetupScreen({ navigation, route }: Props) {
       {/* Bottom section */}
       <View style={styles.bottomSection}>
         {!accessibilityEnabled ? (
+          <>
           <TouchableOpacity
             style={styles.primaryButton}
             activeOpacity={0.85}
             onPress={handleGrantAccessibility}
             accessibilityRole="button"
           >
-            <Text style={styles.primaryButtonText}>OPEN SETTINGS</Text>
+            <Text style={styles.primaryButtonText}>AGREE & OPEN SETTINGS</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleDecline}
+            style={styles.ghostButton}
+            accessibilityRole="button"
+          >
+            <Text style={[typography.button, { color: muted, textAlign: 'center' }]}>NOT NOW</Text>
+          </TouchableOpacity>
+          </>
         ) : (
           <View style={[styles.testCard, { borderColor: ink }]}>
             <Text style={[typography.bodyStrong, { color: ink, textAlign: 'center' }]}>
