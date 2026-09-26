@@ -186,7 +186,9 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   // Entry animations
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(20);
-  const timerOpacity = useSharedValue(0);
+  // No opacity on the timer: after a background/lock round trip the native
+  // view could keep a stale 0 opacity (1 -> 1 snap never repaints) and the
+  // timer vanished. Scale-only entry can never hide it.
   const timerScale = useSharedValue(0.9);
   const buttonOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
@@ -195,7 +197,6 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
     headerOpacity.value = withDelay(100, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
     headerTranslateY.value = withDelay(100, withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
 
-    timerOpacity.value = withDelay(250, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
     timerScale.value = withDelay(250, withSpring(1, { damping: 16, stiffness: 200 }));
 
     buttonOpacity.value = withDelay(550, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
@@ -209,15 +210,13 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   const snapEntries = useCallback(() => {
     cancelAnimation(headerOpacity);
     cancelAnimation(headerTranslateY);
-    cancelAnimation(timerOpacity);
     cancelAnimation(timerScale);
     cancelAnimation(buttonOpacity);
     headerOpacity.value = 1;
     headerTranslateY.value = 0;
-    timerOpacity.value = 1;
     timerScale.value = 1;
     buttonOpacity.value = 1;
-  }, [headerOpacity, headerTranslateY, timerOpacity, timerScale, buttonOpacity]);
+  }, [headerOpacity, headerTranslateY, timerScale, buttonOpacity]);
 
   // Safety net for notification-tap returns: a backgrounded mount can lose
   // the delayed entry runs above with no foreground transition to recover
@@ -429,7 +428,6 @@ export default function ActiveSessionScreen({ navigation, route }: Props) {
   }));
 
   const timerAnimStyle = useAnimatedStyle(() => ({
-    opacity: timerOpacity.value,
     transform: [{ scale: timerScale.value }],
   }));
 

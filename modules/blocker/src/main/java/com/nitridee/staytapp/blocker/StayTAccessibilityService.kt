@@ -63,7 +63,12 @@ class StayTAccessibilityService : AccessibilityService() {
         // enforcement exactly. Own channel (LOW: silent, persistent) + own
         // fixed ID so it coexists with — and is never swept by — the
         // per-block heads-up notes above.
-        private const val SESSION_CHANNEL_ID = "stayt_session"
+        // v2 = DEFAULT importance: LOW ("silent") notes are hidden on the
+        // lock screen by Samsung / Android 12+. Importance can't be raised
+        // on an existing channel (and a re-created deleted id restores its
+        // old settings), hence the new id; the LOW one is deleted.
+        private const val SESSION_CHANNEL_ID = "stayt_session_v2"
+        private const val LEGACY_SESSION_CHANNEL_ID = "stayt_session"
         private const val SESSION_CHANNEL_NAME = "Ongoing session"
         private const val SESSION_NOTIFICATION_ID = 57001
         private const val SESSION_TAP_REQ = 7001
@@ -742,23 +747,17 @@ class StayTAccessibilityService : AccessibilityService() {
             }
         }
 
-        /** Session channel: LOW (silent, persistent) + upgrade sweep. Never throws. */
+        /** Session channel: DEFAULT but silent (lock-screen visible) + legacy sweep. Never throws. */
         private fun ensureSessionChannel(ctx: Context) {
             try {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
                 val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
-                try {
-                    val existing = nm.getNotificationChannel(SESSION_CHANNEL_ID)
-                    if (existing != null && existing.importance != NotificationManager.IMPORTANCE_NONE &&
-                        existing.importance != NotificationManager.IMPORTANCE_LOW
-                    ) {
-                        try { nm.deleteNotificationChannel(SESSION_CHANNEL_ID) } catch (_: Exception) { }
-                    }
-                } catch (_: Exception) { }
+                if (nm.getNotificationChannel(SESSION_CHANNEL_ID) != null) return
+                try { nm.deleteNotificationChannel(LEGACY_SESSION_CHANNEL_ID) } catch (_: Exception) { }
                 val channel = NotificationChannel(
                     SESSION_CHANNEL_ID,
                     SESSION_CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
                     try { description = "StayT focus session status. Tap to return to your session." } catch (_: Exception) { }
                     try { enableVibration(false) } catch (_: Exception) { }
@@ -854,7 +853,7 @@ class StayTAccessibilityService : AccessibilityService() {
                 // Explicit setPriority call (not Kotlin property syntax):
                 // the synthetic `priority` accessor does not resolve
                 // against this deprecated Java setter and breaks the build.
-                try { builder.setPriority(Notification.PRIORITY_LOW) } catch (_: Exception) { }
+                try { builder.setPriority(Notification.PRIORITY_DEFAULT) } catch (_: Exception) { }
             }
             try {
                 val launch = try {

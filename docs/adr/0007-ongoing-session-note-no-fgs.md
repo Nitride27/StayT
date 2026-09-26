@@ -13,7 +13,7 @@ session end.
 
 ## Decision
 - Plain `NotificationManager.notify()` with `setOngoing(true)` on its own
-  `stayt_session` channel (`IMPORTANCE_LOW`: silent, persistent) and its own
+  `stayt_session_v2` channel (`IMPORTANCE_DEFAULT` with no sound/vibration, so it shows on the lock screen — LOW notes are hidden there; replaced the LOW `stayt_session` channel 2026-09-26) and its own
   fixed ID — coexists with, and is never swept by, the `stayt_blocked`
   heads-up notes (different channel + ID).
 - Posted from `StayTAccessibilityService.setBlocking(true)`, cancelled on
